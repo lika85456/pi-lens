@@ -101,6 +101,7 @@ pip install ruff
 | `--no-ast-grep` | `false` | Disable ast-grep |
 | `--no-ruff` | `false` | Disable Ruff |
 | `--no-lsp` | `false` | Disable TypeScript LSP |
+| `--no-madge` | `false` | Disable circular dependency checking |
 | `--lens-verbose` | `false` | Enable verbose logging |
 
 ---

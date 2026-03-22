@@ -234,27 +234,23 @@ export class DependencyChecker {
         shell: true,
       });
 
-      const output = result.stdout || "{}";
-      const data = JSON.parse(output);
+      const output = result.stdout || "[]";
+      const parsed = JSON.parse(output);
 
-      // Madge returns { "file.ts": ["other.ts", ...] } for circular deps
+      // Madge --circular --json returns array of cycle arrays: [["a.ts", "b.ts"], ...]
+      const cycles: string[][] = Array.isArray(parsed) ? parsed : [];
       const circular: CircularDep[] = [];
       const circularFiles = new Set<string>();
 
-      for (const [file, deps] of Object.entries(data)) {
-        if (Array.isArray(deps) && deps.length > 0) {
-          const resolvedFile = path.resolve(file);
-          circularFiles.add(resolvedFile);
-
-          circular.push({
-            file: resolvedFile,
-            path: [resolvedFile, ...deps.map((d: string) => path.resolve(d))],
-          });
-
-          for (const dep of deps) {
-            circularFiles.add(path.resolve(dep));
-          }
+      for (const cycle of cycles) {
+        const resolvedPaths = cycle.map((f: string) => path.resolve(projectRoot, f));
+        for (const f of resolvedPaths) {
+          circularFiles.add(f);
         }
+        circular.push({
+          file: resolvedPaths[0],
+          path: resolvedPaths,
+        });
       }
 
       this.lastCircular = circular;

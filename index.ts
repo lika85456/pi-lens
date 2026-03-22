@@ -101,6 +101,12 @@ export default function (pi: ExtensionAPI) {
     default: false,
   });
 
+  pi.registerFlag("no-madge", {
+    description: "Disable circular dependency checking via madge",
+    type: "boolean",
+    default: false,
+  });
+
   pi.registerFlag("autofix-biome", {
     description: "Auto-fix Biome lint/format issues on write (applies --write --unsafe)",
     type: "boolean",
@@ -448,7 +454,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Circular dependency check (cached, only when imports change)
-    if (!pi.getFlag("no-ast-grep") && depChecker.isAvailable() && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
+    if (!pi.getFlag("no-madge") && depChecker.isAvailable() && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
       const depResult = depChecker.checkFile(filePath);
       if (depResult.hasCircular && depResult.circular.length > 0) {
         const circularDeps = depResult.circular
