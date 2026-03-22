@@ -1,0 +1,16 @@
+id: empty-catch
+language: TypeScript
+message: "Empty catch block — handle or log the error"
+severity: warning
+note: |
+  Silently swallowing errors makes debugging impossible.
+  At minimum, log the error. Ideally, handle it properly.
+rule:
+  all:
+    - kind: catch_clause
+    - has:
+        kind: statement_block
+        not:
+          has:
+            kind: expression_statement
+            stopBy: end

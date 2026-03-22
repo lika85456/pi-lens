@@ -1,0 +1,37 @@
+{
+  "name": "pi-autofeedback",
+  "version": "1.0.0",
+  "description": "Real-time code feedback for pi — Biome, ast-grep, Ruff, TypeScript LSP, dependency analysis",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "linter",
+    "biome",
+    "ast-grep",
+    "ruff",
+    "feedback"
+  ],
+  "author": "R3LiC",
+  "license": "MIT",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-languageserver-types": "^3.17.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.0.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+id: prefer-nullish-coalescing
+language: TypeScript
+message: "Use nullish coalescing '??' instead of '||' for null/undefined checks"
+severity: hint
+note: |
+  The ?? operator only falls back for null/undefined, while || falls back
+  for any falsy value (0, "", false). Use ?? when you only want to handle
+  null/undefined.
+rule:
+  all:
+    - pattern: $X || $Y
+    - not:
+        any:
+          - has:
+              kind: binary_expression
+              pattern: $X || $Y
+          # Allow in boolean contexts
+          - inside:
+              kind: if_statement
+          - inside:
+              kind: while_statement
+          - inside:
+              kind: ternary_expression

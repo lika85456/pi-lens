@@ -1,0 +1,12 @@
+id: switch-needs-default
+language: TypeScript
+message: "Switch statement without default case"
+severity: hint
+note: |
+  Always include a default case to handle unexpected values.
+rule:
+  all:
+    - kind: switch_statement
+    - not:
+        has:
+          kind: switch_default
