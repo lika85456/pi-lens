@@ -119,13 +119,12 @@ export class JscpdClient {
   private parseReport(reportPath: string): JscpdResult {
     try {
       const data = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
-      const stats = data.statistics ?? {};
-      const cloneStats = stats.clones ?? {};
-      const totalStats = stats.total ?? {};
+      // Stats live in statistics.total, not statistics.clones
+      const total = data.statistics?.total ?? {};
 
-      const duplicatedLines: number = cloneStats.duplicatedLines ?? 0;
-      const totalLines: number = totalStats.lines ?? 0;
-      const percentage: number = totalLines > 0 ? (duplicatedLines / totalLines) * 100 : 0;
+      const duplicatedLines: number = total.duplicatedLines ?? 0;
+      const totalLines: number = total.lines ?? 0;
+      const percentage: number = total.percentage ?? (totalLines > 0 ? (duplicatedLines / totalLines) * 100 : 0);
 
       const rawClones: any[] = data.duplicates ?? [];
       const clones: DuplicateClone[] = rawClones.map((c: any) => ({

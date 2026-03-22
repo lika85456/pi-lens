@@ -423,10 +423,8 @@ export default function (pi: ExtensionAPI) {
     if (!pi.getFlag("no-biome") && biomeClient.isSupportedFile(filePath)) {
       const biomeDiags = biomeClient.checkFile(filePath);
       dbg(`  biome diags: ${biomeDiags.length}`);
-      const fixable = biomeDiags.filter(d => d.fixable);
-
-      if (pi.getFlag("autofix-biome") && fixable.length > 0) {
-        // Apply fixes then re-check to show what remains
+      if (pi.getFlag("autofix-biome") && biomeDiags.length > 0) {
+        // Always attempt fix — let Biome decide what it can do
         const fixResult = biomeClient.fixFile(filePath);
         if (fixResult.success && fixResult.changed) {
           lspOutput += `\n\n[Biome] Auto-fixed ${fixResult.fixed} issue(s) — file updated on disk`;
@@ -437,15 +435,14 @@ export default function (pi: ExtensionAPI) {
             lspOutput += `\n\n[Biome] ✓ All issues resolved`;
           }
         } else {
-          // Fix didn't change anything — show original diagnostics
-          if (biomeDiags.length > 0) lspOutput += `\n\n${biomeClient.formatDiagnostics(biomeDiags, filePath)}`;
-        }
-      } else {
-        if (biomeDiags.length > 0) {
+          // Nothing fixable — show diagnostics as-is
           lspOutput += `\n\n${biomeClient.formatDiagnostics(biomeDiags, filePath)}`;
-          if (fixable.length > 0) {
-            lspOutput += `\n\n[Biome] ${fixable.length} fixable — enable --autofix-biome flag or run /format`;
-          }
+        }
+      } else if (biomeDiags.length > 0) {
+        const fixable = biomeDiags.filter(d => d.fixable);
+        lspOutput += `\n\n${biomeClient.formatDiagnostics(biomeDiags, filePath)}`;
+        if (fixable.length > 0) {
+          lspOutput += `\n\n[Biome] ${fixable.length} fixable — enable --autofix-biome flag or run /format`;
         }
       }
     }
