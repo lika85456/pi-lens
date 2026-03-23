@@ -56,13 +56,12 @@ function dbg(msg: string) {
 let _verbose = false;
 
 function log(msg: string) {
-	console.log(`[pi-lens] ${msg}`);
+	if (_verbose) console.log(`[pi-lens] ${msg}`);
 }
 
 // --- Extension ---
 
 export default function (pi: ExtensionAPI) {
-	log("Extension loaded");
 
 	const tsClient = new TypeScriptClient();
 	const astGrepClient = new AstGrepClient();
