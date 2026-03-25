@@ -301,11 +301,9 @@ message: found
    * Scan for exported function names in a directory
    */
   async scanExports(dir: string, lang: string = "typescript"): Promise<Map<string, string>> {
-    console.log(`[scanExports] Starting scan of ${dir}`);
     const exports = new Map<string, string>();
 
     if (!this.isAvailable()) {
-      console.log(`[scanExports] ast-grep not available`);
       return exports;
     }
 
@@ -339,7 +337,7 @@ message: found
         shell: true,
       });
 
-      console.log(`[scanExports] status: ${result.status}, stdout length: ${result.stdout?.length || 0}`);
+
 
       const output = result.stdout || result.stderr || "";
       this.log(`scanExports output length: ${output.length}`);
@@ -347,7 +345,7 @@ message: found
         try {
           const items = JSON.parse(output);
           const matches = Array.isArray(items) ? items : [items];
-          console.log(`[scanExports] parsed ${matches.length} matches`);
+
           for (const item of matches) {
             const text = item.text || "";
             const nameMatch = text.match(/function\s+(\w+)/);

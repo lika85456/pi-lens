@@ -351,12 +351,14 @@ export default function (pi: ExtensionAPI) {
 						if (metrics) {
 							results.push(metrics);
 
-							// Check AI slop indicators per file
-							const warnings = complexityClient.checkThresholds(metrics);
-							if (warnings.length > 0) {
-								aiSlopIssues.push(`  ${metrics.filePath}:`);
-								for (const w of warnings) {
-									aiSlopIssues.push(`    ⚠ ${w}`);
+							// Check AI slop indicators — skip test files (low MI is expected/structural)
+							if (!/\.(test|spec)\.[jt]sx?$/.test(entry.name)) {
+								const warnings = complexityClient.checkThresholds(metrics);
+								if (warnings.length > 0) {
+									aiSlopIssues.push(`  ${metrics.filePath}:`);
+									for (const w of warnings) {
+										aiSlopIssues.push(`    ⚠ ${w}`);
+									}
 								}
 							}
 						}

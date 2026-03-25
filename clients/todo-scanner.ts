@@ -130,6 +130,8 @@ export class TodoScanner {
         } else if (extensions.some(ext => entry.name.endsWith(ext))) {
           // Skip this scanner file — its own type literals and regex cause false positives
           if (entry.name === "todo-scanner.ts" || entry.name === "todo-scanner.js") continue;
+          // Skip test files — intentional annotations are test fixtures, not work items
+          if (/\.(test|spec)\.[jt]sx?$/.test(entry.name)) continue;
           items.push(...this.scanFile(fullPath));
         }
       }
