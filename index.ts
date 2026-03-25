@@ -279,7 +279,7 @@ export default function (pi: ExtensionAPI) {
 
 						if (issues.length > 0) {
 							// UI summary (truncated)
-							let report = `[Design Smells] ${issues.length} issue(s) found:\n`;
+							let report = `[ast-grep] ${issues.length} issue(s) found:\n`;
 							for (const issue of issues.slice(0, 20)) {
 								report += `  L${issue.line}: ${issue.rule} — ${issue.message}\n`;
 							}
@@ -289,7 +289,7 @@ export default function (pi: ExtensionAPI) {
 							parts.push(report);
 
 							// Full report for file
-							let fullSection = `## Design Smells\n\n**${issues.length} issue(s) found**\n\n`;
+							let fullSection = `## ast-grep (Structural Issues)\n\n**${issues.length} issue(s) found**\n\n`;
 							fullSection += "| Line | Rule | Message |\n|------|------|--------|\n";
 							for (const issue of issues) {
 								fullSection += `| ${issue.line} | ${issue.rule} | ${issue.message} |\n`;
