@@ -228,6 +228,10 @@ function long(): number {
         linesOfCode: 100,
         commentLines: 10,
         codeEntropy: 0.5,
+        maxParamsInFunction: 3,
+        aiCommentPatterns: 1,
+        singleUseFunctions: 0,
+        tryCatchCount: 1,
       };
 
       const formatted = client.formatMetrics(metrics);
@@ -250,6 +254,10 @@ function long(): number {
         linesOfCode: 500,
         commentLines: 10,
         codeEntropy: 0.5,
+        maxParamsInFunction: 4,
+        aiCommentPatterns: 2,
+        singleUseFunctions: 1,
+        tryCatchCount: 2,
       };
 
       const formatted = client.formatMetrics(metrics);

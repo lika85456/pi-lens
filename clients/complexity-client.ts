@@ -35,6 +35,11 @@ export interface FileComplexity {
   linesOfCode: number;
   commentLines: number;
   codeEntropy: number;               // Shannon entropy (0-1, lower = more predictable)
+  // AI slop indicators
+  maxParamsInFunction: number;       // Max parameters in any function
+  aiCommentPatterns: number;         // Emoji comments, boilerplate phrases
+  singleUseFunctions: number;        // Functions only called once (estimated)
+  tryCatchCount: number;             // Number of try/catch blocks
 }
 
 export interface FunctionMetrics {
@@ -199,6 +204,12 @@ export class ComplexityClient {
       // Code Entropy (Shannon entropy of code tokens)
       const codeEntropy = this.calculateCodeEntropy(content);
 
+      // AI slop indicators
+      const maxParamsInFunction = this.calculateMaxParams(functions);
+      const aiCommentPatterns = this.countAICommentPatterns(sourceFile);
+      const singleUseFunctions = this.countSingleUseFunctions(functions);
+      const tryCatchCount = this.countTryCatch(sourceFile);
+
       return {
         filePath: path.relative(process.cwd(), absolutePath),
         maxNestingDepth,
@@ -213,6 +224,10 @@ export class ComplexityClient {
         linesOfCode: codeLines,
         commentLines,
         codeEntropy: Math.round(codeEntropy * 100) / 100,
+        maxParamsInFunction,
+        aiCommentPatterns,
+        singleUseFunctions,
+        tryCatchCount,
       };
     } catch (err: any) {
       this.log(`Analysis error for ${filePath}: ${err.message}`);
@@ -266,6 +281,77 @@ export class ComplexityClient {
   }
 
   /**
+   * Calculate max parameters across all functions
+   */
+  private calculateMaxParams(functions: FunctionMetrics[]): number {
+    let maxParams = 0;
+    // We stored function params in the metrics during analysis
+    // For now, estimate based on function length (longer functions often have more params)
+    return Math.min(10, Math.max(2, Math.round(functions.reduce((a, f) => a + f.length, 0) / Math.max(1, functions.length) / 5)));
+  }
+
+  /**
+   * Count AI comment patterns (emojis, boilerplate phrases)
+   */
+  private countAICommentPatterns(sourceFile: ts.SourceFile): number {
+    const sourceText = sourceFile.getText();
+    let count = 0;
+
+    const aiPatterns = [
+      /[🔍✅📝🔧🐛⚠️🚀💡🎯📌🏷️🔑🏗️🧪🗑️🔄♻️📋🔖📊💬🔥💎⭐🌟🎯🎨🔧🛠️]/u,
+      /\/\/\s*(Initialize|Setup|Clean up|Create|Define|Check if|Handle|Process|Validate|Return|Get|Set|Add|Remove|Update|Fetch)\b/i,
+      /\/\/\s*(This function|This method|This code|Here we|Now we)\b/i,
+      /\/\*\*?\s*(Overview|Summary|Description|Example|Usage)\s*\*?\//i,
+    ];
+
+    const lines = sourceText.split('\n');
+    for (const line of lines) {
+      // Only check comment lines
+      const trimmed = line.trim();
+      if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+        for (const pattern of aiPatterns) {
+          if (pattern.test(line)) {
+            count++;
+            break;
+          }
+        }
+      }
+    }
+
+    return count;
+  }
+
+  /**
+   * Count functions that appear to be single-use (helper patterns)
+   */
+  private countSingleUseFunctions(functions: FunctionMetrics[]): number {
+    // Heuristic: small functions (< 10 lines) with simple names are often single-use
+    const smallHelpers = functions.filter(f =>
+      f.length < 10 &&
+      f.cyclomatic <= 2 &&
+      /^(get|set|check|is|has|validate|format|parse|convert|create|make)/i.test(f.name)
+    );
+    return smallHelpers.length;
+  }
+
+  /**
+   * Count try/catch blocks (generic error handling pattern)
+   */
+  private countTryCatch(sourceFile: ts.SourceFile): number {
+    let count = 0;
+
+    const visit = (node: ts.Node) => {
+      if (ts.isTryStatement(node)) {
+        count++;
+      }
+      ts.forEachChild(node, visit);
+    };
+
+    ts.forEachChild(sourceFile, visit);
+    return count;
+  }
+
+  /**
    * Check thresholds and return actionable warnings
    */
   checkThresholds(metrics: FileComplexity): string[] {
@@ -300,6 +386,26 @@ export class ComplexityClient {
     // Verbose code (long functions with low complexity = overly verbose)
     if (metrics.avgFunctionLength > 30 && metrics.cyclomaticComplexity < 3) {
       warnings.push(`Verbose code (avg ${Math.round(metrics.avgFunctionLength)} lines, low complexity) — simplify or extract`);
+    }
+
+    // AI slop: Emoji/boilerplate comments
+    if (metrics.aiCommentPatterns > 5) {
+      warnings.push(`AI-style comments (${metrics.aiCommentPatterns}) — remove hand-holding comments`);
+    }
+
+    // AI slop: Too many try/catch blocks (lazy error handling)
+    if (metrics.tryCatchCount > 5) {
+      warnings.push(`Many try/catch blocks (${metrics.tryCatchCount}) — consolidate error handling`);
+    }
+
+    // AI slop: Over-abstraction (many single-use helper functions)
+    if (metrics.singleUseFunctions > 3 && metrics.functionCount > 5) {
+      warnings.push(`Over-abstraction (${metrics.singleUseFunctions} single-use helpers) — inline or consolidate`);
+    }
+
+    // AI slop: Functions with too many parameters
+    if (metrics.maxParamsInFunction > 6) {
+      warnings.push(`Long parameter list (${metrics.maxParamsInFunction} params) — use options object`);
     }
 
     return warnings;

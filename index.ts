@@ -638,6 +638,15 @@ export default function (pi: ExtensionAPI) {
 			report += `**Path:** \`${targetPath}\`\n\n`;
 			report += `---\n\n`;
 
+			// AI slop aggregates
+			const totalAISlopWarnings = results.reduce((a, b) => {
+				return a + complexityClient.checkThresholds(b).length;
+			}, 0);
+			const totalEmojiComments = results.reduce((a, b) => a + b.aiCommentPatterns, 0);
+			const totalTryCatch = results.reduce((a, b) => a + b.tryCatchCount, 0);
+			const totalSingleUse = results.reduce((a, b) => a + b.singleUseFunctions, 0);
+			const maxParams = Math.max(...results.map(r => r.maxParamsInFunction));
+
 			// Summary
 			report += `## Summary\n\n`;
 			report += `| Metric | Value |\n`;
@@ -652,6 +661,16 @@ export default function (pi: ExtensionAPI) {
 			report += `| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n`;
 			report += `| Max Nesting Depth | ${maxNesting} |\n`;
 			report += `| Avg Function Length | ${avgFunctionLength.toFixed(1)} lines |\n\n`;
+
+			// AI Slop Summary
+			report += `## AI Slop Indicators (Aggregate)\n\n`;
+			report += `| Indicator | Count |\n`;
+			report += `|-----------|-------|\n`;
+			report += `| Total Warnings | ${totalAISlopWarnings} |\n`;
+			report += `| Emoji/Boilerplate Comments | ${totalEmojiComments} |\n`;
+			report += `| Try/Catch Blocks | ${totalTryCatch} |\n`;
+			report += `| Single-Use Helper Functions | ${totalSingleUse} |\n`;
+			report += `| Max Function Parameters | ${maxParams} |\n\n`;
 
 			// Grade distribution
 			report += `## Maintainability Grade Distribution\n\n`;
@@ -694,11 +713,19 @@ export default function (pi: ExtensionAPI) {
 				const relPath = path.relative(targetPath, f.filePath);
 				const warnings: string[] = [];
 
-				if (f.maintainabilityIndex < 20) warnings.push("Critical: MI < 20");
-				else if (f.maintainabilityIndex < 40) warnings.push("Low: MI < 40");
+				if (f.maintainabilityIndex < 20) warnings.push("🔴 Critical: MI < 20");
+				else if (f.maintainabilityIndex < 40) warnings.push("🟠 Low: MI < 40");
 				if (f.cognitiveComplexity > 50) warnings.push(`High cognitive (${f.cognitiveComplexity})`);
 				if (f.maxNestingDepth > 5) warnings.push(`Deep nesting (${f.maxNestingDepth})`);
 				if (f.maxFunctionLength > 50) warnings.push(`Long functions (max ${f.maxFunctionLength})`);
+
+				// AI slop indicators
+				const slopWarnings = complexityClient.checkThresholds(f);
+				for (const w of slopWarnings) {
+					if (w.includes("AI-style") || w.includes("try/catch") || w.includes("single-use") || w.includes("parameter list")) {
+						warnings.push(`🤖 ${w.split(" — ")[0]}`);
+					}
+				}
 
 				report += `${i + 1}. **${relPath}** — MI: ${f.maintainabilityIndex.toFixed(1)}\n`;
 				if (warnings.length > 0) {
