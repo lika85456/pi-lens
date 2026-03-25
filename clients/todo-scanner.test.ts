@@ -1,37 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TodoScanner } from "./todo-scanner.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 
 describe("TodoScanner", () => {
-  let scanner: TodoScanner;
+  let client: TodoScanner;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
-    scanner = new TodoScanner();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-todo-test-"));
+    client = new TodoScanner();
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-todo-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
   });
 
   describe("scanFile", () => {
     it("should return empty array for non-existent files", () => {
-      const result = scanner.scanFile("/nonexistent/file.ts");
+      const result = client.scanFile("/nonexistent/file.ts");
       expect(result).toEqual([]);
     });
 
@@ -40,8 +27,8 @@ describe("TodoScanner", () => {
 // TODO: implement this function
 function foo() {}
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("TODO");
@@ -53,8 +40,8 @@ function foo() {}
 // FIXME: this is broken
 function foo() {}
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("FIXME");
@@ -65,8 +52,8 @@ function foo() {}
 // HACK: temporary workaround
 const x = 1;
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("HACK");
@@ -77,8 +64,8 @@ const x = 1;
 // BUG: this causes a crash
 const x = 1;
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("BUG");
@@ -89,8 +76,8 @@ const x = 1;
 // NOTE: important design decision
 const x = 1;
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("NOTE");
@@ -103,8 +90,8 @@ const x = 1;
  */
 const x = 1;
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("TODO");
@@ -117,8 +104,8 @@ const x = 1;
  */
 function foo() {}
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("TODO");
@@ -130,8 +117,8 @@ function foo() {}
 def foo():
     pass
 `;
-      const filePath = createTempFile("test.py", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.py", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(1);
       expect(result[0].type).toBe("TODO");
@@ -141,8 +128,8 @@ def foo():
       const content = `
 const message = "TODO: buy milk";
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(0);
     });
@@ -154,8 +141,8 @@ const y = 2;
 // TODO: fix this
 const z = 3;
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result[0].line).toBe(4);
     });
@@ -166,8 +153,8 @@ const z = 3;
 // FIXME: second
 // HACK: third
 `;
-      const filePath = createTempFile("test.ts", content);
-      const result = scanner.scanFile(filePath);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
+      const result = client.scanFile(filePath);
 
       expect(result.length).toBe(3);
     });
@@ -175,41 +162,41 @@ const z = 3;
 
   describe("scanDirectory", () => {
     it("should scan all files in directory", () => {
-      createTempFile("file1.ts", "// TODO: task 1");
-      createTempFile("file2.ts", "// FIXME: bug 1");
-      createTempFile("file3.py", "# HACK: workaround");
+      createTempFile(tmpDir, "file1.ts", "// TODO: task 1");
+      createTempFile(tmpDir, "file2.ts", "// FIXME: bug 1");
+      createTempFile(tmpDir, "file3.py", "# HACK: workaround");
 
-      const result = scanner.scanDirectory(tmpDir);
+      const result = client.scanDirectory(tmpDir);
 
       expect(result.items.length).toBe(3);
     });
 
     it("should skip node_modules", () => {
-      createTempFile("src/file.ts", "// TODO: task 1");
-      createTempFile("node_modules/lib/file.ts", "// TODO: should be skipped");
+      createTempFile(tmpDir, "src/file.ts", "// TODO: task 1");
+      createTempFile(tmpDir, "node_modules/lib/file.ts", "// TODO: should be skipped");
 
-      const result = scanner.scanDirectory(tmpDir);
+      const result = client.scanDirectory(tmpDir);
 
       expect(result.items.length).toBe(1);
       expect(result.items[0].file).not.toContain("node_modules");
     });
 
     it("should group items by type", () => {
-      createTempFile("file1.ts", "// TODO: task 1");
-      createTempFile("file2.ts", "// TODO: task 2");
-      createTempFile("file3.ts", "// FIXME: bug 1");
+      createTempFile(tmpDir, "file1.ts", "// TODO: task 1");
+      createTempFile(tmpDir, "file2.ts", "// TODO: task 2");
+      createTempFile(tmpDir, "file3.ts", "// FIXME: bug 1");
 
-      const result = scanner.scanDirectory(tmpDir);
+      const result = client.scanDirectory(tmpDir);
 
       expect(result.byType.get("TODO")?.length).toBe(2);
       expect(result.byType.get("FIXME")?.length).toBe(1);
     });
 
     it("should group items by file", () => {
-      createTempFile("file1.ts", "// TODO: task 1\n// FIXME: bug 1");
-      createTempFile("file2.ts", "// TODO: task 2");
+      createTempFile(tmpDir, "file1.ts", "// TODO: task 1\n// FIXME: bug 1");
+      createTempFile(tmpDir, "file2.ts", "// TODO: task 2");
 
-      const result = scanner.scanDirectory(tmpDir);
+      const result = client.scanDirectory(tmpDir);
 
       const file1Items = [...result.byFile.entries()].find(([k]) => k.includes("file1.ts"));
       expect(file1Items?.[1].length).toBe(2);
@@ -219,7 +206,7 @@ const z = 3;
   describe("formatResult", () => {
     it("should return empty string for no results", () => {
       const result = { items: [], byType: new Map(), byFile: new Map() };
-      expect(scanner.formatResult(result)).toBe("");
+      expect(client.formatResult(result)).toBe("");
     });
 
     it("should format results with counts", () => {
@@ -232,7 +219,7 @@ const z = 3;
         byFile: new Map([["test.ts", [{ type: "TODO" as const, message: "task 1", file: "test.ts", line: 1, column: 0 }]]]),
       };
 
-      const formatted = scanner.formatResult(result);
+      const formatted = client.formatResult(result);
       expect(formatted).toContain("2 annotation(s)");
       expect(formatted).toContain("TODO");
       expect(formatted).toContain("FIXME");
@@ -248,7 +235,7 @@ const z = 3;
         byFile: new Map(),
       };
 
-      const formatted = scanner.formatResult(result);
+      const formatted = client.formatResult(result);
       // Check that FIXME line comes before TODO line in the sorted output
       const fixmeLineIndex = formatted.indexOf("🔴");
       const todoLineIndex = formatted.indexOf("📝");
@@ -268,7 +255,7 @@ const z = 3;
         byFile: new Map(),
       };
 
-      const formatted = scanner.formatResult(result);
+      const formatted = client.formatResult(result);
       expect(formatted).toContain("🔴"); // FIXME
       expect(formatted).toContain("🟠"); // HACK
       expect(formatted).toContain("🐛"); // BUG

@@ -1,32 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { JscpdClient } from "./jscpd-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 
 describe("JscpdClient", () => {
   let client: JscpdClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new JscpdClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-jscpd-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-jscpd-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isAvailable", () => {
@@ -60,8 +51,8 @@ function processData(data: number[]): number {
   return sum;
 }
 `;
-      createTempFile("file1.ts", duplicateCode);
-      createTempFile("file2.ts", duplicateCode);
+      createTempFile(tmpDir, "file1.ts", duplicateCode);
+      createTempFile(tmpDir, "file2.ts", duplicateCode);
 
       const result = client.scan(tmpDir, 3, 20); // Lower thresholds for test
 

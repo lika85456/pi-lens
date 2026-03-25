@@ -1,38 +1,30 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TestRunnerClient } from "./test-runner-client.js";
-import * as fs from "node:fs";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 import * as path from "node:path";
-import * as os from "node:os";
 
 describe("TestRunnerClient", () => {
   let client: TestRunnerClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new TestRunnerClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-test-runner-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-test-runner-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("detectRunner", () => {
     it("should detect vitest from config file", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
 
       const result = client.detectRunner(tmpDir);
       expect(result).not.toBeNull();
@@ -40,8 +32,8 @@ describe("TestRunnerClient", () => {
     });
 
     it("should detect jest from config file", () => {
-      createTempFile("jest.config.js", "module.exports = {}");
-      createTempFile("src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "jest.config.js", "module.exports = {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
 
       const result = client.detectRunner(tmpDir);
       expect(result).not.toBeNull();
@@ -49,8 +41,8 @@ describe("TestRunnerClient", () => {
     });
 
     it("should detect pytest from config file", () => {
-      createTempFile("pytest.ini", "[tool:pytest]");
-      createTempFile("src/app.py", "x = 1");
+      createTempFile(tmpDir, "pytest.ini", "[tool:pytest]");
+      createTempFile(tmpDir, "src/app.py", "x = 1");
 
       const result = client.detectRunner(tmpDir);
       expect(result).not.toBeNull();
@@ -59,8 +51,8 @@ describe("TestRunnerClient", () => {
 
     it("should detect runner from node_modules", () => {
       // Create a node_modules/vitest to simulate installed package
-      createTempFile("node_modules/vitest/package.json", "{}");
-      createTempFile("src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "node_modules/vitest/package.json", "{}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
 
       const result = client.detectRunner(tmpDir);
       // Should detect vitest from node_modules
@@ -68,9 +60,9 @@ describe("TestRunnerClient", () => {
     });
 
     it("should prefer vitest over jest when both exist", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("jest.config.js", "module.exports = {}");
-      createTempFile("src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "jest.config.js", "module.exports = {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
 
       const result = client.detectRunner(tmpDir);
       expect(result!.runner).toBe("vitest");
@@ -79,9 +71,9 @@ describe("TestRunnerClient", () => {
 
   describe("findTestFile", () => {
     it("should find test file with .test.ts suffix", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("src/app.ts", "export const app = {};");
-      createTempFile("src/app.test.ts", "describe('app', () => {});");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "src/app.test.ts", "describe('app', () => {});");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.ts"), tmpDir);
       expect(result).not.toBeNull();
@@ -90,9 +82,9 @@ describe("TestRunnerClient", () => {
     });
 
     it("should find test file with .spec.ts suffix", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("src/app.ts", "export const app = {};");
-      createTempFile("src/app.spec.ts", "describe('app', () => {});");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "src/app.spec.ts", "describe('app', () => {});");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.ts"), tmpDir);
       expect(result).not.toBeNull();
@@ -100,9 +92,9 @@ describe("TestRunnerClient", () => {
     });
 
     it("should find test file in __tests__ directory", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("src/app.ts", "export const app = {};");
-      createTempFile("src/__tests__/app.test.ts", "describe('app', () => {});");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "src/__tests__/app.test.ts", "describe('app', () => {});");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.ts"), tmpDir);
       expect(result).not.toBeNull();
@@ -110,9 +102,9 @@ describe("TestRunnerClient", () => {
     });
 
     it("should find test file in top-level tests/ directory", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("src/app.ts", "export const app = {};");
-      createTempFile("tests/app.test.ts", "describe('app', () => {});");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "tests/app.test.ts", "describe('app', () => {});");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.ts"), tmpDir);
       expect(result).not.toBeNull();
@@ -120,9 +112,9 @@ describe("TestRunnerClient", () => {
     });
 
     it("should find pytest test file with test_ prefix", () => {
-      createTempFile("pytest.ini", "[tool:pytest]");
-      createTempFile("src/app.py", "x = 1");
-      createTempFile("tests/test_app.py", "def test_app(): pass");
+      createTempFile(tmpDir, "pytest.ini", "[tool:pytest]");
+      createTempFile(tmpDir, "src/app.py", "x = 1");
+      createTempFile(tmpDir, "tests/test_app.py", "def test_app(): pass");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.py"), tmpDir);
       expect(result).not.toBeNull();
@@ -131,8 +123,8 @@ describe("TestRunnerClient", () => {
     });
 
     it("should return null when no test file found", () => {
-      createTempFile("vitest.config.ts", "export default {}");
-      createTempFile("src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "vitest.config.ts", "export default {}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.ts"), tmpDir);
       expect(result).toBeNull();
@@ -140,9 +132,9 @@ describe("TestRunnerClient", () => {
 
     it("should find test file even without config (if runner installed)", () => {
       // Simulate vitest installed in node_modules
-      createTempFile("node_modules/vitest/package.json", "{}");
-      createTempFile("src/app.ts", "export const app = {};");
-      createTempFile("src/app.test.ts", "describe('app', () => {});");
+      createTempFile(tmpDir, "node_modules/vitest/package.json", "{}");
+      createTempFile(tmpDir, "src/app.ts", "export const app = {};");
+      createTempFile(tmpDir, "src/app.test.ts", "describe('app', () => {});");
 
       const result = client.findTestFile(path.join(tmpDir, "src/app.ts"), tmpDir);
       // Should find the test file since vitest is "installed"

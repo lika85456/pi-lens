@@ -42,8 +42,7 @@
 		"@mariozechner/pi-coding-agent": "*"
 	},
 	"dependencies": {
-		"vscode-languageserver-protocol": "^3.17.5",
-		"vscode-languageserver-types": "^3.17.5"
+		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {
 		"@types/node": "^22.10.5",

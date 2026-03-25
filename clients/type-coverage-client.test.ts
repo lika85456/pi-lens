@@ -1,22 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TypeCoverageClient } from "./type-coverage-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { setupTestEnvironment } from "./test-utils.js";
 
 describe("TypeCoverageClient", () => {
   let client: TypeCoverageClient;
   let tmpDir: string;
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new TypeCoverageClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-typecoverage-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-typecoverage-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isAvailable", () => {

@@ -1,28 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { RuffClient } from "./ruff-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 
 describe("RuffClient", () => {
   let client: RuffClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new RuffClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-ruff-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-ruff-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isPythonFile", () => {
@@ -61,7 +56,7 @@ import sys
 
 x = 1
 `;
-      const filePath = createTempFile("test.py", content);
+      const filePath = createTempFile(tmpDir, "test.py", content);
       const result = client.checkFile(filePath);
 
       // Should detect unused imports
@@ -76,7 +71,7 @@ def foo():
     x = undefined_variable
     return x
 `;
-      const filePath = createTempFile("test.py", content);
+      const filePath = createTempFile(tmpDir, "test.py", content);
       const result = client.checkFile(filePath);
 
       // Should return an array
@@ -124,7 +119,7 @@ def foo():
       const content = `x=1
 y=2
 `;
-      const filePath = createTempFile("test.py", content);
+      const filePath = createTempFile(tmpDir, "test.py", content);
       const result = client.checkFormatting(filePath);
 
       // Should suggest formatting (missing spaces around =)
@@ -137,7 +132,7 @@ y=2
       const content = `x = 1
 y = 2
 `;
-      const filePath = createTempFile("test.py", content);
+      const filePath = createTempFile(tmpDir, "test.py", content);
       const result = client.checkFormatting(filePath);
 
       // Well-formatted code should return empty or minimal output

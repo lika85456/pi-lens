@@ -1,22 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { RustClient } from "./rust-client.js";
+import { setupTestEnvironment } from "./test-utils.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
 describe("RustClient", () => {
   let client: RustClient;
   let tmpDir: string;
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new RustClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-rust-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-rust-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isRustFile", () => {

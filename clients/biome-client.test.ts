@@ -1,32 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { BiomeClient } from "./biome-client.js";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
 describe("BiomeClient", () => {
   let client: BiomeClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new BiomeClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-biome-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-biome-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isSupportedFile", () => {
@@ -72,7 +65,7 @@ describe("BiomeClient", () => {
       const content = `
 const x: number = "string";
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
       const result = client.checkFile(filePath);
 
       // Should return an array (may or may not have issues)
@@ -138,7 +131,7 @@ const x: number = "string";
       if (!client.isAvailable()) return;
 
       const content = `const x={a:1,b:2}`;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
 
       const result = client.formatFile(filePath);
       expect(result.success).toBe(true);

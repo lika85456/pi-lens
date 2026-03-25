@@ -1,32 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { TypeScriptClient } from "./typescript-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 
 describe("TypeScriptClient", () => {
   let client: TypeScriptClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new TypeScriptClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-ts-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-ts-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isTypeScriptFile", () => {
@@ -51,7 +42,7 @@ describe("TypeScriptClient", () => {
       const content = `
 const x: number = "string"; // Type error
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
 
       client.updateFile(filePath, content);
       const diags = client.getDiagnostics(filePath);
@@ -65,7 +56,7 @@ const x: number = "string"; // Type error
 const x: number = 42;
 const y: string = "hello";
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
 
       client.updateFile(filePath, content);
       const diags = client.getDiagnostics(filePath);
@@ -81,7 +72,7 @@ function test() {
   return undefinedVariable;
 }
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
 
       client.updateFile(filePath, content);
       const diags = client.getDiagnostics(filePath);
@@ -96,7 +87,7 @@ function add(a: number, b: number): number {
 }
 const result = add(1);
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
 
       client.updateFile(filePath, content);
       const diags = client.getDiagnostics(filePath);

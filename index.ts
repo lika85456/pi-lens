@@ -217,12 +217,15 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("lens-booboo", {
 		description:
-			"Full codebase review: design smells, complexity, AI slop detection, TODOs, dead code, duplicates, type coverage. Usage: /lens-booboo [path]",
+			"Full codebase review: design smells, complexity, AI slop detection, TODOs, dead code, duplicates, type coverage. Results saved to .pi-lens/reviews/. Usage: /lens-booboo [path]",
 		handler: async (args, ctx) => {
 			const targetPath = args.trim() || ctx.cwd || process.cwd();
 			ctx.ui.notify("🔍 Running full codebase review...", "info");
 
 			const parts: string[] = [];
+			const fullReport: string[] = [];
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+			const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
 
 			// Part 1: Design smells via ast-grep
 			if (astGrepClient.isAvailable()) {
@@ -271,6 +274,7 @@ export default function (pi: ExtensionAPI) {
 						}
 
 						if (issues.length > 0) {
+							// UI summary (truncated)
 							let report = `[Design Smells] ${issues.length} issue(s) found:\n`;
 							for (const issue of issues.slice(0, 20)) {
 								report += `  L${issue.line}: ${issue.rule} — ${issue.message}\n`;
@@ -279,6 +283,14 @@ export default function (pi: ExtensionAPI) {
 								report += `  ... and ${issues.length - 20} more\n`;
 							}
 							parts.push(report);
+
+							// Full report for file
+							let fullSection = `## Design Smells\n\n**${issues.length} issue(s) found**\n\n`;
+							fullSection += "| Line | Rule | Message |\n|------|------|--------|\n";
+							for (const issue of issues) {
+								fullSection += `| ${issue.line} | ${issue.rule} | ${issue.message} |\n`;
+							}
+							fullReport.push(fullSection);
 						}
 					}
 				} catch (err: any) {
@@ -290,6 +302,7 @@ export default function (pi: ExtensionAPI) {
 			if (astGrepClient.isAvailable()) {
 				const similarGroups = await astGrepClient.findSimilarFunctions(targetPath, "typescript");
 				if (similarGroups.length > 0) {
+					// UI summary (truncated)
 					let report = `[Similar Functions] ${similarGroups.length} group(s) of structurally similar functions:\n`;
 					for (const group of similarGroups.slice(0, 5)) {
 						report += `  Pattern: ${group.functions.map(f => f.name).join(", ")}\n`;
@@ -301,6 +314,18 @@ export default function (pi: ExtensionAPI) {
 						report += `  ... and ${similarGroups.length - 5} more groups\n`;
 					}
 					parts.push(report);
+
+					// Full report for file
+					let fullSection = `## Similar Functions\n\n**${similarGroups.length} group(s) of structurally similar functions**\n\n`;
+					for (const group of similarGroups) {
+						fullSection += `### Pattern: ${group.functions.map(f => f.name).join(", ")}\n\n`;
+						fullSection += "| Function | File | Line |\n|----------|------|------|\n";
+						for (const fn of group.functions) {
+							fullSection += `| ${fn.name} | ${fn.file} | ${fn.line} |\n`;
+						}
+						fullSection += "\n";
+					}
+					fullReport.push(fullSection);
 				}
 			}
 
@@ -342,10 +367,13 @@ export default function (pi: ExtensionAPI) {
 				const avgCognitive = results.reduce((a, b) => a + b.cognitiveComplexity, 0) / results.length;
 				const avgCyclomatic = results.reduce((a, b) => a + b.cyclomaticComplexity, 0) / results.length;
 				const maxNesting = Math.max(...results.map(r => r.maxNestingDepth));
+				const maxCognitive = Math.max(...results.map(r => r.cognitiveComplexity));
+				const minMI = Math.min(...results.map(r => r.maintainabilityIndex));
 
 				const lowMI = results.filter(r => r.maintainabilityIndex < 60).sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
 				const highCognitive = results.filter(r => r.cognitiveComplexity > 20).sort((a, b) => b.cognitiveComplexity - a.cognitiveComplexity);
 
+				// UI summary (truncated)
 				let summary = `[Complexity] ${results.length} file(s) scanned\n`;
 				summary += `  Maintainability: ${avgMI.toFixed(1)} avg | Cognitive: ${avgCognitive.toFixed(1)} avg | Max Nesting: ${maxNesting} levels\n`;
 
@@ -371,38 +399,169 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				parts.push(summary);
+
+				// Full report for file
+				let fullSection = `## Complexity Metrics\n\n**${results.length} file(s) scanned**\n\n`;
+				fullSection += `### Summary\n\n`;
+				fullSection += `| Metric | Value |\n|--------|-------|\n`;
+				fullSection += `| Avg Maintainability Index | ${avgMI.toFixed(1)} |\n`;
+				fullSection += `| Min Maintainability Index | ${minMI.toFixed(1)} |\n`;
+				fullSection += `| Avg Cognitive Complexity | ${avgCognitive.toFixed(1)} |\n`;
+				fullSection += `| Max Cognitive Complexity | ${maxCognitive} |\n`;
+				fullSection += `| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n`;
+				fullSection += `| Max Nesting Depth | ${maxNesting} |\n`;
+				fullSection += `| Total Files | ${results.length} |\n\n`;
+
+				if (lowMI.length > 0) {
+					fullSection += `### Low Maintainability (MI < 60)\n\n`;
+					fullSection += `| File | MI | Cognitive | Cyclomatic | Nesting |\n`;
+					fullSection += `|------|-----|-----------|------------|--------|\n`;
+					for (const f of lowMI) {
+						fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
+					}
+					fullSection += "\n";
+				}
+
+				if (highCognitive.length > 0) {
+					fullSection += `### High Cognitive Complexity (> 20)\n\n`;
+					fullSection += `| File | Cognitive | MI | Cyclomatic | Nesting |\n`;
+					fullSection += `|------|-----------|-----|------------|--------|\n`;
+					for (const f of highCognitive) {
+						fullSection += `| ${f.filePath} | ${f.cognitiveComplexity} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
+					}
+					fullSection += "\n";
+				}
+
+				// All files table
+				fullSection += `### All Files\n\n`;
+				fullSection += `| File | MI | Cognitive | Cyclomatic | Nesting | Entropy |\n`;
+				fullSection += `|------|-----|-----------|------------|---------|--------|\n`;
+				for (const f of results.sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex)) {
+					fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} | ${f.codeEntropy.toFixed(2)} |\n`;
+				}
+				fullSection += "\n";
+
+				// AI slop indicators
+				if (aiSlopIssues.length > 0) {
+					fullSection += `### AI Slop Indicators\n\n`;
+					for (const issue of aiSlopIssues) {
+						fullSection += `${issue}\n`;
+					}
+					fullSection += "\n";
+				}
+
+				fullReport.push(fullSection);
 			}
 
 			// Part 4: TODOs scan
 			const todoResult = todoScanner.scanDirectory(targetPath);
 			const todoReport = todoScanner.formatResult(todoResult);
-			if (todoReport) parts.push(todoReport);
+			if (todoReport) {
+				parts.push(todoReport);
+				// Full TODO report
+				let fullSection = `## TODOs / Annotations\n\n`;
+				if (todoResult.items.length > 0) {
+					fullSection += `**${todoResult.items.length} annotation(s) found**\n\n`;
+					fullSection += `| Type | File | Line | Text |\n`;
+					fullSection += `|------|------|------|------|\n`;
+					for (const item of todoResult.items) {
+						fullSection += `| ${item.type} | ${item.file} | ${item.line} | ${item.message} |\n`;
+					}
+				} else {
+					fullSection += `No annotations found.\n`;
+				}
+				fullSection += "\n";
+				fullReport.push(fullSection);
+			}
 
 			// Part 5: Dead code (knip)
 			if (knipClient.isAvailable()) {
 				const knipResult = knipClient.analyze(targetPath);
 				const knipReport = knipClient.formatResult(knipResult);
-				if (knipReport) parts.push(knipReport);
+				if (knipReport) {
+					parts.push(knipReport);
+					// Full knip report
+					let fullSection = `## Dead Code (Knip)\n\n`;
+					if (knipResult.issues.length > 0) {
+						fullSection += `**${knipResult.issues.length} issue(s) found**\n\n`;
+						fullSection += `| Type | Name | File |\n`;
+						fullSection += `|------|------|------|\n`;
+						for (const issue of knipResult.issues) {
+							fullSection += `| ${issue.type} | ${issue.name} | ${issue.file ?? ""} |\n`;
+						}
+					} else {
+						fullSection += `No dead code issues found.\n`;
+					}
+					fullSection += "\n";
+					fullReport.push(fullSection);
+				}
 			}
 
 			// Part 6: Code duplication
 			if (jscpdClient.isAvailable()) {
 				const jscpdResult = jscpdClient.scan(targetPath);
 				const jscpdReport = jscpdClient.formatResult(jscpdResult);
-				if (jscpdReport) parts.push(jscpdReport);
+				if (jscpdReport) {
+					parts.push(jscpdReport);
+					// Full jscpd report
+					let fullSection = `## Code Duplication (jscpd)\n\n`;
+					if (jscpdResult.clones.length > 0) {
+						fullSection += `**${jscpdResult.clones.length} duplicate block(s) found** (${jscpdResult.duplicatedLines}/${jscpdResult.totalLines} lines, ${jscpdResult.percentage.toFixed(1)}%)\n\n`;
+						fullSection += `| File A | Line A | File B | Line B | Lines | Tokens |\n`;
+						fullSection += `|--------|--------|--------|--------|-------|--------|\n`;
+						for (const dup of jscpdResult.clones) {
+							fullSection += `| ${dup.fileA} | ${dup.startA} | ${dup.fileB} | ${dup.startB} | ${dup.lines} | ${dup.tokens} |\n`;
+						}
+					} else {
+						fullSection += `No duplicate code found.\n`;
+					}
+					fullSection += "\n";
+					fullReport.push(fullSection);
+				}
 			}
 
 			// Part 7: Type coverage
 			if (typeCoverageClient.isAvailable()) {
 				const tcResult = typeCoverageClient.scan(targetPath);
 				const tcReport = typeCoverageClient.formatResult(tcResult);
-				if (tcReport) parts.push(tcReport);
+				if (tcReport) {
+					parts.push(tcReport);
+					// Full type coverage report
+					let fullSection = `## Type Coverage\n\n`;
+					fullSection += `**${tcResult.percentage.toFixed(1)}% typed** (${tcResult.typed}/${tcResult.total} identifiers)\n\n`;
+					if (tcResult.untypedLocations.length > 0) {
+						fullSection += `### Untyped Identifiers\n\n`;
+						fullSection += `| File | Line | Column | Name |\n`;
+						fullSection += `|------|------|--------|------|\n`;
+						for (const u of tcResult.untypedLocations) {
+							fullSection += `| ${u.file} | ${u.line} | ${u.column} | ${u.name} |\n`;
+						}
+					}
+					fullSection += "\n";
+					fullReport.push(fullSection);
+				}
 			}
 
+			// Build and save full markdown report
+			const fs = require("node:fs");
+			if (!fs.existsSync(reviewDir)) {
+				fs.mkdirSync(reviewDir, { recursive: true });
+			}
+
+			const projectName = path.basename(process.cwd());
+			let mdReport = `# Code Review: ${projectName}\n\n`;
+			mdReport += `**Scanned:** ${new Date().toISOString()}\n\n`;
+			mdReport += `**Path:** \`${targetPath}\`\n\n`;
+			mdReport += `---\n\n`;
+			mdReport += fullReport.join("\n");
+
+			const reportPath = path.join(reviewDir, `booboo-${timestamp}.md`);
+			fs.writeFileSync(reportPath, mdReport, "utf-8");
+
 			if (parts.length === 0) {
-				ctx.ui.notify("✓ Code review clean", "info");
+				ctx.ui.notify("✓ Code review clean — saved to .pi-lens/reviews/", "info");
 			} else {
-				ctx.ui.notify(parts.join("\n\n"), "info");
+				ctx.ui.notify(`${parts.join("\n\n")}\n\n📄 Full report: ${reportPath}`, "info");
 			}
 		},
 	});

@@ -1,22 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { KnipClient } from "./knip-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { setupTestEnvironment } from "./test-utils.js";
 
 describe("KnipClient", () => {
   let client: KnipClient;
   let tmpDir: string;
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new KnipClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-knip-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-knip-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isAvailable", () => {

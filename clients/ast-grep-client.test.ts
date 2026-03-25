@@ -1,32 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { AstGrepClient } from "./ast-grep-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 
 describe("AstGrepClient", () => {
   let client: AstGrepClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new AstGrepClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-astgrep-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-astgrep-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
   });
 
   describe("isAvailable", () => {
@@ -50,7 +37,7 @@ describe("AstGrepClient", () => {
 var x = 1;
 var y = 2;
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
       const result = client.scanFile(filePath);
 
       // Should detect var usage
@@ -63,7 +50,7 @@ var y = 2;
       const content = `
 console.log("test");
 `;
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
       const result = client.scanFile(filePath);
 
       // May detect console.log depending on rules
@@ -126,7 +113,7 @@ console.log("test");
     it("should search for patterns", async () => {
       if (!client.isAvailable()) return;
 
-      createTempFile("test.ts", `
+      createTempFile(tmpDir, "test.ts", `
 function test() {
   console.log("hello");
 }
@@ -140,7 +127,7 @@ function test() {
     it("should return empty matches for no match", async () => {
       if (!client.isAvailable()) return;
 
-      createTempFile("test.ts", `
+      createTempFile(tmpDir, "test.ts", `
 const x = 1;
 `);
 

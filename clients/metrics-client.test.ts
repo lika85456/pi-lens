@@ -1,28 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MetricsClient } from "./metrics-client.js";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
 describe("MetricsClient", () => {
   let client: MetricsClient;
   let tmpDir: string;
-
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new MetricsClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-metrics-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-metrics-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("calculateEntropy", () => {
@@ -56,7 +53,7 @@ describe("MetricsClient", () => {
   describe("recordBaseline", () => {
     it("should record baseline for existing file", () => {
       const content = "const x = 1;\nconst y = 2;";
-      const filePath = createTempFile("test.ts", content);
+      const filePath = createTempFile(tmpDir, "test.ts", content);
 
       client.recordBaseline(filePath);
 
@@ -74,7 +71,7 @@ describe("MetricsClient", () => {
     it("should not overwrite existing baseline", () => {
       const content1 = "const x = 1;\n";
       const content2 = "const x = 1;\nconst y = 2;\nconst z = 3;\n";
-      const filePath = createTempFile("test.ts", content1);
+      const filePath = createTempFile(tmpDir, "test.ts", content1);
 
       client.recordBaseline(filePath);
 
@@ -92,7 +89,7 @@ describe("MetricsClient", () => {
   describe("recordWrite", () => {
     it("should track agent-written lines", () => {
       const original = "const x = 1;\n";
-      const filePath = createTempFile("test.ts", original);
+      const filePath = createTempFile(tmpDir, "test.ts", original);
 
       client.recordBaseline(filePath);
 
@@ -105,8 +102,8 @@ describe("MetricsClient", () => {
     });
 
     it("should calculate AI code ratio", () => {
-      const file1 = createTempFile("file1.ts", "original content line 1\noriginal content line 2\n");
-      const file2 = createTempFile("file2.ts", "original\n");
+      const file1 = createTempFile(tmpDir, "file1.ts", "original content line 1\noriginal content line 2\n");
+      const file2 = createTempFile(tmpDir, "file2.ts", "original\n");
 
       client.recordBaseline(file1);
       client.recordBaseline(file2);
@@ -126,7 +123,7 @@ describe("MetricsClient", () => {
   describe("getEntropyDeltas", () => {
     it("should track entropy changes", () => {
       const simple = "const x = 1;\n";
-      const filePath = createTempFile("test.ts", simple);
+      const filePath = createTempFile(tmpDir, "test.ts", simple);
 
       client.recordBaseline(filePath);
 
@@ -158,7 +155,7 @@ function complex(a: number, b: number, c: number): number {
     });
 
     it("should format AI code ratio when files are modified", () => {
-      const filePath = createTempFile("test.ts", "original\n");
+      const filePath = createTempFile(tmpDir, "test.ts", "original\n");
       client.recordBaseline(filePath);
 
       const modified = "original\nnew line 1\nnew line 2\n";
@@ -173,7 +170,7 @@ function complex(a: number, b: number, c: number): number {
 
   describe("reset", () => {
     it("should clear all tracked data", () => {
-      const filePath = createTempFile("test.ts", "content\n");
+      const filePath = createTempFile(tmpDir, "test.ts", "content\n");
       client.recordBaseline(filePath);
 
       client.reset();

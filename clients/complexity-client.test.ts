@@ -1,31 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ComplexityClient } from "./complexity-client.js";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as os from "node:os";
+import { createTempFile, setupTestEnvironment } from "./test-utils.js";
 
 describe("ComplexityClient", () => {
-  const client = new ComplexityClient();
+  let client: ComplexityClient;
   let tmpDir: string;
+  let cleanup: () => void;
 
-  // Create temp dir for test files
-  function createTempFile(name: string, content: string): string {
-    const filePath = path.join(tmpDir, name);
-    fs.writeFileSync(filePath, content);
-    return filePath;
-  }
+  beforeEach(() => {
+    client = new ComplexityClient();
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-complexity-test-"));
+  });
 
-  // Setup before each test
-  function setup() {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-test-"));
-  }
-
-  // Cleanup after each test
-  function cleanup() {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
-  }
+  afterEach(() => {
+    cleanup();
+  });
 
   describe("isSupportedFile", () => {
     it("should support TypeScript files", () => {
@@ -54,14 +43,14 @@ describe("ComplexityClient", () => {
     });
 
     it("should analyze a simple function", () => {
-      setup();
+      
       try {
         const content = `
 function greet(name: string): string {
   return "Hello, " + name;
 }
 `;
-        const filePath = createTempFile("simple.ts", content);
+        const filePath = createTempFile(tmpDir, "simple.ts", content);
         const result = client.analyzeFile(filePath);
 
         expect(result).not.toBeNull();
@@ -70,12 +59,12 @@ function greet(name: string): string {
         expect(result!.cognitiveComplexity).toBe(0);
         expect(result!.maxNestingDepth).toBeGreaterThanOrEqual(1);
       } finally {
-        cleanup();
+  
       }
     });
 
     it("should detect if statements in cyclomatic complexity", () => {
-      setup();
+      
       try {
         const content = `
 function check(x: number): string {
@@ -88,38 +77,38 @@ function check(x: number): string {
   }
 }
 `;
-        const filePath = createTempFile("if-test.ts", content);
+        const filePath = createTempFile(tmpDir, "if-test.ts", content);
         const result = client.analyzeFile(filePath);
 
         expect(result).not.toBeNull();
         // 1 base + 1 if + 1 else-if = 3
         expect(result!.cyclomaticComplexity).toBeGreaterThanOrEqual(3);
       } finally {
-        cleanup();
+  
       }
     });
 
     it("should calculate maintainability index", () => {
-      setup();
+      
       try {
         const content = `
 function simple(): number {
   return 42;
 }
 `;
-        const filePath = createTempFile("mi-test.ts", content);
+        const filePath = createTempFile(tmpDir, "mi-test.ts", content);
         const result = client.analyzeFile(filePath);
 
         expect(result).not.toBeNull();
         expect(result!.maintainabilityIndex).toBeGreaterThan(0);
         expect(result!.maintainabilityIndex).toBeLessThanOrEqual(100);
       } finally {
-        cleanup();
+  
       }
     });
 
     it("should detect deep nesting", () => {
-      setup();
+      
       try {
         const content = `
 function deepNest(arr: number[][][][]): number {
@@ -137,18 +126,18 @@ function deepNest(arr: number[][][][]): number {
   return 0;
 }
 `;
-        const filePath = createTempFile("nesting-test.ts", content);
+        const filePath = createTempFile(tmpDir, "nesting-test.ts", content);
         const result = client.analyzeFile(filePath);
 
         expect(result).not.toBeNull();
         expect(result!.maxNestingDepth).toBeGreaterThanOrEqual(5);
       } finally {
-        cleanup();
+  
       }
     });
 
     it("should count cognitive complexity with nesting penalty", () => {
-      setup();
+      
       try {
         const content = `
 function nested(x: number, y: number): number {
@@ -162,37 +151,37 @@ function nested(x: number, y: number): number {
   return 0;
 }
 `;
-        const filePath = createTempFile("cognitive-test.ts", content);
+        const filePath = createTempFile(tmpDir, "cognitive-test.ts", content);
         const result = client.analyzeFile(filePath);
 
         expect(result).not.toBeNull();
         // Cognitive: 1 (if) + 2 (nested if) + 3 (deeply nested if) = 6
         expect(result!.cognitiveComplexity).toBeGreaterThanOrEqual(6);
       } finally {
-        cleanup();
+  
       }
     });
 
     it("should calculate halstead volume", () => {
-      setup();
+      
       try {
         const content = `
 function add(a: number, b: number): number {
   return a + b;
 }
 `;
-        const filePath = createTempFile("halstead-test.ts", content);
+        const filePath = createTempFile(tmpDir, "halstead-test.ts", content);
         const result = client.analyzeFile(filePath);
 
         expect(result).not.toBeNull();
         expect(result!.halsteadVolume).toBeGreaterThan(0);
       } finally {
-        cleanup();
+  
       }
     });
 
     it("should measure function length", () => {
-      setup();
+      
       try {
         const shortContent = `function short() { return 1; }`;
         const longContent = `
@@ -210,15 +199,15 @@ function long(): number {
   return a + b + c + d + e + f + g + h + i + j;
 }
 `;
-        const shortPath = createTempFile("short.ts", shortContent);
-        const longPath = createTempFile("long.ts", longContent);
+        const shortPath = createTempFile(tmpDir, "short.ts", shortContent);
+        const longPath = createTempFile(tmpDir, "long.ts", longContent);
 
         const shortResult = client.analyzeFile(shortPath);
         const longResult = client.analyzeFile(longPath);
 
         expect(shortResult!.maxFunctionLength).toBeLessThan(longResult!.maxFunctionLength);
       } finally {
-        cleanup();
+  
       }
     });
   });

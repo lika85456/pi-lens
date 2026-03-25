@@ -3,6 +3,7 @@ node_modules/
 
 # pi-lens internal
 .pi-lens/metrics/
+.pi-lens/reviews/
 
 # Build artifacts
 target/

@@ -1,22 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { GoClient } from "./go-client.js";
+import { setupTestEnvironment } from "./test-utils.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 
 describe("GoClient", () => {
   let client: GoClient;
   let tmpDir: string;
+  let cleanup: () => void;
 
   beforeEach(() => {
     client = new GoClient();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-go-test-"));
+    ({ tmpDir, cleanup } = setupTestEnvironment("pi-lens-go-test-"));
   });
 
   afterEach(() => {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    cleanup();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe("isGoFile", () => {
