@@ -13,9 +13,7 @@ export function createTempFile(
 ): string {
 	const filePath = path.join(tmpDir, name);
 	const dir = path.dirname(filePath);
-	if (!fs.existsSync(dir)) {
-		fs.mkdirSync(dir, { recursive: true });
-	}
+	fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(filePath, content);
 	return filePath;
 }
@@ -30,8 +28,8 @@ export function setupTestEnvironment(prefix: string): {
 } {
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 	const cleanup = () => {
-		if (tmpDir && fs.existsSync(tmpDir)) {
-			fs.rmSync(tmpDir, { recursive: true });
+		if (tmpDir) {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
 		}
 	};
 	return { tmpDir, cleanup };

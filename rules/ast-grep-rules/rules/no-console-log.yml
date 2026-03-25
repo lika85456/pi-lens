@@ -5,5 +5,6 @@ severity: warning
 note: |
   console.log statements should not be left in production code.
   Use a proper logging framework or remove before committing.
+  Grade 2.8 — low complexity, improved production quality.
 rule:
   pattern: console.log($$$ARGS)

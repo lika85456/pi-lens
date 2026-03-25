@@ -236,35 +236,33 @@ export class TestRunnerClient {
 			}
 		}
 
-		// Priority 2: package.json dependencies
 		const packageJsonPath = path.join(cwd, "package.json");
-		if (fs.existsSync(packageJsonPath)) {
-			try {
-				const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-				const allDeps = {
-					...pkg.dependencies,
-					...pkg.devDependencies,
-				};
+		try {
+			const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+			const allDeps = {
+				...pkg.dependencies,
+				...pkg.devDependencies,
+			};
 
-				// Check for vitest first (more specific than jest)
-				if (allDeps.vitest) {
-					this.log("Detected vitest in package.json");
-					this.availableRunners.set(`${cwd}:vitest:config`, true);
-					return { runner: "vitest", config: RUNNERS.vitest };
-				}
-				if (allDeps.jest) {
-					this.log("Detected jest in package.json");
-					this.availableRunners.set(`${cwd}:jest:config`, true);
-					return { runner: "jest", config: RUNNERS.jest };
-				}
-				if (allDeps.pytest || allDeps["pytest-cov"]) {
-					this.log("Detected pytest in package.json (unusual)");
-					this.availableRunners.set(`${cwd}:pytest:config`, true);
-					return { runner: "pytest", config: RUNNERS.pytest };
-				}
-			} catch (err) { void err;
-				// package.json parse error
+			// Check for vitest first (more specific than jest)
+			if (allDeps.vitest) {
+				this.log("Detected vitest in package.json");
+				this.availableRunners.set(`${cwd}:vitest:config`, true);
+				return { runner: "vitest", config: RUNNERS.vitest };
 			}
+			if (allDeps.jest) {
+				this.log("Detected jest in package.json");
+				this.availableRunners.set(`${cwd}:jest:config`, true);
+				return { runner: "jest", config: RUNNERS.jest };
+			}
+			if (allDeps.pytest || allDeps["pytest-cov"]) {
+				this.log("Detected pytest in package.json (unusual)");
+				this.availableRunners.set(`${cwd}:pytest:config`, true);
+				return { runner: "pytest", config: RUNNERS.pytest };
+			}
+		} catch (err) {
+			void err;
+			// package.json parse error or file not found
 		}
 
 		// Priority 3: Check node_modules for installed packages
@@ -280,7 +278,6 @@ export class TestRunnerClient {
 			}
 		}
 
-		// Priority 4: Non-JS/Python runners (check config files that don't need package.json)
 		for (const name of ["go", "cargo", "dotnet", "gradle", "maven"]) {
 			const config = RUNNERS[name];
 			const found = config.configFiles.some((cf) => {
@@ -291,7 +288,7 @@ export class TestRunnerClient {
 						return files.some((f) =>
 							new RegExp(cf.replace(/\*/g, ".*")).test(f),
 						);
-					} catch (err) { void err;
+					} catch {
 						return false;
 					}
 				}
@@ -302,6 +299,7 @@ export class TestRunnerClient {
 				return { runner: name, config };
 			}
 		}
+
 
 		// Priority 5: Check if pytest is available globally (for Python)
 		try {
@@ -351,24 +349,23 @@ export class TestRunnerClient {
 				const pattern = testExt.replace("*", basename);
 				const searchDir = testDir === "." ? dir : path.join(cwd, testDir);
 
-				if (fs.existsSync(searchDir)) {
-					try {
-						const files = fs.readdirSync(searchDir);
-						const match = files.find(
-							(f) =>
-								f === pattern ||
-								(f.startsWith("test_") &&
-									f.endsWith(".py") &&
-									f.includes(basename)),
-						);
-						if (match) {
-							const testPath = path.join(searchDir, match);
-							this.log(`Found test file: ${testPath}`);
-							return { testFile: testPath, runner: detected.runner };
-						}
-					} catch (err) { void err;
-						// Directory not readable
-					}
+				let files;
+				try {
+					files = fs.readdirSync(searchDir);
+				} catch (err) {
+					void err;
+					continue;
+				}
+
+				const match = files.find(
+					(f) =>
+						f === pattern ||
+						(f.startsWith("test_") && f.endsWith(".py") && f.includes(basename)),
+				);
+				if (match) {
+					const testPath = path.join(searchDir, match);
+					this.log(`Found test file: ${testPath}`);
+					return { testFile: testPath, runner: detected.runner };
 				}
 			} else {
 				// Exact pattern match (jest/vitest style)

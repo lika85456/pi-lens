@@ -27,3 +27,4 @@ rule:
 note: |
   Performing an await as part of each operation is an indication that
   the program is not taking full advantage of the parallelization benefits of async/await.
+  Grade 3.3 — moderate complexity, significant performance gain.

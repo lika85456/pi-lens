@@ -123,12 +123,13 @@ export class TypeScriptClient {
 				const normalized = fileName.replace(/\\/g, "/");
 				const content = this.fileContents.get(normalized);
 				if (content) return ts.ScriptSnapshot.fromString(content);
-				if (fs.existsSync(fileName)) {
+				try {
 					return ts.ScriptSnapshot.fromString(
 						fs.readFileSync(fileName, "utf-8"),
 					);
+				} catch {
+					return undefined;
 				}
-				return undefined;
 			},
 			getCurrentDirectory: () => process.cwd(),
 			getCompilationSettings: () => this.compilerOptions,
@@ -195,12 +196,14 @@ export class TypeScriptClient {
 	 */
 	ensureFile(filePath: string): void {
 		const normalized = this.normalizePath(filePath);
-		if (fs.existsSync(filePath)) {
+		try {
 			const diskContent = fs.readFileSync(filePath, "utf-8");
 			const cachedContent = this.fileContents.get(normalized);
 			if (cachedContent !== diskContent) {
 				this.updateFile(filePath, diskContent);
 			}
+		} catch (err) {
+			void err;
 		}
 	}
 

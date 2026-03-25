@@ -5,6 +5,7 @@ severity: warning
 note: |
   Using await inside Promise.all forces sequential execution instead of
   parallel. Map to an array of promises and pass to Promise.all.
+  Grade 3.2 — moderate complexity, significant performance gain.
 rule:
   all:
     - kind: call_expression

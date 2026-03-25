@@ -5,6 +5,7 @@ severity: error
 note: |
   eval() executes strings as code which can lead to security vulnerabilities
   and performance issues. Use safer alternatives like JSON.parse() for data.
+  Grade 3.5 — high risk, critical security issue.
 rule:
   any:
     - pattern: eval($$$ARGS)

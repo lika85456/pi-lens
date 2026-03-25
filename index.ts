@@ -379,10 +379,12 @@ export default function (pi: ExtensionAPI) {
 			const aiSlopIssues: string[] = [];
 
 			const scanDir = (dir: string) => {
-				if (!require("node:fs").existsSync(dir)) return;
-				const entries = require("node:fs").readdirSync(dir, {
-					withFileTypes: true,
-				});
+				let entries: nodeFs.Dirent[];
+				try {
+					entries = nodeFs.readdirSync(dir, { withFileTypes: true });
+				} catch {
+					return;
+				}
 
 				for (const entry of entries) {
 					const fullPath = path.join(dir, entry.name);
@@ -619,9 +621,7 @@ export default function (pi: ExtensionAPI) {
 
 			// Build and save full markdown report
 			const fs = require("node:fs");
-			if (!fs.existsSync(reviewDir)) {
-				fs.mkdirSync(reviewDir, { recursive: true });
-			}
+			fs.mkdirSync(reviewDir, { recursive: true });
 
 			const projectName = path.basename(process.cwd());
 			let mdReport = `# Code Review: ${projectName}\n\n`;
@@ -736,8 +736,7 @@ export default function (pi: ExtensionAPI) {
 				counts: {},
 			};
 			try {
-				if (fs.existsSync(sessionFile))
-					session = JSON.parse(fs.readFileSync(sessionFile, "utf-8"));
+				session = JSON.parse(fs.readFileSync(sessionFile, "utf-8"));
 			} catch (e) {
 				dbg(`fix-session load failed: ${e}`);
 			}
@@ -1119,8 +1118,12 @@ export default function (pi: ExtensionAPI) {
 				[];
 
 			const scanDir = (dir: string) => {
-				if (!fs.existsSync(dir)) return;
-				const entries = fs.readdirSync(dir, { withFileTypes: true });
+				let entries: nodeFs.Dirent[];
+				try {
+					entries = nodeFs.readdirSync(dir, { withFileTypes: true });
+				} catch {
+					return;
+				}
 
 				for (const entry of entries) {
 					const fullPath = path.join(dir, entry.name);
@@ -1317,9 +1320,7 @@ export default function (pi: ExtensionAPI) {
 			report += `\n`;
 
 			// Save report
-			if (!fs.existsSync(reviewDir)) {
-				fs.mkdirSync(reviewDir, { recursive: true });
-			}
+			fs.mkdirSync(reviewDir, { recursive: true });
 
 			const reportPath = path.join(reviewDir, `metrics-${timestamp}.md`);
 			fs.writeFileSync(reportPath, report, "utf-8");
@@ -1362,10 +1363,12 @@ export default function (pi: ExtensionAPI) {
 				let skipped = 0;
 
 				const formatDir = (dir: string) => {
-					if (!require("node:fs").existsSync(dir)) return;
-					const entries = require("node:fs").readdirSync(dir, {
-						withFileTypes: true,
-					});
+					let entries: nodeFs.Dirent[];
+					try {
+						entries = nodeFs.readdirSync(dir, { withFileTypes: true });
+					} catch {
+						return;
+					}
 
 					for (const entry of entries) {
 						const fullPath = path.join(dir, entry.name);
@@ -1775,9 +1778,11 @@ export default function (pi: ExtensionAPI) {
 
 		// Record write for metrics (silent tracking)
 		const fs = require("node:fs") as typeof import("node:fs");
-		if (fs.existsSync(filePath)) {
+		try {
 			const content = fs.readFileSync(filePath, "utf-8");
 			metricsClient.recordWrite(filePath, content);
+		} catch (err) {
+			void err;
 		}
 
 		let lspOutput = sessionDump ? `\n\n${sessionDump}` : "";
@@ -1785,8 +1790,10 @@ export default function (pi: ExtensionAPI) {
 
 		// TypeScript LSP diagnostics
 		if (!pi.getFlag("no-lsp") && tsClient.isTypeScriptFile(filePath)) {
-			if (fs.existsSync(filePath)) {
+			try {
 				tsClient.updateFile(filePath, fs.readFileSync(filePath, "utf-8"));
+			} catch (err) {
+				void err;
 			}
 
 			const diags = tsClient.getDiagnostics(filePath);
