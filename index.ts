@@ -487,6 +487,7 @@ export default function (pi: ExtensionAPI) {
 	let sessionSummary: string | null = null;
 	let sessionMetricsShown = false;
 	let cachedJscpdClones: import("./clients/jscpd-client.js").DuplicateClone[] = [];
+	let cachedExports = new Map<string, string>(); // function name -> file path
 	const complexityBaselines: Map<string, import("./clients/complexity-client.js").FileComplexity> = new Map();
 
 	// --- Events ---
@@ -564,6 +565,15 @@ export default function (pi: ExtensionAPI) {
 			if (tcReport) parts.push(tcReport);
 		} else {
 			dbg(`session_start type-coverage: not available`);
+		}
+
+		// Scan for exported functions (cached for duplicate detection on write)
+		if (astGrepClient.isAvailable()) {
+			const exports = await astGrepClient.scanExports(cwd, "typescript");
+			dbg(`session_start exports scan: ${exports.size} functions found`);
+			for (const [name, file] of exports) {
+				cachedExports.set(name, file);
+			}
 		}
 
 		if (parts.length > 0) {
@@ -749,32 +759,35 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Biome: lint + format check
+		// Biome: lint only (formatting noise filtered out, use /lens-format)
 		const biomeAvailable = biomeClient.isAvailable();
 		dbg(
 			`  biome available: ${biomeAvailable}, supported: ${biomeClient.isSupportedFile(filePath)}, no-biome: ${pi.getFlag("no-biome")}`,
 		);
 		if (!pi.getFlag("no-biome") && biomeClient.isSupportedFile(filePath)) {
 			const biomeDiags = biomeClient.checkFile(filePath);
-			dbg(`  biome diags: ${biomeDiags.length}`);
-			if (pi.getFlag("autofix-biome") && biomeDiags.length > 0) {
+			// Filter out format-only issues (noise for agent, use /lens-format)
+			const lintDiags = biomeDiags.filter((d) => d.category === "lint" || d.severity === "error");
+			dbg(`  biome diags: ${biomeDiags.length} total, ${lintDiags.length} lint-only`);
+			if (pi.getFlag("autofix-biome") && lintDiags.length > 0) {
 				// Always attempt fix — let Biome decide what it can do
 				const fixResult = biomeClient.fixFile(filePath);
 				if (fixResult.success && fixResult.changed) {
 					lspOutput += `\n\n[Biome] Auto-fixed ${fixResult.fixed} issue(s) — file updated on disk`;
 					const remaining = biomeClient.checkFile(filePath);
-					if (remaining.length > 0) {
-						lspOutput += `\n\n${biomeClient.formatDiagnostics(remaining, filePath)}`;
+					const remainingLint = remaining.filter((d) => d.category === "lint" || d.severity === "error");
+					if (remainingLint.length > 0) {
+						lspOutput += `\n\n${biomeClient.formatDiagnostics(remainingLint, filePath)}`;
 					} else {
 						lspOutput += `\n\n[Biome] ✓ All issues resolved`;
 					}
 				} else {
 					// Nothing fixable — show diagnostics as-is
-					lspOutput += `\n\n${biomeClient.formatDiagnostics(biomeDiags, filePath)}`;
+					lspOutput += `\n\n${biomeClient.formatDiagnostics(lintDiags, filePath)}`;
 				}
-			} else if (biomeDiags.length > 0) {
-				const fixable = biomeDiags.filter((d) => d.fixable);
-				lspOutput += `\n\n${biomeClient.formatDiagnostics(biomeDiags, filePath)}`;
+			} else if (lintDiags.length > 0) {
+				const fixable = lintDiags.filter((d) => d.fixable);
+				lspOutput += `\n\n${biomeClient.formatDiagnostics(lintDiags, filePath)}`;
 				if (fixable.length > 0) {
 					lspOutput += `\n\n[Biome] ${fixable.length} fixable — enable --autofix-biome flag or run /lens-format`;
 				}
@@ -844,6 +857,36 @@ export default function (pi: ExtensionAPI) {
 					dupReport += `  ... and ${fileClones.length - 3} more\n`;
 				}
 				lspOutput += `\n\n${dupReport}`;
+			}
+		}
+
+		// Check for duplicate exports (function already exists elsewhere)
+		if (cachedExports.size > 0 && /\.(ts|tsx|js|jsx)$/.test(filePath)) {
+			try {
+				const newExports = await astGrepClient.scanExports(filePath, "typescript");
+				const dupes: string[] = [];
+				for (const [name, file] of newExports) {
+					if (cachedExports.has(name)) {
+						const existingFile = cachedExports.get(name);
+						if (existingFile && path.resolve(existingFile) !== path.resolve(filePath)) {
+							dupes.push(`${name} (already in ${path.basename(existingFile)})`);
+						}
+					}
+				}
+				if (dupes.length > 0) {
+					dbg(`  duplicate exports: ${dupes.length} found`);
+					let exportReport = `[Duplicate Exports] ${dupes.length} function(s) already exist:\n`;
+					for (const dupe of dupes.slice(0, 5)) {
+						exportReport += `  ${dupe}\n`;
+					}
+					lspOutput += `\n\n${exportReport}`;
+				}
+				// Update cache with new exports
+				for (const [name, file] of newExports) {
+					cachedExports.set(name, file);
+				}
+			} catch {
+				// ast-grep not available, skip
 			}
 		}
 

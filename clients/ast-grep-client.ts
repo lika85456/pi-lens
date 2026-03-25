@@ -200,6 +200,78 @@ export class AstGrepClient {
     return { matches: result.matches, applied: apply, error: result.error };
   }
 
+  /**
+   * Scan for exported function names in a directory
+   */
+  async scanExports(dir: string, lang: string = "typescript"): Promise<Map<string, string>> {
+    console.log(`[scanExports] Starting scan of ${dir}`);
+    const exports = new Map<string, string>();
+
+    if (!this.isAvailable()) {
+      console.log(`[scanExports] ast-grep not available`);
+      return exports;
+    }
+
+    const tmpDir = require("node:os").tmpdir();
+    const ts = Date.now();
+    const ruleDir = require("node:path").join(tmpDir, `pi-lens-exports-${ts}`);
+    const rulesSubdir = require("node:path").join(ruleDir, "rules");
+    const ruleFile = require("node:path").join(rulesSubdir, "find-functions.yml");
+    const configFile = require("node:path").join(ruleDir, ".sgconfig.yml");
+
+    require("node:fs").mkdirSync(rulesSubdir, { recursive: true });
+
+    require("node:fs").writeFileSync(configFile, `ruleDirs:\n  - ./rules\n`);
+    require("node:fs").writeFileSync(ruleFile, `id: find-functions
+language: ${lang}
+rule:
+  kind: function_declaration
+severity: info
+message: found
+`);
+
+    try {
+      const result = spawnSync("npx", [
+        "sg", "scan",
+        "--config", configFile,
+        "--json",
+        dir,
+      ], {
+        encoding: "utf-8",
+        timeout: 15000,
+        shell: true,
+      });
+
+      console.log(`[scanExports] status: ${result.status}, stdout length: ${result.stdout?.length || 0}`);
+
+      const output = result.stdout || result.stderr || "";
+      this.log(`scanExports output length: ${output.length}`);
+      if (output.trim()) {
+        try {
+          const items = JSON.parse(output);
+          const matches = Array.isArray(items) ? items : [items];
+          console.log(`[scanExports] parsed ${matches.length} matches`);
+          for (const item of matches) {
+            const text = item.text || "";
+            const nameMatch = text.match(/function\s+(\w+)/);
+            if (nameMatch && nameMatch[1]) {
+              this.log(`scanExports found: ${nameMatch[1]} in ${item.file}`);
+              exports.set(nameMatch[1], item.file);
+            }
+          }
+        } catch (e) {
+          this.log(`scanExports parse error: ${e}`);
+        }
+      }
+    } catch (err: any) {
+      this.log(`scanExports error: ${err.message}`);
+    } finally {
+      try { require("node:fs").rmSync(ruleDir, { recursive: true, force: true }); } catch {}
+    }
+
+    return exports;
+  }
+
   private runSg(args: string[]): Promise<{ matches: AstGrepMatch[]; error?: string }> {
     return new Promise((resolve) => {
       const proc = spawn("npx", ["sg", ...args], { stdio: ["ignore", "pipe", "pipe"], shell: true });
