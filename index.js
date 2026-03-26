@@ -600,9 +600,15 @@ export default function (pi) {
                 dbg(`fix-session load failed: ${e}`);
             }
             session.iteration++;
-            // Hard stop at max iterations
+            // Hard stop at max iterations — auto-reset for next run
             if (session.iteration > MAX_ITERATIONS) {
-                ctx.ui.notify(`⛔ Max iterations (${MAX_ITERATIONS}) reached. Run /lens-booboo for full remaining report, or delete .pi-lens/fix-session.json to reset.`, "warning");
+                try {
+                    fs.unlinkSync(sessionFile);
+                }
+                catch {
+                    void 0;
+                }
+                ctx.ui.notify(`⛔ Max iterations (${MAX_ITERATIONS}) reached. Session reset — run /lens-booboo-fix again for a fresh loop, or /lens-booboo for a full report.`, "warning");
                 return;
             }
             const prevCounts = { ...session.counts };
@@ -803,7 +809,12 @@ export default function (pi) {
             if (totalFixable === 0) {
                 const msg = `✅ BOOBOO FIX LOOP COMPLETE — No more fixable issues found after ${session.iteration} iteration(s).\n\nRemaining skipped items are architectural — see /lens-booboo for full report.`;
                 ctx.ui.notify(msg, "info");
-                fs.unlinkSync(sessionFile);
+                try {
+                    fs.unlinkSync(sessionFile);
+                }
+                catch {
+                    void 0;
+                }
                 return;
             }
             // --- Build delta line ---
