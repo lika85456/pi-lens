@@ -1,0 +1,104 @@
+# .pi-lens/architect.yaml
+# Basic architectural rules for TypeScript/JavaScript projects
+# Copy this to your project root and customize for your architecture.
+#
+# Pattern matching uses minimatch globs:
+#   **/*.ts       — all TS files
+#   src/**/*.ts   — all TS files under src/
+#   src/routes/** — everything under src/routes/
+
+version: "1.0"
+
+rules:
+  # --- Universal file size limit ---
+  - pattern: "**/*.ts"
+    max_lines: 750
+  # --- Routes / Controllers ---
+  # Entry points should delegate, not implement
+  - pattern: "src/routes/**/*.ts"
+    must_not:
+      - pattern: 'import.*from.*["\'].*(?:models|db|database|prisma|typeorm|mongoose)'
+        message: "Routes must not access database directly — use a service or repository"
+      - pattern: 'import.*from.*["\'].*(?:bcrypt|jsonwebtoken|argon2)'
+        message: "Routes must not handle auth directly — use an auth middleware/service"
+    must:
+      - "Use dependency injection for services"
+      - "Keep route handlers thin — delegate to services"
+
+  # --- Services ---
+  # Services contain business logic, no framework coupling
+  - pattern: "src/services/**/*.ts"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:express|fastify|koa|hono)'
+        message: "Services must be framework-agnostic — no HTTP framework imports"
+      - pattern: 'import.*from.*["\'](?:react|vue|svelte)'
+        message: "Services must not import UI framework code"
+      - pattern: 'console\.(log|info)'
+        message: "Services should use a logger, not console.log"
+
+  # --- Repositories / Data Access ---
+  # Single responsibility: talk to data store only
+  - pattern: "src/repositories/**/*.ts"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:express|fastify|koa|hono)'
+        message: "Repositories must not import HTTP frameworks"
+    must:
+      - "Handle all database/table access for a single entity"
+      - "Return plain objects or DTOs, not ORM-specific types"
+
+  # --- Models / Entities ---
+  # Pure data definitions, no side effects
+  - pattern: "src/models/**/*.ts"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:express|fastify)'
+        message: "Models must not import HTTP frameworks"
+      - pattern: 'console\.(log|info|warn|error)'
+        message: "Models must not have side effects (logging, network calls)"
+      - pattern: 'fetch\(|axios\.|http\.request'
+        message: "Models must not make network calls"
+    must:
+      - "Be pure data definitions (interfaces, types, schemas)"
+
+  # --- UI / Components ---
+  # Keep presentation separate from logic
+  - pattern: "src/components/**/*.tsx"
+    must_not:
+      - pattern: 'import.*from.*["\'].*(?:models|db|database|prisma)'
+        message: "Components must not access database — use a data-fetching layer"
+      - pattern: 'process\.env'
+        message: "Components must not read env vars directly — use config"
+    must:
+      - "Handle loading and error states"
+      - "Keep business logic in hooks or services"
+
+  # --- Tests ---
+  # Tests should be isolated and predictable
+  - pattern: "**/*.test.{ts,tsx}"
+    must_not:
+      - pattern: 'import.*from.*["\'](?:\.\.\/)*src\/(config|secrets)'
+        message: "Tests must not import real config/secrets — use mocks"
+    must:
+      - "Use descriptive test names"
+      - "Clean up after themselves (no shared mutable state)"
+
+  # --- Config ---
+  # Centralized, typed, no hardcoding
+  - pattern: "src/config/**/*.ts"
+    must_not:
+      - pattern: '(?:password|secret|api_?key|token)\s*[:=]\s*["\'][^"\']+["\']'
+        message: "No hardcoded secrets — use environment variables"
+    must:
+      - "Validate env vars at startup (fail fast if missing)"
+      - "Export typed config object"
+
+  # --- Utilities ---
+  # Pure functions, no side effects
+  - pattern: "src/utils/**/*.ts"
+    must_not:
+      - pattern: 'console\.(log|info|warn|error)'
+        message: "Utils should be pure functions — no logging"
+      - pattern: 'process\.exit'
+        message: "Utils must not call process.exit"
+    must:
+      - "Be pure functions when possible"
+      - "Have no hidden dependencies"

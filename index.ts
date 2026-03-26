@@ -35,6 +35,7 @@ import {
 	TypeSafetyClient,
 	getTypeSafetyClient,
 } from "./clients/type-safety-client.js";
+import { ArchitectClient } from "./clients/architect-client.js";
 import { DependencyChecker } from "./clients/dependency-checker.js";
 import { GoClient } from "./clients/go-client.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
@@ -62,6 +63,7 @@ function dbg(msg: string) {
 // --- State ---
 
 let _verbose = false;
+let projectRoot = process.cwd();
 
 function log(msg: string) {
 	if (_verbose) console.error(`[pi-lens] ${msg}`);
@@ -83,6 +85,7 @@ export default function (pi: ExtensionAPI) {
 	const metricsClient = new MetricsClient();
 	const complexityClient = new ComplexityClient();
 	const typeSafetyClient = new TypeSafetyClient();
+	const architectClient = new ArchitectClient();
 	const goClient = new GoClient();
 	const rustClient = new RustClient();
 
@@ -1773,7 +1776,12 @@ export default function (pi: ExtensionAPI) {
 		dbg(`session_start tools: ${tools.join(", ")}`);
 
 		const cwd = ctx.cwd ?? process.cwd();
+		projectRoot = cwd; // Module-level for architect client
 		dbg(`session_start cwd: ${cwd}`);
+
+		// Load architect rules if present
+		const hasArchitectRules = architectClient.loadConfig(cwd);
+		if (hasArchitectRules) tools.push("Architect rules");
 
 		// Log test runner if detected
 		const detectedRunner = testRunnerClient.detectRunner(cwd);
@@ -1905,6 +1913,18 @@ export default function (pi: ExtensionAPI) {
 					.checkFile(filePath)
 					.filter((d) => d.category === "lint" || d.severity === "error"),
 			);
+		}
+
+		// Architectural rules pre-write hints
+		if (architectClient.hasConfig()) {
+			const relPath = path.relative(projectRoot, filePath).replace(/\\/g, "/");
+			const archHints = architectClient.getHints(relPath);
+			if (archHints.length > 0) {
+				hints.push(`📐 Architectural rules for ${relPath}:`);
+				for (const h of archHints) {
+					hints.push(`  → ${h}`);
+				}
+			}
 		}
 
 		dbg(`  pre-write hints: ${hints.length} — ${hints.join(" | ") || "none"}`);
@@ -2049,6 +2069,28 @@ export default function (pi: ExtensionAPI) {
 						lspOutput += `  L${issue.line}: ${issue.message}\n`;
 					}
 				}
+			}
+		}
+
+		// Architectural rule validation (post-write)
+		if (architectClient.hasConfig() && fs.existsSync(filePath)) {
+			const relPath = path.relative(projectRoot, filePath).replace(/\\/g, "/");
+			const content = fs.readFileSync(filePath, "utf-8");
+			const lineCount = content.split("\n").length;
+
+			// Check for violations
+			const violations = architectClient.checkFile(relPath, content);
+			if (violations.length > 0) {
+				lspOutput += `\n\n🔴 Architectural violation(s) in ${relPath}:\n`;
+				for (const v of violations) {
+					lspOutput += `  → ${v.message}\n`;
+				}
+			}
+
+			// Check file size limit
+			const sizeViolation = architectClient.checkFileSize(relPath, lineCount);
+			if (sizeViolation) {
+				lspOutput += `\n\n🔴 File size limit exceeded: ${sizeViolation.message}\n`;
 			}
 		}
 
