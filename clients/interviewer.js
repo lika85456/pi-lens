@@ -22,7 +22,7 @@ export function buildInterviewer(pi, dbg) {
         const addCount = (diff.match(/^\+/gm) || []).length;
         const delCount = (diff.match(/^-/gm) || []).length - (diff.match(/^---/gm) || []).length;
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>✅ Confirm</title>
+<title>🏗️ Changes Applied</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;padding:28px 32px;max-width:960px;margin:0 auto;line-height:1.5}
 h2{font-size:16px;color:#58a6ff;margin-bottom:14px}
@@ -36,29 +36,28 @@ h2{font-size:16px;color:#58a6ff;margin-bottom:14px}
 .da{color:#3fb950;display:block}.dd{color:#ff7b72;display:block}.dh{color:#79c0ff;display:block}.df{color:#8b949e;display:block}.dc{color:#e6edf3;display:block}
 .actions{display:flex;gap:10px;flex-wrap:wrap}
 .btn-c{background:#238636;color:#fff;border:1px solid #2ea043;padding:10px 24px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer}.btn-c:hover{background:#2ea043}
-.btn-r{background:#1a2332;color:#79c0ff;border:1px solid #1f6feb;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer}.btn-r:hover{background:#1f3050}
-.btn-x{background:#21262d;color:#e6edf3;border:1px solid #30363d;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer}.btn-x:hover{background:#30363d}
-.redo-area{display:none;margin-top:12px}
+.btn-chat{background:#1a2332;color:#79c0ff;border:1px solid #1f6feb;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer}.btn-chat:hover{background:#1f3050}
+.chat-area{display:none;margin-top:12px}
 textarea{width:100%;background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:9px;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical;min-height:72px;outline:none}
-textarea:focus{border-color:#58a6ff}.hint{color:#6e7681;font-size:12px;margin-top:10px}
+textarea:focus{border-color:#58a6ff}
+.hint{color:#6e7681;font-size:12px;margin-top:10px}
 </style></head><body>
 <h2>${esc(question)}</h2>
-<div class="plan"><strong>Plan:</strong><p>${mdToHtml(plan)}</p></div>
-<div class="diff-wrap"><div class="diff-hdr"><span>Changes</span><div class="diff-stats"><span class="stat-add">+${addCount}</span><span class="stat-del">−${delCount}</span></div></div><pre class="diff-pre">${diffHtml}</pre></div>
+<div class="plan"><p>${mdToHtml(plan)}</p></div>
+${diff ? `<div class="diff-wrap"><div class="diff-hdr"><span>Changes</span><div class="diff-stats"><span class="stat-add">+${addCount}</span><span class="stat-del">−${delCount}</span></div></div><pre class="diff-pre">${diffHtml}</pre></div>` : ""}
 <form method="POST" id="f">
-<input type="hidden" name="choice" id="c" value="Confirm">
+<input type="hidden" name="choice" id="c" value="Looks good">
 <div class="actions">
-<button class="btn-c" type="submit" onclick="document.getElementById('c').value='Confirm'">✅ Confirm and apply</button>
-<button class="btn-r" type="button" onclick="toggleRedo()">🔄 Describe a different approach</button>
-<button class="btn-x" type="submit" onclick="document.getElementById('c').value='Cancel'">❌ Cancel</button>
+<button class="btn-c" type="submit">✅ Looks good — move to next offender</button>
+<button class="btn-chat" type="button" onclick="toggleChat()">💬 Request changes</button>
 </div>
-<div class="redo-area" id="ra"><textarea name="freeText" placeholder="What would you do differently? The agent will re-generate the plan and diff..."></textarea>
-<div style="margin-top:8px"><button class="btn-c" type="submit" onclick="document.getElementById('c').value='Redo'">Submit revised approach</button></div></div>
+<div class="chat-area" id="ca"><textarea name="freeText" placeholder="Describe what you'd like changed..."></textarea>
+<div style="margin-top:8px"><button class="btn-c" type="submit" onclick="document.getElementById('c').value='Redo'">Submit</button></div></div>
 </form>
-<p class="hint">Ctrl+Enter to confirm · Tab stays open until you decide</p>
+<p class="hint">Tab closes after submit · Ctrl+Enter to confirm</p>
 <script>
-function toggleRedo(){const r=document.getElementById('ra');r.style.display=r.style.display==='none'?'block':'none';if(r.style.display==='block')r.querySelector('textarea').focus();}
-document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){const r=document.getElementById('ra');if(r.style.display==='block'){document.getElementById('c').value='Redo';}document.getElementById('f').submit();}});
+function toggleChat(){const r=document.getElementById('ca');r.style.display=r.style.display==='none'?'block':'none';if(r.style.display==='block')r.querySelector('textarea').focus();}
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){document.getElementById('f').submit();}});
 </script>
 </body></html>`;
     };

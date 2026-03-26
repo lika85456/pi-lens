@@ -994,10 +994,10 @@ export default function (pi) {
                 "   - `question`: what you're asking the user",
                 "   - `options`: array of { value, label, context, recommended, impact: { linesReduced, miProjection, cognitiveProjection } }",
                 "6. The user picks an option or types a free-text response in the browser form.",
-                "7. Based on their choice, write the proposed changes to TEMP files (e.g. /tmp/). Compute a unified diff: `diff -u <original> <temp>`.",
-                "8. Call the `interviewer` tool AGAIN with confirmationMode=true, plan (your step-by-step plan), and diff (the unified diff). The user sees the plan + diff + line counts and clicks Confirm, Cancel, or describes a different approach.",
-                "9. If the user types a different approach: delete temp files, re-generate the plan+diff based on their feedback, call interviewer with confirmationMode again. Repeat until confirmed or cancelled.",
-                "10. If confirmed: apply changes to the real files. If cancelled: delete temp files, make no changes.",
+                "7. Implement the refactoring. After changes, run `git diff HEAD~1` to capture what was changed.",
+                "8. Run a complexity scan on the changed file(s) to compute the metrics delta (before vs after MI, cognitive).",
+                "9. Call the `interviewer` tool AGAIN with confirmationMode=true. The plan should contain: what was changed (summary + diff lines), how metrics evolved, and a free-chat option for refinements.",
+                "10. If the user describes changes: make further edits, re-run the scan, call interviewer again with an updated report. Repeat until satisfied.",
             ].join("\n");
             pi.sendUserMessage(steer, { deliverAs: "steer" });
         },
