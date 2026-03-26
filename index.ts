@@ -2087,10 +2087,11 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Check file size limit
+			// Check file size limit — hard stop, file is too large to reason about
 			const sizeViolation = architectClient.checkFileSize(relPath, lineCount);
 			if (sizeViolation) {
-				lspOutput += `\n\n🔴 File size limit exceeded: ${sizeViolation.message}\n`;
+				lspOutput += `\n\n🔴 STOP — ${sizeViolation.message}\n`;
+				lspOutput += `    → Split into smaller, focused modules before adding more code.\n`;
 			}
 		}
 
