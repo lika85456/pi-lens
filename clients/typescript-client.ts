@@ -279,7 +279,11 @@ export class TypeScriptClient {
 	/**
 	 * Get hover information at a position
 	 */
-	getHover(filePath: string, line: number, character: number): HoverInfo | null {
+	getHover(
+		filePath: string,
+		line: number,
+		character: number,
+	): HoverInfo | null {
 		const resolved = this.resolvePosition(filePath, line, character);
 		if (!resolved) return null;
 		const { normalized, position, ls } = resolved;
@@ -375,14 +379,23 @@ export class TypeScriptClient {
 	}
 
 	/** Map TS definition/reference entries to Location objects. */
-	private toLocations(entries: ReadonlyArray<{ fileName: string }>, fallbackFile?: string): Location[] {
-		return entries.map((e) => ({ file: e.fileName || fallbackFile || "", line: 0, character: 0 }));
+	private toLocations(
+		entries: ReadonlyArray<{ fileName: string }>,
+		fallbackFile?: string,
+	): Location[] {
+		return entries.map((e) => ({
+			file: e.fileName || fallbackFile || "",
+			line: 0,
+			character: 0,
+		}));
 	}
 
 	/**
 	 * Shared preamble for tree-based LSP queries (symbols, folding).
 	 */
-	private resolveTree(filePath: string): { normalized: string; tree: import("typescript").NavigationTree } | null {
+	private resolveTree(
+		filePath: string,
+	): { normalized: string; tree: import("typescript").NavigationTree } | null {
 		const normalized = this.normalizePath(filePath);
 		this.ensureFile(filePath);
 		if (!this.languageService) return null;
@@ -452,7 +465,10 @@ export class TypeScriptClient {
 		const resolved = this.resolvePosition(filePath, line, character);
 		if (!resolved) return [];
 		const { normalized, position, ls } = resolved;
-		const implementations = ls.getImplementationAtPosition(normalized, position);
+		const implementations = ls.getImplementationAtPosition(
+			normalized,
+			position,
+		);
 		if (!implementations) return [];
 		return this.toLocations(implementations);
 	}

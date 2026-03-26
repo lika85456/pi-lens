@@ -1,7 +1,7 @@
 {
-  "iteration": 3,
+  "iteration": 1,
   "counts": {
-    "duplicates": 20,
+    "duplicates": 16,
     "dead_code": 0,
     "agent_ast": 0,
     "biome_lint": 0,

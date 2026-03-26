@@ -627,11 +627,14 @@ export default function (pi) {
             const dupClones = [];
             if (jscpdClient.isAvailable()) {
                 const jscpdResult = jscpdClient.scan(targetPath);
-                const clones = isTsProject
-                    ? jscpdResult.clones.filter((c) => !c.fileA.endsWith(".js") && !c.fileB.endsWith(".js"))
-                    : jscpdResult.clones;
+                // Only within-file duplicates are mechanically fixable
+                const clones = jscpdResult.clones.filter((c) => {
+                    if (isTsProject && (c.fileA.endsWith(".js") || c.fileB.endsWith(".js")))
+                        return false;
+                    return path.resolve(c.fileA) === path.resolve(c.fileB);
+                });
                 dupClones.push(...clones);
-                dbg(`booboo-fix jscpd: ${dupClones.length} clone(s) (ts-only: ${isTsProject})`);
+                dbg(`booboo-fix jscpd: ${dupClones.length} within-file clone(s) from ${jscpdResult.clones.length} total`);
             }
             const deadCodeIssues = [];
             if (knipClient.isAvailable()) {
@@ -730,7 +733,8 @@ export default function (pi) {
                                 w.includes("try/catch") ||
                                 w.includes("single-use") ||
                                 w.includes("Excessive comments"));
-                            if (warnings.length > 0) {
+                            // Only flag files with 2+ signals — single-issue flags are noise
+                            if (warnings.length >= 2) {
                                 slopFiles.push({
                                     file: path.relative(targetPath, fullPath).replace(/\\/g, "/"),
                                     warnings,
@@ -1415,16 +1419,22 @@ export default function (pi) {
     // --- Generic interview tool (browser-based multiple choice + free text) ---
     let interviewHandler = null;
     const interviewHTML = (question, options, _timeoutSeconds) => {
-        const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-        const optionsHtml = options.map((opt, idx) => `
+        const esc = (s) => s
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        const optionsHtml = options
+            .map((opt, idx) => `
 			<label class="card${opt.recommended ? " rec" : ""}">
 				<input type="radio" name="choice" value="${esc(opt.value)}"${opt.recommended ? " checked" : ""}>
 				<div class="card-body">
 					<div class="card-top"><span class="num">${idx + 1}.</span><span class="lbl">${esc(opt.label)}</span>${opt.recommended ? '<span class="badge-rec">Recommended</span>' : ""}</div>
 					${opt.context ? `<div class="ctx">${esc(opt.context)}</div>` : ""}
 				</div>
-			</label>`).join("\n");
-        const hasFreeText = options.some(o => o.value === "__free__");
+			</label>`)
+            .join("\n");
+        const hasFreeText = options.some((o) => o.value === "__free__");
         return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>🏗️ Decision</title>
 <style>
@@ -1463,7 +1473,10 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Ente
         return new Promise((resolve) => {
             const getPort = (cb) => {
                 const s = net.createServer();
-                s.listen(0, () => { const p = s.address().port; s.close(() => cb(p)); });
+                s.listen(0, () => {
+                    const p = s.address().port;
+                    s.close(() => cb(p));
+                });
                 s.on("error", () => cb(-1));
             };
             getPort((port) => {
@@ -1478,13 +1491,17 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Ente
                     }
                     else if (req.method === "POST") {
                         let body = "";
-                        req.on("data", (c) => { body += c.toString(); });
+                        req.on("data", (c) => {
+                            body += c.toString();
+                        });
                         req.on("end", () => {
                             const p = new URLSearchParams(body);
                             const choice = p.get("choice") ?? "";
                             const freeText = p.get("freeText") ?? "";
                             const final = choice === "__free__" ? freeText.trim() : choice;
-                            res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+                            res.writeHead(200, {
+                                "Content-Type": "text/html; charset=utf-8",
+                            });
                             res.end("<!DOCTYPE html><html><head><meta charset='UTF-8'><style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}</style></head><body><div><h2>✅ Response received</h2><p style='color:#8b949e;margin-top:8px'>You can close this tab.</p></div></body></html>");
                             clearTimeout(timer);
                             server.close();
@@ -1501,7 +1518,10 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Ente
                     spawnSync("open", [url]);
                 else
                     spawnSync("xdg-open", [url]);
-                const timer = setTimeout(() => { server.close(); resolve(null); }, timeoutSeconds * 1000);
+                const timer = setTimeout(() => {
+                    server.close();
+                    resolve(null);
+                }, timeoutSeconds * 1000);
             });
         });
     };
@@ -1512,20 +1532,39 @@ document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Ente
         label: "Interview",
         description: "Present a multiple-choice interview to the user via browser form. Use this when you need the user to make a decision with options. Returns their choice or null on timeout.",
         parameters: Type.Object({
-            question: Type.String({ description: "The question to present to the user" }),
+            question: Type.String({
+                description: "The question to present to the user",
+            }),
             options: Type.Array(Type.Object({
                 value: Type.String(),
                 label: Type.String(),
                 context: Type.Optional(Type.String()),
                 recommended: Type.Optional(Type.Boolean()),
-            }), { description: "Answer options — include { value, label, context (rationale), recommended }" }),
-            timeoutSeconds: Type.Optional(Type.Number({ description: "Auto-close after this many seconds (default 600)" })),
+            }), {
+                description: "Answer options — include { value, label, context (rationale), recommended }",
+            }),
+            timeoutSeconds: Type.Optional(Type.Number({
+                description: "Auto-close after this many seconds (default 600)",
+            })),
         }),
         async execute(_toolCallId, input, _signal, _onUpdate, _ctx) {
             if (!interviewHandler)
-                return { content: [{ type: "text", text: "Interview tool not initialized" }], details: null };
+                return {
+                    content: [
+                        { type: "text", text: "Interview tool not initialized" },
+                    ],
+                    details: null,
+                };
             const result = await interviewHandler(input.question, input.options, input.timeoutSeconds ?? 600);
-            return { content: [{ type: "text", text: result ?? "No response (timed out or dismissed)" }], details: result ?? null };
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: result ?? "No response (timed out or dismissed)",
+                    },
+                ],
+                details: result ?? null,
+            };
         },
     });
     pi.registerTool({

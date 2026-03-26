@@ -518,7 +518,8 @@ export class TestRunnerClient {
 						if (test.status === "failed") {
 							failures.push({
 								name: test.title,
-								message: test.failureMessages?.[0] || suite.message || "Test failed",
+								message:
+									test.failureMessages?.[0] || suite.message || "Test failed",
 								location: test.location
 									? `${path.relative(cwd, testFile)}:${test.location.line}`
 									: undefined,
@@ -542,17 +543,34 @@ export class TestRunnerClient {
 		} catch (err) {
 			void err;
 			const failed = stdout.includes("FAIL") || stderr.includes("FAIL");
-			return this.emptyResult(testFile, "", runner, failed ? "Tests failed (could not parse output)" : undefined);
+			return this.emptyResult(
+				testFile,
+				"",
+				runner,
+				failed ? "Tests failed (could not parse output)" : undefined,
+			);
 		}
 	}
 
 	// --- Vitest Parser ---
-	private parseVitestOutput(stdout: string, stderr: string, testFile: string, cwd: string, runner: string): TestResult {
+	private parseVitestOutput(
+		stdout: string,
+		stderr: string,
+		testFile: string,
+		cwd: string,
+		runner: string,
+	): TestResult {
 		return this.parseJsonTestOutput(stdout, stderr, testFile, cwd, runner);
 	}
 
 	// --- Jest Parser ---
-	private parseJestOutput(stdout: string, stderr: string, testFile: string, cwd: string, runner: string): TestResult {
+	private parseJestOutput(
+		stdout: string,
+		stderr: string,
+		testFile: string,
+		cwd: string,
+		runner: string,
+	): TestResult {
 		return this.parseJsonTestOutput(stdout, stderr, testFile, cwd, runner);
 	}
 

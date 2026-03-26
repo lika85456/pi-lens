@@ -319,7 +319,11 @@ export class TypeScriptClient {
     }
     /** Map TS definition/reference entries to Location objects. */
     toLocations(entries, fallbackFile) {
-        return entries.map((e) => ({ file: e.fileName || fallbackFile || "", line: 0, character: 0 }));
+        return entries.map((e) => ({
+            file: e.fileName || fallbackFile || "",
+            line: 0,
+            character: 0,
+        }));
     }
     /**
      * Shared preamble for tree-based LSP queries (symbols, folding).
