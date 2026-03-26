@@ -600,6 +600,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Rule action map for lens-booboo-fix ---
+	// Rules marked "skip" are architectural — they need deliberate user decisions.
+	// They are excluded from inline tool_result hard stops (use /lens-refactor instead).
 	const RULE_ACTIONS: Record<
 		string,
 		{ type: "biome" | "agent" | "skip"; note: string }
@@ -659,6 +661,13 @@ export default function (pi: ExtensionAPI) {
 			note: "Renaming requires understanding all variable scopes.",
 		},
 	};
+
+	// Derived from RULE_ACTIONS — used to suppress architectural rules from inline hard stops.
+	const SKIP_RULES = new Set(
+		Object.entries(RULE_ACTIONS)
+			.filter(([, v]) => v.type === "skip")
+			.map(([k]) => k),
+	);
 
 	pi.registerCommand("lens-booboo-fix", {
 		description:
@@ -1124,6 +1133,150 @@ export default function (pi: ExtensionAPI) {
 			// Use steer delivery — agent is busy processing this tool call
 			// steer interrupts mid-processing with the next fix plan
 			pi.sendUserMessage(fixPlan, { deliverAs: "steer" });
+		},
+	});
+
+	pi.registerCommand("lens-refactor", {
+		description:
+			"Interactive architectural refactor session: surfaces skip-category violations (large-class, long-method, long-parameter-list, no-as-any, etc.) and guides the agent through deliberate refactoring with user decisions. Usage: /lens-refactor [path]",
+		handler: async (args, ctx) => {
+			const targetPath = args.trim() || ctx.cwd || process.cwd();
+			const fs = require("node:fs") as typeof import("node:fs");
+			ctx.ui.notify("🏗️ Scanning for architectural debt...", "info");
+
+			// Collect all skip-category violations across the codebase
+			const configPath = path.join(
+				typeof __dirname !== "undefined" ? __dirname : ".",
+				"rules",
+				"ast-grep-rules",
+				".sgconfig.yml",
+			);
+
+			const isTsProject = fs.existsSync(path.join(targetPath, "tsconfig.json"));
+
+			const result = require("node:child_process").spawnSync(
+				"npx",
+				[
+					"sg",
+					"scan",
+					"--config",
+					configPath,
+					"--json",
+					"--globs",
+					"!**/*.test.ts",
+					"--globs",
+					"!**/*.spec.ts",
+					"--globs",
+					"!**/test-utils.ts",
+					"--globs",
+					"!**/.pi-lens/**",
+					...(isTsProject ? ["--globs", "!**/*.js"] : []),
+					targetPath,
+				],
+				{
+					encoding: "utf-8",
+					timeout: 30000,
+					shell: true,
+					maxBuffer: 32 * 1024 * 1024,
+				},
+			);
+
+			const raw = result.stdout?.trim() ?? "";
+			// biome-ignore lint/suspicious/noExplicitAny: ast-grep JSON output is untyped
+			const items: Record<string, any>[] = raw.startsWith("[")
+				? (() => {
+						try {
+							return JSON.parse(raw);
+						} catch {
+							return [];
+						}
+					})()
+				: raw.split("\n").flatMap((l: string) => {
+						try {
+							return [JSON.parse(l)];
+						} catch {
+							return [];
+						}
+					});
+
+			// Keep only skip-category rules
+			type SkipIssue = {
+				rule: string;
+				file: string;
+				line: number;
+				note: string;
+			};
+			const skipIssues: SkipIssue[] = [];
+			for (const item of items) {
+				const rule = item.ruleId || item.rule?.title || item.name || "unknown";
+				if (!SKIP_RULES.has(rule)) continue;
+				const line =
+					(item.labels?.[0]?.range?.start?.line ??
+						item.range?.start?.line ??
+						0) + 1;
+				const relFile = path
+					.relative(targetPath, item.file ?? "")
+					.replace(/\\/g, "/");
+				const note =
+					RULE_ACTIONS[rule]?.note ?? "Requires architectural decision";
+				skipIssues.push({ rule, file: relFile, line, note });
+			}
+
+			if (skipIssues.length === 0) {
+				ctx.ui.notify(
+					"✅ No architectural debt found — codebase is clean.",
+					"info",
+				);
+				return;
+			}
+
+			// Group by rule then by file
+			const byRule = new Map<string, SkipIssue[]>();
+			for (const issue of skipIssues) {
+				const list = byRule.get(issue.rule) ?? [];
+				list.push(issue);
+				byRule.set(issue.rule, list);
+			}
+
+			const lines: string[] = [];
+			lines.push(
+				`🏗️ ARCHITECTURAL DEBT — ${skipIssues.length} item(s) requiring deliberate refactoring`,
+			);
+			lines.push("");
+			lines.push(
+				"These cannot be auto-fixed. Each requires a design decision.",
+			);
+			lines.push(
+				"Review each section, ask questions if needed, then refactor one at a time.",
+			);
+			lines.push("");
+
+			for (const [rule, issues] of byRule) {
+				const note =
+					RULE_ACTIONS[rule]?.note ?? "Requires architectural decision";
+				lines.push(`## ${rule} (${issues.length})`);
+				lines.push(`→ ${note}`);
+				// Group by file
+				const byFile = new Map<string, number[]>();
+				for (const i of issues) {
+					const lns = byFile.get(i.file) ?? [];
+					lns.push(i.line);
+					byFile.set(i.file, lns);
+				}
+				for (const [file, lns] of byFile) {
+					lines.push(
+						`  \`${file}\`: lines ${lns.slice(0, 8).join(", ")}${lns.length > 8 ? ` (+${lns.length - 8} more)` : ""}`,
+					);
+				}
+				lines.push("");
+			}
+
+			lines.push("---");
+			lines.push(
+				"Pick one item above, read the code in context, then propose a refactoring plan before making changes.",
+			);
+
+			pi.sendUserMessage(lines.join("\n"), { deliverAs: "steer" });
 		},
 	});
 
@@ -1946,18 +2099,26 @@ export default function (pi: ExtensionAPI) {
 				if (after_n < n) fixedRules.push(`${rule} (-${n - after_n})`);
 			}
 
-			if (newViolations.length > 0) {
-				const hasFixable = newViolations.some((v) => v.fix);
-				lspOutput += `\n\n🔴 STOP — you introduced ${newViolations.length} new structural violation(s). Fix before continuing:\n`;
-				lspOutput += astGrepClient.formatDiagnostics(newViolations);
+			// Filter out skip-category rules — architectural, handled by /lens-refactor
+			const actionableViolations = newViolations.filter(
+				(v) => !SKIP_RULES.has(v.rule),
+			);
+			if (actionableViolations.length > 0) {
+				const hasFixable = actionableViolations.some((v) => v.fix);
+				lspOutput += `\n\n🔴 STOP — you introduced ${actionableViolations.length} new structural violation(s). Fix before continuing:\n`;
+				lspOutput += astGrepClient.formatDiagnostics(actionableViolations);
 				if (hasFixable)
 					lspOutput += `\n  → Auto-fixable: check the hints above`;
 			}
 			if (fixedRules.length > 0) {
 				lspOutput += `\n\n✅ ast-grep: fixed ${fixedRules.join(", ")}`;
 			}
-			if (after.length > 0 && newViolations.length > 0) {
-				lspOutput += `\n  (${after.length} total remaining)`;
+			if (after.length > 0 && actionableViolations.length > 0) {
+				const actionableTotal = after.filter(
+					(v) => !SKIP_RULES.has(v.rule),
+				).length;
+				if (actionableTotal > 0)
+					lspOutput += `\n  (${actionableTotal} actionable remaining — skip-category rules omitted)`;
 			}
 		}
 
