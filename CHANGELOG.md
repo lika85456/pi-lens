@@ -2,6 +2,15 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [2.0.38] - 2026-03-27
+
+### Changed
+- **Refactored 4 client files** via `/lens-booboo-refactor` loop:
+  - `biome-client.ts`: Extracted `withValidatedPath()` guard pattern (4 methods consolidated)
+  - `complexity-client.ts`: Extracted `analyzeFile()` pipeline into `readAndParse()`, `computeMetrics()`, `aggregateFunctionStats()`
+  - `dependency-checker.ts`: Simplified `importsChanged()` — replaced 3 for-loops with `setsEqual()` helper
+  - `ast-grep-client.ts`: Simplified `groupSimilarFunctions()` with `filter().map()` pattern + `extractFunctionName()` helper
+
 ## [2.0.29] - 2026-03-26
 
 ### Added
