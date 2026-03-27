@@ -101,30 +101,26 @@ message: found
         return this.groupSimilarFunctions(matches);
     }
     groupSimilarFunctions(matches) {
-        const normalized = new Map();
+        const grouped = new Map();
         for (const item of matches) {
-            const text = item.text || "";
-            const nameMatch = text.match(/function\s+(\w+)/);
-            if (!nameMatch?.[1])
+            const name = this.extractFunctionName(item.text);
+            if (!name)
                 continue;
-            const signature = this.normalizeFunction(text);
-            if (!normalized.has(signature)) {
-                normalized.set(signature, []);
-            }
-            const line = item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0;
-            normalized.get(signature)?.push({
-                name: nameMatch[1],
-                file: item.file,
-                line: line + 1,
-            });
+            const signature = this.normalizeFunction(item.text);
+            const line = (item.range?.start?.line || item.labels?.[0]?.range?.start?.line || 0) + 1;
+            const group = grouped.get(signature) ?? [];
+            group.push({ name, file: item.file, line });
+            grouped.set(signature, group);
         }
-        const result_groups = [];
-        for (const [pattern, functions] of normalized) {
-            if (functions.length > 1) {
-                result_groups.push({ pattern, functions });
-            }
-        }
-        return result_groups;
+        return Array.from(grouped.entries())
+            .filter(([_, functions]) => functions.length > 1)
+            .map(([pattern, functions]) => ({ pattern, functions }));
+    }
+    /**
+     * Extract function name from match text
+     */
+    extractFunctionName(text) {
+        return text.match(/function\s+(\w+)/)?.[1] ?? null;
     }
     normalizeFunction(text) {
         const normalizedText = text

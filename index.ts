@@ -14,6 +14,7 @@ import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
 import { MetricsClient } from "./clients/metrics-client.js";
+import { captureSnapshots, getTrendSummary, formatTrendCell } from "./clients/metrics-history.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
@@ -366,6 +367,19 @@ export default function (pi: ExtensionAPI) {
 				gradeCount[g.letter as keyof typeof gradeCount]++;
 			}
 
+			// Capture snapshots for history tracking
+			const history = captureSnapshots(
+				results.map((r) => ({
+					filePath: r.filePath,
+					metrics: {
+						maintainabilityIndex: r.maintainabilityIndex,
+						cognitiveComplexity: r.cognitiveComplexity,
+						maxNestingDepth: r.maxNestingDepth,
+						linesOfCode: r.linesOfCode,
+					},
+				})),
+			);
+
 			// Build report
 			let report = `# Code Metrics Report: ${projectName}\n\n`;
 			report += `**Generated:** ${new Date().toISOString()}\n\n`;
@@ -438,8 +452,8 @@ export default function (pi: ExtensionAPI) {
 
 			// All files table (sorted by MI ascending)
 			report += `## All Files\n\n`;
-			report += `| Grade | File | MI | Cognitive | Cyclomatic | Nesting | Functions | LOC | Entropy |\n`;
-			report += `|-------|------|-----|-----------|------------|---------|-----------|-----|--------|\n`;
+			report += `| Grade | File | MI | Cognitive | Nesting | LOC | Trend |\n`;
+			report += `|-------|------|-----|-----------|---------|-----|-------|\n`;
 
 			const sorted = [...results].sort(
 				(a, b) => a.maintainabilityIndex - b.maintainabilityIndex,
@@ -455,10 +469,29 @@ export default function (pi: ExtensionAPI) {
 
 				// Make path relative for readability
 				const relPath = path.relative(targetPath, f.filePath);
+				const trendCell = formatTrendCell(f.filePath, history);
 
-				report += `| ${grade} | ${relPath} | ${mi.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity.toFixed(1)} | ${f.maxNestingDepth} | ${f.functionCount} | ${f.linesOfCode} | ${f.codeEntropy.toFixed(2)} |\n`;
+				report += `| ${grade} | ${relPath} | ${mi.toFixed(1)} | ${f.cognitiveComplexity} | ${f.maxNestingDepth} | ${f.linesOfCode} | ${trendCell} |\n`;
 			}
 			report += `\n`;
+
+			// Trend Summary
+			const trendSummary = getTrendSummary(history);
+			report += `## Trend Summary\n\n`;
+			report += `| Trend | Count |\n`;
+			report += `|-------|-------|\n`;
+			report += `| 📈 Improving | ${trendSummary.improving} |\n`;
+			report += `| ➡️ Stable | ${trendSummary.stable} |\n`;
+			report += `| 📉 Regressing | ${trendSummary.regressing} |\n\n`;
+
+			if (trendSummary.worstRegressions.length > 0) {
+				report += `### Top Regressions\n\n`;
+				report += `Files with largest MI decline since last scan:\n\n`;
+				for (const r of trendSummary.worstRegressions) {
+					report += `- **${r.file}**: MI ${r.miDelta > 0 ? "+" : ""}${r.miDelta}\n`;
+				}
+				report += `\n`;
+			}
 
 			// Top 10 worst files (actionable)
 			report += `## Top 10 Files Needing Attention\n\n`;
