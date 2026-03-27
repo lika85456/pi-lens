@@ -167,7 +167,7 @@ export function buildInterviewer(
 								"Content-Type": "text/html; charset=utf-8",
 							});
 							res.end(
-								"<!DOCTYPE html><html><head><meta charset='UTF-8'><style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}</style></head><body><div><h2>✅ Response received</h2><p style='color:#8b949e;margin-top:8px'>You can close this tab.</p></div></body></html>",
+								`<!DOCTYPE html><html><head><meta charset='UTF-8'><style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}.fade{transition:opacity 0.5s}</style></head><body><div class="fade"><h2>✅ Response received</h2><p style='color:#8b949e;margin-top:8px'>Closing tab...</p><p id="count" style='color:#58a6ff;margin-top:4px'></p></div><script>let s=3;const el=document.getElementById('count');const tick=()=>{el.textContent=s+'s';if(s<=0){window.close();}else{s--;setTimeout(tick,1000);}};tick();</script></body></html>`,
 							);
 							clearTimeout(timer);
 							server.close();
