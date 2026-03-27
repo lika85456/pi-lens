@@ -23,6 +23,7 @@ import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeSafetyClient } from "./clients/type-safety-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
+import { AgentBehaviorClient } from "./clients/agent-behavior-client.js";
 
 import { handleBooboo } from "./commands/booboo.js";
 import { handleFix } from "./commands/fix.js";
@@ -73,6 +74,7 @@ export default function (pi: ExtensionAPI) {
 	const architectClient = new ArchitectClient();
 	const goClient = new GoClient();
 	const rustClient = new RustClient();
+	const agentBehaviorClient = new AgentBehaviorClient();
 
 	// --- Initialize auto-loops (must be early for event handlers) ---
 	initRefactorLoop(pi);
@@ -981,9 +983,11 @@ export default function (pi: ExtensionAPI) {
 
 	// Real-time feedback on file writes/edits
 	pi.on("tool_result", async (event) => {
-		if (event.toolName !== "write" && event.toolName !== "edit") return;
-
+		// Track tool call for behavior analysis (all tool types)
 		const filePath = (event.input as { path?: string }).path;
+		const behaviorWarnings = agentBehaviorClient.recordToolCall(event.toolName, filePath);
+
+		if (event.toolName !== "write" && event.toolName !== "edit") return;
 		if (!filePath) return;
 
 		dbg(`tool_result fired for: ${filePath}`);
@@ -1416,6 +1420,11 @@ export default function (pi: ExtensionAPI) {
 					lspOutput += `\n\n${depChecker.formatWarning(filePath, uniqueDeps)}`;
 				}
 			}
+		}
+
+		// Agent behavior warnings (blind writes, thrashing)
+		if (behaviorWarnings.length > 0) {
+			lspOutput += `\n\n${agentBehaviorClient.formatWarnings(behaviorWarnings)}`;
 		}
 
 		if (!lspOutput) return;
