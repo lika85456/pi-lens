@@ -1,0 +1,87 @@
+# .pi-lens/architect.yaml
+# Architectural rules for your project
+# Copy to your project root as .pi-lens/architect.yaml and customize.
+#
+# Structure is language-agnostic — regex patterns in must_not are language-specific.
+
+version: "1.1"
+
+# =============================================================================
+# LANGUAGE-AGNOSTIC RULES (The "Universal Truths")
+# =============================================================================
+
+rules:
+  # --- CI & Environment Safety ---
+  - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs,java,cpp}"
+    must_not:
+      - pattern: "[a-zA-Z]:\\\\(?:Users|Program Files|Windows|Temp)\\\\"
+        message: "No absolute Windows paths — breaks CI and cross-platform builds."
+      - pattern: "\\/(?:home|Users|usr|etc|var)\\/[a-zA-Z0-9_\\-]+\\/"
+        message: "Potential absolute Unix path detected — use relative paths or path.join()."
+      - pattern: 'https?://localhost:[0-9]+'
+        message: "No hardcoded localhost URLs — use environment variables or a config service."
+
+  # --- Complexity & Technical Debt ---
+  - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
+    max_lines: 3000
+    must_not:
+      - pattern: '(?:\s{8,}.*\n){5,}'
+        message: "Deep nesting detected (4+ levels). Refactor into smaller functions to reduce cognitive load."
+      - pattern: '(?:(?:\/\/|#).*\n){10,}'
+        message: "Large block of commented-out code detected. This is dead code — delete it and rely on Git history."
+
+  # --- Reliability & Fragility ---
+  - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
+    must_not:
+      - pattern: '(?:catch|except)\s*\(?.*?\)?\s*\{\s*\}'
+        message: "No empty catch/except blocks. Swallowing errors makes debugging impossible — at least log the error."
+      - pattern: '\b(password|secret|api_?key|token|private_?key)\b\s*[:=]\s*["\'][^"\']{8,}["\']'
+        message: "No hardcoded secrets — use environment variables or a secrets manager."
+
+# =============================================================================
+# JS/TS-SPECIFIC RULES (Node.js & Frontend)
+# =============================================================================
+
+  # --- Type Safety ---
+  - pattern: "**/*.{ts,tsx}"
+    must_not:
+      - pattern: ':\s*any\b|as\s+any\b'
+        message: "No 'any' types — use 'unknown' or define a proper interface to maintain type safety."
+    must:
+      - "Use strict TypeScript mode"
+
+  # --- Configuration & IO ---
+  - pattern: "**/services/**/*.ts|**/domain/**/*.ts"
+    must_not:
+      - pattern: 'process\.env'
+        message: "Domain/Service logic must not read env vars directly — inject config via constructor or a config service."
+      - pattern: 'console\.(log|warn|error)'
+        message: "Core logic should use a structured logger, not console.log."
+
+  # --- Async Patterns ---
+  - pattern: "**/*.{ts,tsx,js,jsx}"
+    must_not:
+      - pattern: '\.then\('
+        message: "Prefer async/await over .then() chains for better readability and error handling."
+
+# =============================================================================
+# PYTHON-SPECIFIC RULES
+# =============================================================================
+
+  # --- Clean Python ---
+  - pattern: "**/*.py"
+    must_not:
+      - pattern: 'print\('
+        message: "No print() statements in production code — use the 'logging' module."
+      - pattern: 'global\s+[a-zA-Z_]'
+        message: "No 'global' keyword — global state makes code untestable and unpredictable."
+      - pattern: 'def\s+[a-zA-Z0-9_]+\(.*?=\s*\[\]'
+        message: "No mutable default arguments (e.g., x=[]). Use 'x=None' and initialize inside the function."
+
+  # --- Python Reliability ---
+  - pattern: "**/*.py"
+    must_not:
+      - pattern: 'except:\s*pass|except\s+Exception:\s*pass'
+        message: "Do not use bare 'except: pass'. Explicitly catch specific exceptions and log them."
+      - pattern: 'eval\(|exec\('
+        message: "No eval() or exec() — these are security risks and architectural anti-patterns."

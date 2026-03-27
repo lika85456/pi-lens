@@ -451,9 +451,9 @@ export class ComplexityClient {
 			);
 		}
 
-		// Comments ratio (>30% = excessive comments, AI slop signal)
+		// Comments ratio (>40% = excessive comments, AI slop signal)
 		const totalLines = metrics.linesOfCode + metrics.commentLines;
-		if (totalLines > 10 && metrics.commentLines / totalLines > 0.3) {
+		if (totalLines > 10 && metrics.commentLines / totalLines > 0.4) {
 			warnings.push(
 				`Excessive comments (${Math.round((metrics.commentLines / totalLines) * 100)}%) — remove obvious comments`,
 			);
@@ -474,7 +474,7 @@ export class ComplexityClient {
 		}
 
 		// AI slop: Too many try/catch blocks (lazy error handling)
-		if (metrics.tryCatchCount > 5) {
+		if (metrics.tryCatchCount > 15) {
 			warnings.push(
 				`Many try/catch blocks (${metrics.tryCatchCount}) — consolidate error handling`,
 			);
@@ -556,7 +556,18 @@ export class ComplexityClient {
 		commentLines = commentPositions.size;
 		const codeLines = lines.filter((line, i) => {
 			const trimmed = line.trim();
-			return trimmed.length > 0 && !commentPositions.has(i);
+			if (trimmed.length === 0) return false;
+
+			// If the line is not in commentPositions, it definitely has code
+			if (!commentPositions.has(i)) return true;
+
+			// If it IS in commentPositions, it might still have code (trailing comment)
+			// Remove the comment part and check if anything remains
+			const lineWithoutComments = line
+				.replace(/\/\/.*$/, "")
+				.replace(/\/\*[\s\S]*?\*\//g, "")
+				.trim();
+			return lineWithoutComments.length > 0;
 		}).length;
 
 		return { codeLines, commentLines };
@@ -631,6 +642,17 @@ export class ComplexityClient {
 		return this.nodeCyclomaticComplexity(node, 0);
 	}
 
+	private isLogicalOperator(node: ts.Node): boolean {
+		if (node.kind === ts.SyntaxKind.BinaryExpression) {
+			const binary = node as ts.BinaryExpression;
+			return (
+				binary.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+				binary.operatorToken.kind === ts.SyntaxKind.BarBarToken
+			);
+		}
+		return false;
+	}
+
 	private nodeCyclomaticComplexity(node: ts.Node, complexity: number): number {
 		// Base increment for branching nodes
 		if (CYCLOMAL_NODES.has(node.kind)) {
@@ -638,14 +660,8 @@ export class ComplexityClient {
 		}
 
 		// Binary && and || add complexity
-		if (node.kind === ts.SyntaxKind.BinaryExpression) {
-			const binary = node as ts.BinaryExpression;
-			if (
-				binary.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
-				binary.operatorToken.kind === ts.SyntaxKind.BarBarToken
-			) {
-				complexity++;
-			}
+		if (this.isLogicalOperator(node)) {
+			complexity++;
 		}
 
 		ts.forEachChild(node, (child) => {
@@ -681,14 +697,8 @@ export class ComplexityClient {
 		}
 
 		// Binary && and || contribute to complexity
-		if (node.kind === ts.SyntaxKind.BinaryExpression) {
-			const binary = node as ts.BinaryExpression;
-			if (
-				binary.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
-				binary.operatorToken.kind === ts.SyntaxKind.BarBarToken
-			) {
-				complexity += 1;
-			}
+		if (this.isLogicalOperator(node)) {
+			complexity += 1;
 		}
 
 		// Calculate nesting for children

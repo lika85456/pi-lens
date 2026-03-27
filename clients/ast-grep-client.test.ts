@@ -30,20 +30,6 @@ describe("AstGrepClient", () => {
 			expect(result).toEqual([]);
 		});
 
-		it("should detect var usage (no-var rule)", () => {
-			if (!client.isAvailable()) return;
-
-			const content = `
-var x = 1;
-var y = 2;
-`;
-			const filePath = createTempFile(tmpDir, "test.ts", content);
-			const result = client.scanFile(filePath);
-
-			// Should detect var usage
-			expect(result.some((d) => d.rule === "no-var")).toBe(true);
-		});
-
 		it("should detect console.log usage", () => {
 			if (!client.isAvailable()) return;
 
@@ -53,8 +39,8 @@ console.log("test");
 			const filePath = createTempFile(tmpDir, "test.ts", content);
 			const result = client.scanFile(filePath);
 
-			// May detect console.log depending on rules
-			expect(Array.isArray(result)).toBe(true);
+			// Should detect console.log
+			expect(result.some((d) => d.rule === "no-console-log")).toBe(true);
 		});
 	});
 

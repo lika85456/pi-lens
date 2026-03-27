@@ -5,26 +5,26 @@ node_modules/
 .pi-lens/metrics/
 .pi-lens/reviews/
 
+# Session data
+.pisessionsummaries/
+
 # Build artifacts
 target/
 dist/
 build/
 out/
 
-# Test artifacts (created during testing, not test files)
-test_main.go
-vitest.config.ts
+# Build artifacts
+index.js
 src/main.rs
-
-# Go/Rust test build files
-go.mod
-Cargo.toml
-Cargo.lock
 
 # Internal planning docs
 featureideas.md
 SCA.md
 review.md
+
+# Scratch test files (moved to tests/)
+tests/
 
 # OS files
 .DS_Store
@@ -35,8 +35,11 @@ Thumbs.db
 .idea/
 
 # Debug logs
-pi-lens-debug.log
+*.log
 
 # Temp scan outputs
 booboo_*.json
 jscpd-report.json
+
+# Linter caches
+.ruff_cache/

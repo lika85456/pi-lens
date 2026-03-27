@@ -100,7 +100,8 @@ export class TypeSafetyClient {
                     // Find missing cases
                     const missingCases = literalValues.filter((v) => !coveredCases.has(v));
                     if (missingCases.length > 0 && !hasDefault) {
-                        const line = programSourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+                        const line = programSourceFile.getLineAndCharacterOfPosition(node.getStart())
+                            .line + 1;
                         const exprText = node.expression.getText(programSourceFile);
                         const typeStr = missingCases.map((c) => `'${c}'`).join(", ");
                         issues.push({
@@ -134,10 +135,4 @@ export class TypeSafetyClient {
     }
 }
 // --- Singleton ---
-let instance = null;
-export function getTypeSafetyClient(verbose = false) {
-    if (!instance) {
-        instance = new TypeSafetyClient(verbose);
-    }
-    return instance;
-}
+const _instance = null;

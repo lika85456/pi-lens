@@ -90,7 +90,9 @@ export class TypeSafetyClient {
 
 		// Use the source file from the program (has proper type information)
 		const tsService = getTypeScriptService();
-		const programSourceFile = tsService.getSourceFileFromProgram(sourceFile.fileName);
+		const programSourceFile = tsService.getSourceFileFromProgram(
+			sourceFile.fileName,
+		);
 		if (!programSourceFile) return;
 
 		const visit = (node: ts.Node) => {
@@ -103,7 +105,9 @@ export class TypeSafetyClient {
 
 					// Get all literal values from the union
 					const literalValues = unionTypes
-						.filter((t) => t.isLiteral() || t.flags & ts.TypeFlags.BooleanLiteral)
+						.filter(
+							(t) => t.isLiteral() || t.flags & ts.TypeFlags.BooleanLiteral,
+						)
 						.map((t) => {
 							if (t.isLiteral()) {
 								return String(t.value);
@@ -143,9 +147,9 @@ export class TypeSafetyClient {
 					);
 
 					if (missingCases.length > 0 && !hasDefault) {
-						const line = programSourceFile.getLineAndCharacterOfPosition(
-							node.getStart(),
-						).line + 1;
+						const line =
+							programSourceFile.getLineAndCharacterOfPosition(node.getStart())
+								.line + 1;
 
 						const exprText = node.expression.getText(programSourceFile);
 						const typeStr = missingCases.map((c) => `'${c}'`).join(", ");
@@ -184,16 +188,8 @@ export class TypeSafetyClient {
 		}
 		return checker;
 	}
-
 }
 
 // --- Singleton ---
 
-let instance: TypeSafetyClient | null = null;
-
-export function getTypeSafetyClient(verbose = false): TypeSafetyClient {
-	if (!instance) {
-		instance = new TypeSafetyClient(verbose);
-	}
-	return instance;
-}
+const _instance: TypeSafetyClient | null = null;

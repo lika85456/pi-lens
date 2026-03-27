@@ -2,11 +2,14 @@
  * Shared architectural debt scanning — used by booboo-fix and booboo-refactor.
  * Scans ast-grep skip rules + complexity metrics + architect.yaml rules.
  */
+
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ArchitectClient } from "./architect-client.js";
 import type { AstGrepClient } from "./ast-grep-client.js";
 import type { ComplexityClient } from "./complexity-client.js";
-import type { ArchitectClient } from "./architect-client.js";
+import { getSourceFiles, parseAstGrepJson } from "./scan-utils.js";
 
 export type SkipIssue = { rule: string; line: number; note: string };
 export type FileMetrics = { mi: number; cognitive: number; nesting: number };
@@ -25,29 +28,41 @@ export function scanSkipViolations(
 	const skipByFile = new Map<string, SkipIssue[]>();
 	if (!astGrepClient.isAvailable()) return skipByFile;
 
-	const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
 	const sgResult = spawnSync(
 		"npx",
 		[
-			"sg", "scan", "--config", configPath, "--json",
-			"--globs", "!**/*.test.ts", "--globs", "!**/*.spec.ts",
-			"--globs", "!**/test-utils.ts", "--globs", "!**/.pi-lens/**",
+			"sg",
+			"scan",
+			"--config",
+			configPath,
+			"--json",
+			"--globs",
+			"!**/*.test.ts",
+			"--globs",
+			"!**/*.spec.ts",
+			"--globs",
+			"!**/test-utils.ts",
+			"--globs",
+			"!**/.pi-lens/**",
 			...(isTsProject ? ["--globs", "!**/*.js"] : []),
 			targetPath,
 		],
-		{ encoding: "utf-8", timeout: 30000, shell: true, maxBuffer: 32 * 1024 * 1024 },
+		{
+			encoding: "utf-8",
+			timeout: 30000,
+			shell: true,
+			maxBuffer: 32 * 1024 * 1024,
+		},
 	);
 
-	const raw = sgResult.stdout?.trim() ?? "";
-	// biome-ignore lint/suspicious/noExplicitAny: ast-grep JSON output is untyped
-	const items: Record<string, any>[] = raw.startsWith("[")
-		? (() => { try { return JSON.parse(raw); } catch { return []; } })()
-		: raw.split("\n").flatMap((l: string) => { try { return [JSON.parse(l)]; } catch { return []; } });
+	const items = parseAstGrepJson(sgResult.stdout?.trim() ?? "");
 
 	for (const item of items) {
 		const rule = item.ruleId || item.rule?.title || item.name || "unknown";
 		if (!skipRules.has(rule)) continue;
-		const line = (item.labels?.[0]?.range?.start?.line ?? item.range?.start?.line ?? 0) + 1;
+		const line =
+			(item.labels?.[0]?.range?.start?.line ?? item.range?.start?.line ?? 0) +
+			1;
 		const absFile = path.resolve(item.file ?? "");
 		const list = skipByFile.get(absFile) ?? [];
 		list.push({ rule, line, note: ruleActions[rule]?.note ?? "" });
@@ -65,25 +80,22 @@ export function scanComplexityMetrics(
 	isTsProject: boolean,
 ): Map<string, FileMetrics> {
 	const metricsByFile = new Map<string, FileMetrics>();
+	const files = getSourceFiles(targetPath, isTsProject);
 
-	const scanDir = (dir: string) => {
-		if (!fs.existsSync(dir)) return;
-		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-			const full = path.join(dir, entry.name);
-			if (entry.isDirectory()) {
-				if (["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(entry.name)) continue;
-				scanDir(full);
-			} else if (
-				complexityClient.isSupportedFile(full) &&
-				!/\.(test|spec)\.[jt]sx?$/.test(entry.name) &&
-				!(isTsProject && /\.js$/.test(entry.name))
-			) {
-				const m = complexityClient.analyzeFile(full);
-				if (m) metricsByFile.set(full, { mi: m.maintainabilityIndex, cognitive: m.cognitiveComplexity, nesting: m.maxNestingDepth });
-			}
+	for (const full of files) {
+		if (
+			complexityClient.isSupportedFile(full) &&
+			!/\.(test|spec)\.[jt]sx?$/.test(path.basename(full))
+		) {
+			const m = complexityClient.analyzeFile(full);
+			if (m)
+				metricsByFile.set(full, {
+					mi: m.maintainabilityIndex,
+					cognitive: m.cognitiveComplexity,
+					nesting: m.maxNestingDepth,
+				});
 		}
-	};
-	scanDir(targetPath);
+	}
 	return metricsByFile;
 }
 
@@ -98,37 +110,31 @@ export function scanArchitectViolations(
 	const violationsByFile = new Map<string, string[]>();
 	if (!architectClient.hasConfig()) return violationsByFile;
 
-	const scanDir = (dir: string) => {
-		if (!fs.existsSync(dir)) return;
-		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-			const full = path.join(dir, entry.name);
-			if (entry.isDirectory()) {
-				if (["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(entry.name)) continue;
-				scanDir(full);
-			} else if (/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name)) {
-				const relPath = path.relative(targetPath, full).replace(/\\/g, "/");
-				const content = fs.readFileSync(full, "utf-8");
-				const lineCount = content.split("\n").length;
-				const msgs: string[] = [];
+	const isTsProject = fs.existsSync(path.join(targetPath, "tsconfig.json"));
+	const files = getSourceFiles(targetPath, isTsProject);
 
-				// Check pattern violations
-				for (const v of architectClient.checkFile(relPath, content)) {
-					msgs.push(v.message);
-				}
+	for (const full of files) {
+		const relPath = path.relative(targetPath, full).replace(/\\/g, "/");
+		const content = fs.readFileSync(full, "utf-8");
+		const lineCount = content.split("\n").length;
+		const msgs: string[] = [];
 
-				// Check file size
-				const sizeV = architectClient.checkFileSize(relPath, lineCount);
-				if (sizeV) {
-					msgs.push(sizeV.message);
-				}
-
-				if (msgs.length > 0) {
-					violationsByFile.set(full, msgs);
-				}
-			}
+		// Check pattern violations
+		for (const v of architectClient.checkFile(relPath, content)) {
+			const lineStr = v.line ? `L${v.line}: ` : "";
+			msgs.push(`${lineStr}${v.message}`);
 		}
-	};
-	scanDir(targetPath);
+
+		// Check file size
+		const sizeV = architectClient.checkFileSize(relPath, lineCount);
+		if (sizeV) {
+			msgs.push(sizeV.message);
+		}
+
+		if (msgs.length > 0) {
+			violationsByFile.set(full, msgs);
+		}
+	}
 	return violationsByFile;
 }
 
@@ -150,9 +156,14 @@ export function scoreFiles(
 			let score = 0;
 			const m = metricsByFile.get(file);
 			if (m) {
-				if (m.mi < 20) score += 5; else if (m.mi < 40) score += 3; else if (m.mi < 60) score += 1;
-				if (m.cognitive > 300) score += 4; else if (m.cognitive > 150) score += 2; else if (m.cognitive > 80) score += 1;
-				if (m.nesting > 8) score += 2; else if (m.nesting > 5) score += 1;
+				if (m.mi < 20) score += 5;
+				else if (m.mi < 40) score += 3;
+				else if (m.mi < 60) score += 1;
+				if (m.cognitive > 300) score += 4;
+				else if (m.cognitive > 150) score += 2;
+				else if (m.cognitive > 80) score += 1;
+				if (m.nesting > 8) score += 2;
+				else if (m.nesting > 5) score += 1;
 			}
 			for (const issue of skipByFile.get(file) ?? []) {
 				if (issue.rule === "large-class") score += 5;
@@ -182,9 +193,13 @@ export function extractCodeSnippet(
 ): { snippet: string; start: number; end: number } | null {
 	try {
 		const fileLines = fs.readFileSync(filePath, "utf-8").split("\n");
-		const start = Math.max(0, (firstLine - 1) - contextLines);
+		const start = Math.max(0, firstLine - 1 - contextLines);
 		const end = Math.min(fileLines.length, start + maxLines);
-		return { snippet: fileLines.slice(start, end).join("\n"), start: start + 1, end };
+		return {
+			snippet: fileLines.slice(start, end).join("\n"),
+			start: start + 1,
+			end,
+		};
 	} catch {
 		return null;
 	}

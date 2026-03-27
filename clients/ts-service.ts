@@ -6,7 +6,6 @@
  */
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import * as ts from "typescript";
 
 export class TypeScriptService {
@@ -120,12 +119,7 @@ export class TypeScriptService {
 				return null;
 			}
 		}
-		return ts.createSourceFile(
-			filePath,
-			content,
-			ts.ScriptTarget.Latest,
-			true,
-		);
+		return ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
 	}
 
 	/**

@@ -264,58 +264,61 @@ export class TypeScriptClient {
             ls: this.languageService,
         };
     }
-    /**
-     * Go to definition
-     */
-    getDefinition(filePath, line, character) {
+    withPosition(filePath, line, character, cb) {
         const resolved = this.resolvePosition(filePath, line, character);
         if (!resolved)
             return [];
         const { normalized, position, ls } = resolved;
-        const definitions = ls.getDefinitionAtPosition(normalized, position);
-        if (!definitions)
-            return [];
-        return definitions.map((def) => {
-            if (def.textSpan) {
-                const defFile = def.fileName || normalized;
-                const defContent = this.fileContents.get(defFile) || "";
-                if (defContent) {
-                    const lines = defContent.substring(0, def.textSpan.start).split("\n");
-                    return {
-                        file: defFile,
-                        line: lines.length - 1,
-                        character: lines[lines.length - 1].length,
-                    };
+        return cb(normalized, position, ls) ?? [];
+    }
+    /**
+     * Go to definition
+     */
+    getDefinition(filePath, line, character) {
+        return this.withPosition(filePath, line, character, (normalized, position, ls) => {
+            const definitions = ls.getDefinitionAtPosition(normalized, position);
+            if (!definitions)
+                return undefined;
+            return definitions.map((def) => {
+                if (def.textSpan) {
+                    const defFile = def.fileName || normalized;
+                    const defContent = this.fileContents.get(defFile) || "";
+                    if (defContent) {
+                        const lines = defContent
+                            .substring(0, def.textSpan.start)
+                            .split("\n");
+                        return {
+                            file: defFile,
+                            line: lines.length - 1,
+                            character: lines[lines.length - 1].length,
+                        };
+                    }
                 }
-            }
-            return { file: def.fileName, line: 0, character: 0 };
+                return { file: def.fileName, line: 0, character: 0 };
+            });
         });
     }
     /**
      * Get type definition
      */
     getTypeDefinition(filePath, line, character) {
-        const resolved = this.resolvePosition(filePath, line, character);
-        if (!resolved)
-            return [];
-        const { normalized, position, ls } = resolved;
-        const defs = ls.getTypeDefinitionAtPosition(normalized, position);
-        if (!defs)
-            return [];
-        return this.toLocations(defs, normalized);
+        return this.withPosition(filePath, line, character, (normalized, position, ls) => {
+            const defs = ls.getTypeDefinitionAtPosition(normalized, position);
+            if (!defs)
+                return undefined;
+            return this.toLocations(defs, normalized);
+        });
     }
     /**
      * Find references
      */
     getReferences(filePath, line, character) {
-        const resolved = this.resolvePosition(filePath, line, character);
-        if (!resolved)
-            return [];
-        const { normalized, position, ls } = resolved;
-        const references = ls.getReferencesAtPosition(normalized, position);
-        if (!references)
-            return [];
-        return this.toLocations(references);
+        return this.withPosition(filePath, line, character, (normalized, position, ls) => {
+            const references = ls.getReferencesAtPosition(normalized, position);
+            if (!references)
+                return undefined;
+            return this.toLocations(references);
+        });
     }
     /** Map TS definition/reference entries to Location objects. */
     toLocations(entries, fallbackFile) {
@@ -369,31 +372,27 @@ export class TypeScriptClient {
      * Get completions at a position
      */
     getCompletions(filePath, line, character) {
-        const resolved = this.resolvePosition(filePath, line, character);
-        if (!resolved)
-            return [];
-        const { normalized, position, ls } = resolved;
-        const completions = ls.getCompletionsAtPosition(normalized, position, {});
-        if (!completions)
-            return [];
-        return completions.entries.slice(0, 50).map((entry) => ({
-            name: entry.name,
-            kind: this.completionKind(entry.kind),
-            sortText: entry.sortText,
-        }));
+        return this.withPosition(filePath, line, character, (normalized, position, ls) => {
+            const completions = ls.getCompletionsAtPosition(normalized, position, {});
+            if (!completions)
+                return undefined;
+            return completions.entries.slice(0, 50).map((entry) => ({
+                name: entry.name,
+                kind: this.completionKind(entry.kind),
+                sortText: entry.sortText,
+            }));
+        });
     }
     /**
      * Go to implementation
      */
     getImplementation(filePath, line, character) {
-        const resolved = this.resolvePosition(filePath, line, character);
-        if (!resolved)
-            return [];
-        const { normalized, position, ls } = resolved;
-        const implementations = ls.getImplementationAtPosition(normalized, position);
-        if (!implementations)
-            return [];
-        return this.toLocations(implementations);
+        return this.withPosition(filePath, line, character, (normalized, position, ls) => {
+            const implementations = ls.getImplementationAtPosition(normalized, position);
+            if (!implementations)
+                return undefined;
+            return this.toLocations(implementations);
+        });
     }
     /**
      * Get folding ranges

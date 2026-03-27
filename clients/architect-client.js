@@ -16,35 +16,60 @@ export class ArchitectClient {
     constructor(verbose = false) {
         this.config = null;
         this.configPath = null;
+        this.isUserConfig = false;
         this.log = verbose
             ? (msg) => console.error(`[architect] ${msg}`)
             : () => { };
     }
     /**
-     * Load architect config from project root
+     * Load architect config from project root.
+     * Falls back to built-in default if no user config exists.
      */
     loadConfig(projectRoot) {
-        // Try common locations
-        const candidates = [
+        // Try user config locations first
+        const userCandidates = [
             path.join(projectRoot, ".pi-lens", "architect.yaml"),
             path.join(projectRoot, "architect.yaml"),
             path.join(projectRoot, ".pi-lens", "architect.yml"),
         ];
-        for (const configPath of candidates) {
+        for (const configPath of userCandidates) {
             try {
                 const content = fs.readFileSync(configPath, "utf-8");
                 this.config = this.parseYaml(content);
                 this.configPath = configPath;
-                this.log(`Loaded architect config from ${configPath}`);
+                this.isUserConfig = true;
+                this.log(`Loaded user architect config from ${configPath}`);
                 return true;
             }
             catch (error) {
                 this.log(`Could not read ${configPath}: ${error}`);
-                continue;
             }
         }
-        this.log("No architect.yaml found");
-        return false;
+        // Fall back to built-in default
+        try {
+            // Handle both CommonJS and ESM environments
+            let currentDir = ".";
+            if (typeof __dirname !== "undefined") {
+                currentDir = __dirname;
+            }
+            const defaultPath = path.join(currentDir, "..", "default-architect.yaml");
+            const content = fs.readFileSync(defaultPath, "utf-8");
+            this.config = this.parseYaml(content);
+            this.configPath = defaultPath;
+            this.isUserConfig = false;
+            this.log("Using default architect rules (create .pi-lens/architect.yaml to customize)");
+            return true;
+        }
+        catch {
+            this.log("No architect config available");
+            return false;
+        }
+    }
+    /**
+     * Check if the loaded config is user-defined (not default)
+     */
+    isUserDefined() {
+        return this.isUserConfig;
     }
     /**
      * Check if config is loaded
@@ -77,12 +102,22 @@ export class ArchitectClient {
             if (!rule.must_not)
                 continue;
             for (const check of rule.must_not) {
-                const regex = new RegExp(check.pattern, "i");
-                if (regex.test(content)) {
+                // We use 'g' to find all occurrences and correctly report line numbers
+                const regex = new RegExp(check.pattern, "gi");
+                let match;
+                // biome-ignore lint/suspicious/noAssignInExpressions: RegExp.exec iteration
+                while ((match = regex.exec(content)) !== null) {
+                    // Convert index to line number
+                    const lineNum = content.slice(0, match.index).split("\n").length;
                     violations.push({
                         pattern: rule.pattern,
                         message: check.message,
+                        line: lineNum,
                     });
+                    // Prevent infinite loop on empty matches
+                    if (match.index === regex.lastIndex) {
+                        regex.lastIndex++;
+                    }
                 }
             }
         }
@@ -132,7 +167,7 @@ export class ArchitectClient {
     parseYaml(content) {
         const config = { rules: [] };
         // Split into top-level rule blocks (4-space indent "- pattern:")
-        const ruleBlocks = content.split(/(?=^  - pattern:)/m);
+        const ruleBlocks = content.split(/(?=^ {2}- pattern:)/m);
         for (const block of ruleBlocks) {
             const lines = block.split("\n");
             let rule = null;
@@ -154,7 +189,9 @@ export class ArchitectClient {
                     continue;
                 }
                 // Nested pattern inside must_not (may start with "- ")
-                if ((trimmed.startsWith("pattern:") || trimmed.startsWith("- pattern:")) && section === "must_not") {
+                if ((trimmed.startsWith("pattern:") ||
+                    trimmed.startsWith("- pattern:")) &&
+                    section === "must_not") {
                     // Extract everything after "pattern:" and unquote
                     const raw = trimmed.replace(/^-?\s*pattern:\s*/, "").trim();
                     const unquoted = raw.replace(/^["']|["']$/g, "");
@@ -207,10 +244,4 @@ export class ArchitectClient {
     }
 }
 // --- Singleton ---
-let instance = null;
-export function getArchitectClient(verbose = false) {
-    if (!instance) {
-        instance = new ArchitectClient(verbose);
-    }
-    return instance;
-}
+const _instance = null;

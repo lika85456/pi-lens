@@ -38,7 +38,7 @@ export class KnipClient {
     /**
      * Run knip analysis on the project
      */
-    analyze(cwd) {
+    analyze(cwd, ignore) {
         if (!this.isAvailable()) {
             return {
                 success: false,
@@ -52,12 +52,16 @@ export class KnipClient {
         }
         const targetDir = cwd || process.cwd();
         try {
-            const result = spawnSync("npx", [
+            const args = [
                 "knip",
                 "--reporter=json",
                 "--include",
-                "exports,types,dependencies,unlisted",
-            ], {
+                "files,exports,types,dependencies,unlisted",
+            ];
+            if (ignore && ignore.length > 0) {
+                args.push("--ignore", ignore.join(","));
+            }
+            const result = spawnSync("npx", args, {
                 encoding: "utf-8",
                 timeout: 30000,
                 cwd: targetDir,
@@ -65,6 +69,10 @@ export class KnipClient {
             });
             // Knip exits 0 on success (even with issues), 1 on errors
             const output = result.stdout || "";
+            this.log(`Knip output length: ${output.length}`);
+            if (output.length < 500) {
+                this.log(`Knip output sample: ${output}`);
+            }
             if (!output.trim()) {
                 return {
                     success: true,

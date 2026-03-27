@@ -1,54 +1,46 @@
-/**
- * pi-lens - Real-time code feedback for pi
- *
- * Provides real-time diagnostics on every write/edit:
- * - TypeScript/JavaScript: Biome (lint+format) + TypeScript LSP (type checking)
- * - Python: Ruff (lint+format)
- * - All languages: ast-grep (63 structural rules)
- * - JavaScript/TypeScript: Dependency checker (circular deps)
- *
- * Proactive hints before write/edit:
- * - Warns when target file already has existing violations
- *
- * Auto-fix on write (enable with --autofix-ruff flag, Biome auto-fix disabled by default):
- * - Biome: feedback only by default, use /lens-format to apply fixes
- * - Ruff: applies --fix + format (lint + format fixes)
- *
- * On-demand commands:
- * - /lens-format - Apply Biome formatting
- *
- * External dependencies:
- * - npm: @biomejs/biome, @ast-grep/cli, knip, madge
- * - pip: ruff
- */
-
+import * as childProcess from "node:child_process";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { ArchitectClient } from "./clients/architect-client.js";
 import { AstGrepClient } from "./clients/ast-grep-client.js";
 import { BiomeClient } from "./clients/biome-client.js";
 import { ComplexityClient } from "./clients/complexity-client.js";
-import {
-	TypeSafetyClient,
-	getTypeSafetyClient,
-} from "./clients/type-safety-client.js";
-import { ArchitectClient } from "./clients/architect-client.js";
 import { DependencyChecker } from "./clients/dependency-checker.js";
 import { GoClient } from "./clients/go-client.js";
+import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
 import { MetricsClient } from "./clients/metrics-client.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import { RustClient } from "./clients/rust-client.js";
+import {
+	extractCodeSnippet,
+	scanArchitectViolations,
+	scanComplexityMetrics,
+	scanSkipViolations,
+	scoreFiles,
+} from "./clients/scan-architectural-debt.js";
+import { getSourceFiles, shouldIgnoreFile } from "./clients/scan-utils.js";
 import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
+import { TypeSafetyClient } from "./clients/type-safety-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
-import { buildInterviewer, type InterviewOption } from "./clients/interviewer.js";
-import { scanSkipViolations, scanComplexityMetrics, scanArchitectViolations, scoreFiles, extractCodeSnippet, type SkipIssue, type FileMetrics } from "./clients/scan-architectural-debt.js";
+
+import { handleBooboo } from "./commands/booboo.js";
+import { handleFix } from "./commands/fix.js";
+import { handleRefactor } from "./commands/refactor.js";
+
+const getExtensionDir = () => {
+	if (typeof __dirname !== "undefined") {
+		return __dirname;
+	}
+	return ".";
+};
 
 const DEBUG_LOG = path.join(os.homedir(), "pi-lens-debug.log");
 function dbg(msg: string) {
@@ -163,503 +155,17 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("lens-booboo", {
 		description:
 			"Full codebase review: design smells, complexity, AI slop detection, TODOs, dead code, duplicates, type coverage. Results saved to .pi-lens/reviews/. Usage: /lens-booboo [path]",
-		handler: async (args, ctx) => {
-			const targetPath = args.trim() || ctx.cwd || process.cwd();
-			ctx.ui.notify("🔍 Running full codebase review...", "info");
-
-			const parts: string[] = [];
-			const fullReport: string[] = [];
-			const timestamp = new Date()
-				.toISOString()
-				.replace(/[:.]/g, "-")
-				.slice(0, 19);
-			const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
-
-			// Part 1: Design smells via ast-grep
-			if (astGrepClient.isAvailable()) {
-				const configPath = path.join(
-					typeof __dirname !== "undefined" ? __dirname : ".",
-					"rules",
-					"ast-grep-rules",
-					".sgconfig.yml",
-				);
-
-				try {
-					const result = require("node:child_process").spawnSync(
-						"npx",
-						[
-							"sg",
-							"scan",
-							"--config",
-							configPath,
-							"--json",
-							"--globs",
-							"!**/*.test.ts",
-							"--globs",
-							"!**/*.spec.ts",
-							"--globs",
-							"!**/test-utils.ts",
-							"--globs",
-							"!**/.pi-lens/**",
-							targetPath,
-						],
-						{
-							encoding: "utf-8",
-							timeout: 30000,
-							shell: true,
-							maxBuffer: 32 * 1024 * 1024, // 32MB
-						},
-					);
-
-					const output = result.stdout || result.stderr || "";
-					if (output.trim() && result.status !== undefined) {
-						const issues: Array<{
-							line: number;
-							rule: string;
-							message: string;
-						}> = [];
-
-						// ast-grep outputs either a JSON array or NDJSON (one object per line)
-						// biome-ignore lint/suspicious/noExplicitAny: ast-grep JSON output is untyped
-						const parseItems = (raw: string): Record<string, any>[] => {
-							const trimmed = raw.trim();
-							if (trimmed.startsWith("[")) {
-								try {
-									return JSON.parse(trimmed);
-								} catch (err) {
-									void err;
-									return [];
-								}
-							}
-							return raw.split("\n").flatMap((l: string) => {
-								try {
-									return [JSON.parse(l)];
-								} catch (err) {
-									void err;
-									return [];
-								}
-							});
-						};
-
-						for (const item of parseItems(output)) {
-							const ruleId =
-								item.ruleId || item.rule?.title || item.name || "unknown";
-							const ruleDesc = astGrepClient.getRuleDescription?.(ruleId);
-							const message = ruleDesc?.message || item.message || ruleId;
-							const lineNum =
-								item.labels?.[0]?.range?.start?.line ||
-								item.spans?.[0]?.range?.start?.line ||
-								item.range?.start?.line ||
-								0;
-
-							issues.push({
-								line: lineNum + 1,
-								rule: ruleId,
-								message: message,
-							});
-						}
-
-						if (issues.length > 0) {
-							// UI summary (truncated)
-							let report = `[ast-grep] ${issues.length} issue(s) found:\n`;
-							for (const issue of issues.slice(0, 20)) {
-								report += `  L${issue.line}: ${issue.rule} — ${issue.message}\n`;
-							}
-							if (issues.length > 20) {
-								report += `  ... and ${issues.length - 20} more\n`;
-							}
-							parts.push(report);
-
-							// Full report for file
-							let fullSection = `## ast-grep (Structural Issues)\n\n**${issues.length} issue(s) found**\n\n`;
-							fullSection +=
-								"| Line | Rule | Message |\n|------|------|--------|\n";
-							for (const issue of issues) {
-								fullSection += `| ${issue.line} | ${issue.rule} | ${issue.message} |\n`;
-							}
-							fullReport.push(fullSection);
-						}
-					}
-				} catch (_err: any) {
-					dbg(`ast-grep scan failed: ${_err.message}`);
-				}
-			}
-
-			// Part 2: Similar functions (advanced duplicate detection)
-			if (astGrepClient.isAvailable()) {
-				const similarGroups = await astGrepClient.findSimilarFunctions(
-					targetPath,
-					"typescript",
-				);
-				if (similarGroups.length > 0) {
-					// UI summary (truncated)
-					let report = `[Similar Functions] ${similarGroups.length} group(s) of structurally similar functions:\n`;
-					for (const group of similarGroups.slice(0, 5)) {
-						report += `  Pattern: ${group.functions.map((f) => f.name).join(", ")}\n`;
-						for (const fn of group.functions) {
-							report += `    ${fn.name} (${path.basename(fn.file)}:${fn.line})\n`;
-						}
-					}
-					if (similarGroups.length > 5) {
-						report += `  ... and ${similarGroups.length - 5} more groups\n`;
-					}
-					parts.push(report);
-
-					// Full report for file
-					let fullSection = `## Similar Functions\n\n**${similarGroups.length} group(s) of structurally similar functions**\n\n`;
-					for (const group of similarGroups) {
-						fullSection += `### Pattern: ${group.functions.map((f) => f.name).join(", ")}\n\n`;
-						fullSection +=
-							"| Function | File | Line |\n|----------|------|------|\n";
-						for (const fn of group.functions) {
-							fullSection += `| ${fn.name} | ${fn.file} | ${fn.line} |\n`;
-						}
-						fullSection += "\n";
-					}
-					fullReport.push(fullSection);
-				}
-			}
-
-			// Part 3: Complexity metrics + AI slop detection
-			const results: import("./clients/complexity-client.js").FileComplexity[] =
-				[];
-			const aiSlopIssues: string[] = [];
-
-			const scanDir = (dir: string) => {
-				let entries: nodeFs.Dirent[];
-				try {
-					entries = nodeFs.readdirSync(dir, { withFileTypes: true });
-				} catch {
-					return;
-				}
-
-				for (const entry of entries) {
-					const fullPath = path.join(dir, entry.name);
-					if (
-						entry.isDirectory() &&
-						![
-							"node_modules",
-							".git",
-							"dist",
-							"build",
-							".next",
-							".pi-lens",
-						].includes(entry.name)
-					) {
-						scanDir(fullPath);
-					} else if (complexityClient.isSupportedFile(fullPath)) {
-						const metrics = complexityClient.analyzeFile(fullPath);
-						if (metrics) {
-							results.push(metrics);
-
-							// Check AI slop indicators — skip test files (low MI is expected/structural)
-							if (!/\.(test|spec)\.[jt]sx?$/.test(entry.name)) {
-								const warnings = complexityClient.checkThresholds(metrics);
-								if (warnings.length > 0) {
-									aiSlopIssues.push(`  ${metrics.filePath}:`);
-									for (const w of warnings) {
-										aiSlopIssues.push(`    ⚠ ${w}`);
-									}
-								}
-							}
-						}
-					}
-				}
-			};
-
-			scanDir(targetPath);
-
-			if (results.length > 0) {
-				const avgMI =
-					results.reduce((a, b) => a + b.maintainabilityIndex, 0) /
-					results.length;
-				const avgCognitive =
-					results.reduce((a, b) => a + b.cognitiveComplexity, 0) /
-					results.length;
-				const avgCyclomatic =
-					results.reduce((a, b) => a + b.cyclomaticComplexity, 0) /
-					results.length;
-				const maxNesting = Math.max(...results.map((r) => r.maxNestingDepth));
-				const maxCognitive = Math.max(
-					...results.map((r) => r.cognitiveComplexity),
-				);
-				const minMI = Math.min(...results.map((r) => r.maintainabilityIndex));
-
-				const lowMI = results
-					.filter((r) => r.maintainabilityIndex < 60)
-					.sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
-				const highCognitive = results
-					.filter((r) => r.cognitiveComplexity > 20)
-					.sort((a, b) => b.cognitiveComplexity - a.cognitiveComplexity);
-
-				// UI summary (truncated)
-				let summary = `[Complexity] ${results.length} file(s) scanned\n`;
-				summary += `  Maintainability: ${avgMI.toFixed(1)} avg | Cognitive: ${avgCognitive.toFixed(1)} avg | Max Nesting: ${maxNesting} levels\n`;
-
-				if (lowMI.length > 0) {
-					summary += `\n  Low Maintainability (MI < 60):\n`;
-					for (const f of lowMI.slice(0, 5)) {
-						summary += `    ✗ ${f.filePath}: MI ${f.maintainabilityIndex.toFixed(1)}\n`;
-					}
-					if (lowMI.length > 5)
-						summary += `    ... and ${lowMI.length - 5} more\n`;
-				}
-
-				if (highCognitive.length > 0) {
-					summary += `\n  High Cognitive Complexity (> 20):\n`;
-					for (const f of highCognitive.slice(0, 5)) {
-						summary += `    ⚠ ${f.filePath}: ${f.cognitiveComplexity}\n`;
-					}
-					if (highCognitive.length > 5)
-						summary += `    ... and ${highCognitive.length - 5} more\n`;
-				}
-
-				// Add AI slop issues
-				if (aiSlopIssues.length > 0) {
-					summary += `\n[AI Slop Indicators]\n${aiSlopIssues.join("\n")}`;
-				}
-
-				parts.push(summary);
-
-				// Full report for file
-				let fullSection = `## Complexity Metrics\n\n**${results.length} file(s) scanned**\n\n`;
-				fullSection += `### Summary\n\n`;
-				fullSection += `| Metric | Value |\n|--------|-------|\n`;
-				fullSection += `| Avg Maintainability Index | ${avgMI.toFixed(1)} |\n`;
-				fullSection += `| Min Maintainability Index | ${minMI.toFixed(1)} |\n`;
-				fullSection += `| Avg Cognitive Complexity | ${avgCognitive.toFixed(1)} |\n`;
-				fullSection += `| Max Cognitive Complexity | ${maxCognitive} |\n`;
-				fullSection += `| Avg Cyclomatic Complexity | ${avgCyclomatic.toFixed(1)} |\n`;
-				fullSection += `| Max Nesting Depth | ${maxNesting} |\n`;
-				fullSection += `| Total Files | ${results.length} |\n\n`;
-
-				if (lowMI.length > 0) {
-					fullSection += `### Low Maintainability (MI < 60)\n\n`;
-					fullSection += `| File | MI | Cognitive | Cyclomatic | Nesting |\n`;
-					fullSection += `|------|-----|-----------|------------|--------|\n`;
-					for (const f of lowMI) {
-						fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
-					}
-					fullSection += "\n";
-				}
-
-				if (highCognitive.length > 0) {
-					fullSection += `### High Cognitive Complexity (> 20)\n\n`;
-					fullSection += `| File | Cognitive | MI | Cyclomatic | Nesting |\n`;
-					fullSection += `|------|-----------|-----|------------|--------|\n`;
-					for (const f of highCognitive) {
-						fullSection += `| ${f.filePath} | ${f.cognitiveComplexity} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} |\n`;
-					}
-					fullSection += "\n";
-				}
-
-				// All files table
-				fullSection += `### All Files\n\n`;
-				fullSection += `| File | MI | Cognitive | Cyclomatic | Nesting | Entropy |\n`;
-				fullSection += `|------|-----|-----------|------------|---------|--------|\n`;
-				for (const f of results.sort(
-					(a, b) => a.maintainabilityIndex - b.maintainabilityIndex,
-				)) {
-					fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} | ${f.codeEntropy.toFixed(2)} |\n`;
-				}
-				fullSection += "\n";
-
-				// AI slop indicators
-				if (aiSlopIssues.length > 0) {
-					fullSection += `### AI Slop Indicators\n\n`;
-					for (const issue of aiSlopIssues) {
-						fullSection += `${issue}\n`;
-					}
-					fullSection += "\n";
-				}
-
-				fullReport.push(fullSection);
-			}
-
-			// Part 4: TODOs scan
-			const todoResult = todoScanner.scanDirectory(targetPath);
-			const todoReport = todoScanner.formatResult(todoResult);
-			if (todoReport) {
-				parts.push(todoReport);
-				// Full TODO report
-				let fullSection = `## TODOs / Annotations\n\n`;
-				if (todoResult.items.length > 0) {
-					fullSection += `**${todoResult.items.length} annotation(s) found**\n\n`;
-					fullSection += `| Type | File | Line | Text |\n`;
-					fullSection += `|------|------|------|------|\n`;
-					for (const item of todoResult.items) {
-						fullSection += `| ${item.type} | ${item.file} | ${item.line} | ${item.message} |\n`;
-					}
-				} else {
-					fullSection += `No annotations found.\n`;
-				}
-				fullSection += "\n";
-				fullReport.push(fullSection);
-			}
-
-			// Part 5: Dead code (knip)
-			if (knipClient.isAvailable()) {
-				const knipResult = knipClient.analyze(targetPath);
-				const knipReport = knipClient.formatResult(knipResult);
-				if (knipReport) {
-					parts.push(knipReport);
-					// Full knip report
-					let fullSection = `## Dead Code (Knip)\n\n`;
-					if (knipResult.issues.length > 0) {
-						fullSection += `**${knipResult.issues.length} issue(s) found**\n\n`;
-						fullSection += `| Type | Name | File |\n`;
-						fullSection += `|------|------|------|\n`;
-						for (const issue of knipResult.issues) {
-							fullSection += `| ${issue.type} | ${issue.name} | ${issue.file ?? ""} |\n`;
-						}
-					} else {
-						fullSection += `No dead code issues found.\n`;
-					}
-					fullSection += "\n";
-					fullReport.push(fullSection);
-				}
-			}
-
-			// Part 6: Code duplication
-			if (jscpdClient.isAvailable()) {
-				const jscpdResult = jscpdClient.scan(targetPath);
-				const jscpdReport = jscpdClient.formatResult(jscpdResult);
-				if (jscpdReport) {
-					parts.push(jscpdReport);
-					// Full jscpd report
-					let fullSection = `## Code Duplication (jscpd)\n\n`;
-					if (jscpdResult.clones.length > 0) {
-						fullSection += `**${jscpdResult.clones.length} duplicate block(s) found** (${jscpdResult.duplicatedLines}/${jscpdResult.totalLines} lines, ${jscpdResult.percentage.toFixed(1)}%)\n\n`;
-						fullSection += `| File A | Line A | File B | Line B | Lines | Tokens |\n`;
-						fullSection += `|--------|--------|--------|--------|-------|--------|\n`;
-						for (const dup of jscpdResult.clones) {
-							fullSection += `| ${dup.fileA} | ${dup.startA} | ${dup.fileB} | ${dup.startB} | ${dup.lines} | ${dup.tokens} |\n`;
-						}
-					} else {
-						fullSection += `No duplicate code found.\n`;
-					}
-					fullSection += "\n";
-					fullReport.push(fullSection);
-				}
-			}
-
-			// Part 7: Type coverage
-			if (typeCoverageClient.isAvailable()) {
-				const tcResult = typeCoverageClient.scan(targetPath);
-				const tcReport = typeCoverageClient.formatResult(tcResult);
-				if (tcReport) {
-					parts.push(tcReport);
-					// Full type coverage report
-					let fullSection = `## Type Coverage\n\n`;
-					fullSection += `**${tcResult.percentage.toFixed(1)}% typed** (${tcResult.typed}/${tcResult.total} identifiers)\n\n`;
-					if (tcResult.untypedLocations.length > 0) {
-						fullSection += `### Untyped Identifiers\n\n`;
-						fullSection += `| File | Line | Column | Name |\n`;
-						fullSection += `|------|------|--------|------|\n`;
-						for (const u of tcResult.untypedLocations) {
-							fullSection += `| ${u.file} | ${u.line} | ${u.column} | ${u.name} |\n`;
-						}
-					}
-					fullSection += "\n";
-					fullReport.push(fullSection);
-				}
-			}
-
-			// Part 8: Circular dependencies
-			if (!pi.getFlag("no-madge") && depChecker.isAvailable()) {
-				const { circular } = depChecker.scanProject(targetPath);
-				const depReport = depChecker.formatScanResult(circular);
-				if (depReport) {
-					parts.push(depReport);
-					let fullSection = `## Circular Dependencies (Madge)\n\n`;
-					fullSection += `**${circular.length} circular chain(s) found**\n\n`;
-					for (const dep of circular) {
-						fullSection += `- ${dep.path.join(" → ")}\n`;
-					}
-					fullSection += "\n";
-					fullReport.push(fullSection);
-				}
-			}
-
-			// Part 9: Architectural Rules
-			// Reload config in case it was added after session start
-			if (!architectClient.hasConfig()) {
-				architectClient.loadConfig(projectRoot);
-			}
-			if (architectClient.hasConfig()) {
-				const archViolations: Array<{ file: string; message: string }> = [];
-				const archScanDir = (dir: string) => {
-					for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-						const full = path.join(dir, entry.name);
-						if (entry.isDirectory()) {
-							if (
-								["node_modules", ".git", "dist", "build", ".next", ".pi-lens"].includes(
-									entry.name,
-								)
-							)
-								continue;
-							archScanDir(full);
-						} else if (/\.(ts|tsx|js|jsx|py|go|rs)$/.test(entry.name)) {
-							const relPath = path.relative(targetPath, full).replace(/\\/g, "/");
-							const content = fs.readFileSync(full, "utf-8");
-							const lineCount = content.split("\n").length;
-
-							// Check pattern violations
-							const violations = architectClient.checkFile(relPath, content);
-							for (const v of violations) {
-								archViolations.push({ file: relPath, message: v.message });
-							}
-
-							// Check file size
-							const sizeV = architectClient.checkFileSize(relPath, lineCount);
-							if (sizeV) {
-								archViolations.push({ file: relPath, message: sizeV.message });
-							}
-						}
-					}
-				};
-				archScanDir(targetPath);
-
-				if (archViolations.length > 0) {
-					parts.push(
-						`🔴 ${archViolations.length} architectural violation(s) — fix before adding new code`,
-					);
-					let fullSection = `## Architectural Rules\n\n`;
-					fullSection += `**${archViolations.length} violation(s) found**\n\n`;
-					for (const v of archViolations) {
-						fullSection += `- **${v.file}**: ${v.message}\n`;
-					}
-					fullSection += "\n";
-					fullReport.push(fullSection);
-				}
-			}
-
-			// Build and save full markdown report
-			const fs = require("node:fs");
-			fs.mkdirSync(reviewDir, { recursive: true });
-
-			const projectName = path.basename(process.cwd());
-			let mdReport = `# Code Review: ${projectName}\n\n`;
-			mdReport += `**Scanned:** ${new Date().toISOString()}\n\n`;
-			mdReport += `**Path:** \`${targetPath}\`\n\n`;
-			mdReport += `---\n\n`;
-			mdReport += fullReport.join("\n");
-
-			const reportPath = path.join(reviewDir, `booboo-${timestamp}.md`);
-			fs.writeFileSync(reportPath, mdReport, "utf-8");
-
-			if (parts.length === 0) {
-				ctx.ui.notify(
-					"✓ Code review clean — saved to .pi-lens/reviews/",
-					"info",
-				);
-			} else {
-				ctx.ui.notify(
-					`${parts.join("\n\n")}\n\n📄 Full report: ${reportPath}`,
-					"info",
-				);
-			}
-		},
+		handler: (args, ctx) =>
+			handleBooboo(args, ctx, {
+				astGrep: astGrepClient,
+				complexity: complexityClient,
+				todo: todoScanner,
+				knip: knipClient,
+				jscpd: jscpdClient,
+				typeCoverage: typeCoverageClient,
+				depChecker: depChecker,
+				architect: architectClient,
+			}, pi),
 	});
 
 	// --- Rule action map for lens-booboo-fix ---
@@ -754,569 +260,29 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("lens-booboo-fix", {
 		description:
-			"Iterative fix loop: auto-fixes Biome/Ruff, then generates a per-issue plan for agent to execute. Run repeatedly until clean. Usage: /lens-booboo-fix [path]",
-		handler: async (args, ctx) => {
-			const targetPath = args.trim() || ctx.cwd || process.cwd();
-			const fs = require("node:fs") as typeof import("node:fs");
-			const sessionFile = path.join(
-				process.cwd(),
-				".pi-lens",
-				"fix-session.json",
-			);
-			const configPath = path.join(
-				typeof __dirname !== "undefined" ? __dirname : ".",
-				"rules",
-				"ast-grep-rules",
-				".sgconfig.yml",
-			);
-
-			ctx.ui.notify("🔧 Running booboo fix loop...", "info");
-
-			const MAX_ITERATIONS = 3;
-
-			// Detect TypeScript project — exclude compiled .js output from scans
-			const isTsProject = fs.existsSync(path.join(targetPath, "tsconfig.json"));
-			dbg(`booboo-fix: isTsProject=${isTsProject}`);
-
-			// Load session state
-			let session: { iteration: number; counts: Record<string, number> } = {
-				iteration: 0,
-				counts: {},
-			};
-			try {
-				session = JSON.parse(fs.readFileSync(sessionFile, "utf-8"));
-			} catch (e) {
-				dbg(`fix-session load failed: ${e}`);
-			}
-			session.iteration++;
-
-			// Hard stop at max iterations — auto-reset for next run
-			if (session.iteration > MAX_ITERATIONS) {
-				try {
-					fs.unlinkSync(sessionFile);
-				} catch {
-					void 0;
-				}
-				ctx.ui.notify(
-					`⛔ Max iterations (${MAX_ITERATIONS}) reached. Session reset — run /lens-booboo-fix again for a fresh loop, or /lens-booboo for a full report.`,
-					"warning",
-				);
-				return;
-			}
-			const prevCounts = { ...session.counts };
-
-			// --- Step 1: Auto-fix with Biome + Ruff ---
-			let biomeRan = false;
-			if (!pi.getFlag("no-biome") && biomeClient.isAvailable()) {
-				require("node:child_process").spawnSync(
-					"npx",
-					["@biomejs/biome", "check", "--write", "--unsafe", targetPath],
-					{ encoding: "utf-8", timeout: 30000, shell: true },
-				);
-				biomeRan = true;
-			}
-			let ruffRan = false;
-			if (!pi.getFlag("no-ruff") && ruffClient.isAvailable()) {
-				require("node:child_process").spawnSync(
-					"ruff",
-					["check", "--fix", targetPath],
-					{ encoding: "utf-8", timeout: 15000, shell: true },
-				);
-				require("node:child_process").spawnSync(
-					"ruff",
-					["format", targetPath],
-					{ encoding: "utf-8", timeout: 15000, shell: true },
-				);
-				ruffRan = true;
-			}
-
-			// --- Step 2: Duplicate code (jscpd) ---
-			type JscpdClone = {
-				fileA: string;
-				fileB: string;
-				startA: number;
-				startB: number;
-				lines: number;
-			};
-			const dupClones: JscpdClone[] = [];
-			if (jscpdClient.isAvailable()) {
-				const jscpdResult = jscpdClient.scan(targetPath);
-				// Only within-file duplicates are mechanically fixable
-				const clones = jscpdResult.clones.filter((c) => {
-					if (isTsProject && (c.fileA.endsWith(".js") || c.fileB.endsWith(".js"))) return false;
-					return path.resolve(c.fileA) === path.resolve(c.fileB);
-				});
-				dupClones.push(...clones);
-				dbg(
-					`booboo-fix jscpd: ${dupClones.length} within-file clone(s) from ${jscpdResult.clones.length} total`,
-				);
-			}
-
-			// --- Step 3: Dead code (knip) ---
-			type KnipIssue = { type: string; name: string; file?: string };
-			const deadCodeIssues: KnipIssue[] = [];
-			if (knipClient.isAvailable()) {
-				const knipResult = knipClient.analyze(targetPath);
-				deadCodeIssues.push(...knipResult.issues);
-				dbg(`booboo-fix knip: ${deadCodeIssues.length} issue(s)`);
-			}
-
-			// --- Step 4: ast-grep scan (on surviving code) ---
-			type AstIssue = {
-				rule: string;
-				file: string;
-				line: number;
-				message: string;
-			};
-			const astIssues: AstIssue[] = [];
-			if (astGrepClient.isAvailable()) {
-				const result = require("node:child_process").spawnSync(
-					"npx",
-					[
-						"sg",
-						"scan",
-						"--config",
-						configPath,
-						"--json",
-						"--globs",
-						"!**/*.test.ts",
-						"--globs",
-						"!**/*.spec.ts",
-						"--globs",
-						"!**/test-utils.ts",
-						"--globs",
-						"!**/.pi-lens/**",
-						...(isTsProject ? ["--globs", "!**/*.js"] : []),
-						targetPath,
-					],
-					{
-						encoding: "utf-8",
-						timeout: 30000,
-						shell: true,
-						maxBuffer: 32 * 1024 * 1024,
-					},
-				);
-
-				const raw = result.stdout?.trim() ?? "";
-				// biome-ignore lint/suspicious/noExplicitAny: ast-grep JSON output is untyped
-				const items: Record<string, any>[] = raw.startsWith("[")
-					? (() => {
-							try {
-								return JSON.parse(raw);
-							} catch (e) {
-								dbg(`ast-grep parse failed: ${e}`);
-								return [];
-							}
-						})()
-					: raw.split("\n").flatMap((l: string) => {
-							try {
-								return [JSON.parse(l)];
-							} catch (err) {
-								void err;
-								return [];
-							}
-						});
-
-				for (const item of items) {
-					const rule =
-						item.ruleId || item.rule?.title || item.name || "unknown";
-					const line =
-						(item.labels?.[0]?.range?.start?.line ??
-							item.range?.start?.line ??
-							0) + 1;
-					const relFile = path
-						.relative(targetPath, item.file ?? "")
-						.replace(/\\/g, "/");
-					astIssues.push({
-						rule,
-						file: relFile,
-						line,
-						message: item.message ?? rule,
-					});
-				}
-			}
-
-			// --- Step 5: AI slop from complexity scan ---
-			const slopFiles: Array<{ file: string; warnings: string[] }> = [];
-			const slopScanDir = (dir: string) => {
-				if (!fs.existsSync(dir)) return;
-				for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-					const fullPath = path.join(dir, entry.name);
-					if (entry.isDirectory()) {
-						if (
-							[
-								"node_modules",
-								".git",
-								"dist",
-								"build",
-								".next",
-								".pi-lens",
-							].includes(entry.name)
-						)
-							continue;
-						slopScanDir(fullPath);
-					} else if (
-						complexityClient.isSupportedFile(fullPath) &&
-						!/\.(test|spec)\.[jt]sx?$/.test(entry.name) &&
-						!(isTsProject && /\.js$/.test(entry.name))
-					) {
-						const metrics = complexityClient.analyzeFile(fullPath);
-						if (metrics) {
-							const warnings = complexityClient
-								.checkThresholds(metrics)
-								.filter(
-									(w) =>
-										w.includes("AI-style") ||
-										w.includes("try/catch") ||
-										w.includes("single-use") ||
-										w.includes("Excessive comments"),
-								);
-							// Only flag files with 2+ signals — single-issue flags are noise
-							if (warnings.length >= 2) {
-								slopFiles.push({
-									file: path.relative(targetPath, fullPath).replace(/\\/g, "/"),
-									warnings,
-								});
-							}
-						}
-					}
-				}
-			};
-			slopScanDir(targetPath);
-
-			// --- Step 6: Remaining Biome lint (unfixable by --unsafe) ---
-			const remainingBiome: Array<{
-				file: string;
-				line: number;
-				rule: string;
-				message: string;
-			}> = [];
-			if (!pi.getFlag("no-biome") && biomeClient.isAvailable()) {
-				const checkResult = require("node:child_process").spawnSync(
-					"npx",
-					[
-						"@biomejs/biome",
-						"check",
-						"--reporter=json",
-						"--max-diagnostics=50",
-						targetPath,
-					],
-					{ encoding: "utf-8", timeout: 20000, shell: true },
-				);
-				try {
-					const data = JSON.parse(checkResult.stdout ?? "{}");
-					for (const diag of (data.diagnostics ?? []).slice(0, 20)) {
-						if (!diag.category?.startsWith("lint/")) continue;
-						const filePath = diag.location?.path?.file ?? "";
-						const line = diag.location?.span?.start?.line ?? 0;
-						const rule = diag.category ?? "lint";
-						remainingBiome.push({
-							file: path.relative(targetPath, filePath).replace(/\\/g, "/"),
-							line: line + 1,
-							rule,
-							message: diag.message ?? rule,
-						});
-					}
-				} catch (e) {
-					dbg(`biome lint parse failed: ${e}`);
-				}
-			}
-
-			// --- Categorize ast-grep issues ---
-			const agentTasks: AstIssue[] = [];
-			const skipRules = new Map<string, { note: string; count: number }>();
-
-			const byRule = new Map<string, AstIssue[]>();
-			for (const issue of astIssues) {
-				const list = byRule.get(issue.rule) ?? [];
-				list.push(issue);
-				byRule.set(issue.rule, list);
-			}
-			for (const [rule, issues] of byRule) {
-				const action = RULE_ACTIONS[rule];
-				if (!action || action.type === "agent") {
-					agentTasks.push(...issues);
-				} else if (action.type === "skip") {
-					skipRules.set(rule, { note: action.note, count: issues.length });
-				}
-			}
-
-			// --- Update session counts ---
-			const currentCounts = {
-				duplicates: dupClones.length,
-				dead_code: deadCodeIssues.length,
-				agent_ast: agentTasks.length,
-				biome_lint: remainingBiome.length,
-				slop_files: slopFiles.length,
-			};
-			session.counts = currentCounts;
-			fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-			fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2), "utf-8");
-
-			// --- Check if done ---
-			const totalFixable =
-				dupClones.length +
-				deadCodeIssues.length +
-				agentTasks.length +
-				remainingBiome.length +
-				slopFiles.length;
-			if (totalFixable === 0) {
-				const msg = `✅ BOOBOO FIX LOOP COMPLETE — No more fixable issues found after ${session.iteration} iteration(s).\n\nRemaining skipped items are architectural — see /lens-booboo for full report.`;
-				ctx.ui.notify(msg, "info");
-				try {
-					fs.unlinkSync(sessionFile);
-				} catch {
-					void 0;
-				}
-				return;
-			}
-
-			// --- Build delta line ---
-			let deltaLine = "";
-			if (session.iteration > 1 && Object.keys(prevCounts).length > 0) {
-				const prevTotal = Object.values(prevCounts).reduce((a, b) => a + b, 0);
-				const fixed = prevTotal - totalFixable;
-				deltaLine =
-					fixed > 0
-						? `✅ Fixed ${fixed} issues since last iteration.`
-						: `⚠️ No change since last iteration — check if fixes were applied.`;
-			}
-
-			// --- Build the fix plan message ---
-			const lines: string[] = [];
-			lines.push(
-				`📋 BOOBOO FIX PLAN — Iteration ${session.iteration}/${MAX_ITERATIONS} (${totalFixable} fixable items remaining)`,
-			);
-			if (deltaLine) lines.push(deltaLine);
-			lines.push("");
-
-			if (biomeRan || ruffRan) {
-				lines.push(
-					`⚡ Auto-fixed: ${[biomeRan && "Biome --write --unsafe", ruffRan && "Ruff --fix + format"].filter(Boolean).join(", ")} already ran.`,
-				);
-				lines.push("");
-			}
-
-			// Duplicate code — fix first
-			if (dupClones.length > 0) {
-				lines.push(
-					`## 🔁 Duplicate code [${dupClones.length} block(s)] — fix first`,
-				);
-				lines.push(
-					"→ Extract duplicated blocks into shared utilities before fixing violations in them.",
-				);
-				for (const clone of dupClones.slice(0, 10)) {
-					const relA = path
-						.relative(targetPath, clone.fileA)
-						.replace(/\\/g, "/");
-					const relB = path
-						.relative(targetPath, clone.fileB)
-						.replace(/\\/g, "/");
-					lines.push(
-						`  - ${clone.lines} lines: \`${relA}:${clone.startA}\` ↔ \`${relB}:${clone.startB}\``,
-					);
-				}
-				if (dupClones.length > 10)
-					lines.push(`  ... and ${dupClones.length - 10} more`);
-				lines.push("");
-			}
-
-			// Dead code — delete before fixing violations in it
-			if (deadCodeIssues.length > 0) {
-				lines.push(
-					`## 🗑️ Dead code [${deadCodeIssues.length} item(s)] — delete before fixing violations`,
-				);
-				lines.push(
-					"→ Remove unused exports/files — no point fixing violations in code you're about to delete.",
-				);
-				for (const issue of deadCodeIssues.slice(0, 10)) {
-					lines.push(
-						`  - [${issue.type}] \`${issue.name}\`${issue.file ? ` in ${issue.file}` : ""}`,
-					);
-				}
-				if (deadCodeIssues.length > 10)
-					lines.push(`  ... and ${deadCodeIssues.length - 10} more`);
-				lines.push("");
-			}
-
-			// Agent tasks — ast-grep violations on surviving code
-			if (agentTasks.length > 0) {
-				lines.push(`## 🔨 Fix these [${agentTasks.length} items]`);
-				lines.push("");
-				const groupedAgent = new Map<string, AstIssue[]>();
-				for (const t of agentTasks) {
-					const g = groupedAgent.get(t.rule) ?? [];
-					g.push(t);
-					groupedAgent.set(t.rule, g);
-				}
-				for (const [rule, issues] of groupedAgent) {
-					const action = RULE_ACTIONS[rule];
-					const note = action?.note ?? "Fix this violation";
-					lines.push(`### ${rule} (${issues.length})`);
-					lines.push(`→ ${note}`);
-					for (const issue of issues.slice(0, 15)) {
-						lines.push(`  - \`${issue.file}:${issue.line}\``);
-					}
-					if (issues.length > 15)
-						lines.push(`  ... and ${issues.length - 15} more`);
-					lines.push("");
-				}
-			}
-
-			// Remaining Biome lint — couldn't be auto-fixed even with --unsafe
-			if (remainingBiome.length > 0) {
-				lines.push(
-					`## 🟠 Remaining Biome lint [${remainingBiome.length} items]`,
-				);
-				lines.push(
-					"→ These couldn't be auto-fixed by Biome --unsafe. Fix each one manually:",
-				);
-				for (const d of remainingBiome.slice(0, 10)) {
-					lines.push(`  - \`${d.file}:${d.line}\` [${d.rule}] ${d.message}`);
-				}
-				if (remainingBiome.length > 10)
-					lines.push(`  ... and ${remainingBiome.length - 10} more`);
-				lines.push("");
-			}
-
-			// AI slop
-			if (slopFiles.length > 0) {
-				lines.push(`## 🤖 AI Slop indicators [${slopFiles.length} files]`);
-				for (const { file, warnings } of slopFiles.slice(0, 10)) {
-					lines.push(
-						`  - \`${file}\`: ${warnings.map((w) => w.split(" — ")[0]).join(", ")}`,
-					);
-				}
-				if (slopFiles.length > 10)
-					lines.push(`  ... and ${slopFiles.length - 10} more`);
-				lines.push("");
-			}
-
-			// Skips
-			if (skipRules.size > 0) {
-				lines.push(
-					`## ⏭️ Skip [${[...skipRules.values()].reduce((a, b) => a + b.count, 0)} items — architectural]`,
-				);
-				for (const [rule, { note, count }] of skipRules) {
-					lines.push(`  - **${rule}** (${count}): ${note}`);
-				}
-				lines.push("");
-			}
-
-			lines.push("---");
-			lines.push(
-				"Fix the items above in order, then run `/lens-booboo-fix` again for the next iteration.",
-			);
-			lines.push(
-				"If an item is not safe to fix, skip it with one sentence why.",
-			);
-
-			const fixPlan = lines.join("\n");
-
-			// Save plan for reference
-			const planPath = path.join(process.cwd(), ".pi-lens", "fix-plan.md");
-			fs.writeFileSync(
-				planPath,
-				`# Fix Plan — Iteration ${session.iteration}\n\n${fixPlan}`,
-				"utf-8",
-			);
-
-			// Notify and inject into conversation
-			ctx.ui.notify(`📄 Fix plan saved: ${planPath}`, "info");
-			// Use steer delivery — agent is busy processing this tool call
-			// steer interrupts mid-processing with the next fix plan
-			pi.sendUserMessage(fixPlan, { deliverAs: "steer" });
-		},
+			"Iterative fix loop: auto-fixes Biome/Ruff, then generates a per-issue plan for agent to execute. Run repeatedly until clean. Usage: /lens-booboo-fix [path] [--reset]",
+		handler: (args, ctx) =>
+			handleFix(args, ctx, {
+				tsClient,
+				astGrep: astGrepClient,
+				ruff: ruffClient,
+				biome: biomeClient,
+				knip: knipClient,
+				jscpd: jscpdClient,
+				complexity: complexityClient,
+			}, pi, RULE_ACTIONS),
 	});
+
 
 	pi.registerCommand("lens-booboo-refactor", {
 		description:
 			"Interactive architectural refactor: scans for worst offender, opens a browser interview with options + recommendation, then steers the agent with your decision. Usage: /lens-booboo-refactor [path]",
-		handler: async (args, ctx) => {
-			const targetPath = args.trim() || ctx.cwd || process.cwd();
-			const fs = require("node:fs") as typeof import("node:fs");
-			ctx.ui.notify("🏗️ Scanning for architectural debt...", "info");
-
-			// --- Scan for architectural debt (shared module) ---
-			const configPath = path.join(
-				typeof __dirname !== "undefined" ? __dirname : ".",
-				"rules", "ast-grep-rules", ".sgconfig.yml",
-			);
-			const isTsProject = fs.existsSync(path.join(targetPath, "tsconfig.json"));
-
-			const skipByFile = scanSkipViolations(astGrepClient, configPath, targetPath, isTsProject, SKIP_RULES, RULE_ACTIONS);
-			const metricsByFile = scanComplexityMetrics(complexityClient, targetPath, isTsProject);
-			const architectViolations = architectClient.hasConfig()
-				? scanArchitectViolations(architectClient, targetPath)
-				: new Map<string, string[]>();
-			const scored = scoreFiles(skipByFile, metricsByFile, architectViolations);
-
-			if (scored.length === 0) {
-				ctx.ui.notify("✅ No architectural debt found — codebase is clean.", "info");
-				return;
-			}
-
-			const { file: worstFile, score } = scored[0];
-			const relFile = path.relative(targetPath, worstFile).replace(/\\/g, "/");
-			const issues = skipByFile.get(worstFile) ?? [];
-			const metrics = metricsByFile.get(worstFile);
-			const archIssues = architectViolations.get(worstFile) ?? [];
-
-			const snippetResult = issues.length > 0 ? extractCodeSnippet(worstFile, issues[0].line) : null;
-			const snippet = snippetResult?.snippet ?? "";
-			const snippetStart = snippetResult?.start ?? 1;
-			const snippetEnd = snippetResult?.end ?? 1;
-
-			// --- Steer agent (agent generates options + calls interviewer tool) ---
-			const ruleGroups = new Map<string, number>();
-			for (const i of issues)
-				ruleGroups.set(i.rule, (ruleGroups.get(i.rule) ?? 0) + 1);
-
-			const issuesSummary = [...ruleGroups.entries()]
-				.map(
-					([r, n]) =>
-						`- \`${r}\` (×${n})${RULE_ACTIONS[r] ? ` — ${RULE_ACTIONS[r].note}` : ""}`,
-				)
-				.join("\n");
-			const archSummary = archIssues.length > 0
-				? archIssues.map((m) => `- ${m}`).join("\n")
-				: "None";
-			const metricsSummary = metrics
-				? `MI: ${metrics.mi.toFixed(1)}, Cognitive: ${metrics.cognitive}, Nesting: ${metrics.nesting}`
-				: "";
-
-			const steer = [
-				`🏗️ BOOBOO REFACTOR — worst offender identified`,
-				"",
-				`**File**: \`${relFile}\` (debt score: ${score})`,
-				"",
-				metrics ? `**Complexity**: ${metricsSummary}` : "",
-				"",
-				issues.length > 0 ? `**Violations**:\n${issuesSummary}` : "",
-				archIssues.length > 0 ? `**Architectural rules violated**:\n${archSummary}` : "",
-				"",
-				`**Code** (\`${relFile}\` lines ${snippetStart}–${snippetEnd}):`,
-				"```typescript",
-				snippet,
-				"```",
-				"",
-				"**Your job**:",
-				"1. Analyze this code — what's the most impactful refactoring for this file?",
-				"2. Build 3-5 refactoring options. For each, explain *why* it helps and *what* you'd change. Mark one as recommended.",
-				"3. For each option, estimate the impact: linesReduced (number), miProjection (e.g. '3.5 → 8'), cognitiveProjection (e.g. '1533 → 1400').",
-				"4. Include an option to skip to the next worst offender.",
-				"5. Call the `interviewer` tool with:",
-				"   - `question`: what you're asking the user",
-				"   - `options`: array of { value, label, context, recommended, impact: { linesReduced, miProjection, cognitiveProjection } }",
-				"6. The user picks an option or types a free-text response in the browser form.",
-				"7. Implement the refactoring. After changes, run `git diff HEAD~1` to capture what was changed.",
-				"8. Run a complexity scan on the changed file(s) to compute the metrics delta (before vs after MI, cognitive).",
-				"9. Call the `interviewer` tool AGAIN with confirmationMode=true. The plan should contain: what was changed (summary + diff lines), how metrics evolved, and a free-chat option for refinements.",
-				"10. If the user describes changes: make further edits, re-run the scan, call interviewer again with an updated report. Repeat until satisfied.",
-			].join("\n");
-
-			pi.sendUserMessage(steer, { deliverAs: "steer" });
-		},
+		handler: (args, ctx) =>
+			handleRefactor(args, ctx, {
+				astGrep: astGrepClient,
+				complexity: complexityClient,
+				architect: architectClient,
+			}, pi, SKIP_RULES, RULE_ACTIONS),
 	});
 
 	pi.registerCommand("lens-metrics", {
@@ -1326,7 +292,6 @@ export default function (pi: ExtensionAPI) {
 			const targetPath = args.trim() || ctx.cwd || process.cwd();
 			ctx.ui.notify("📊 Measuring code metrics...", "info");
 
-			const fs = require("node:fs");
 			const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
 			const timestamp = new Date()
 				.toISOString()
@@ -1337,38 +302,18 @@ export default function (pi: ExtensionAPI) {
 			const results: import("./clients/complexity-client.js").FileComplexity[] =
 				[];
 
-			const scanDir = (dir: string) => {
-				let entries: nodeFs.Dirent[];
-				try {
-					entries = nodeFs.readdirSync(dir, { withFileTypes: true });
-				} catch {
-					return;
-				}
-
-				for (const entry of entries) {
-					const fullPath = path.join(dir, entry.name);
-					if (
-						entry.isDirectory() &&
-						![
-							"node_modules",
-							".git",
-							"dist",
-							"build",
-							".next",
-							".pi-lens",
-						].includes(entry.name)
-					) {
-						scanDir(fullPath);
-					} else if (complexityClient.isSupportedFile(fullPath)) {
-						const metrics = complexityClient.analyzeFile(fullPath);
-						if (metrics) {
-							results.push(metrics);
-						}
+			const isTsProject = nodeFs.existsSync(
+				path.join(targetPath, "tsconfig.json"),
+			);
+			const files = getSourceFiles(targetPath, isTsProject);
+			for (const fullPath of files) {
+				if (complexityClient.isSupportedFile(fullPath)) {
+					const metrics = complexityClient.analyzeFile(fullPath);
+					if (metrics) {
+						results.push(metrics);
 					}
 				}
-			};
-
-			scanDir(targetPath);
+			}
 
 			if (results.length === 0) {
 				ctx.ui.notify("No supported files found to analyze", "warning");
@@ -1405,7 +350,9 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			const gradeCount = { A: 0, B: 0, C: 0, D: 0, F: 0 };
-			grades.forEach((g) => gradeCount[g.letter as keyof typeof gradeCount]++);
+			for (const g of grades) {
+				gradeCount[g.letter as keyof typeof gradeCount]++;
+			}
 
 			// Build report
 			let report = `# Code Metrics Report: ${projectName}\n\n`;
@@ -1539,14 +486,14 @@ export default function (pi: ExtensionAPI) {
 			report += `\n`;
 
 			// Save report
-			fs.mkdirSync(reviewDir, { recursive: true });
+			nodeFs.mkdirSync(reviewDir, { recursive: true });
 
 			const reportPath = path.join(reviewDir, `metrics-${timestamp}.md`);
-			fs.writeFileSync(reportPath, report, "utf-8");
+			nodeFs.writeFileSync(reportPath, report, "utf-8");
 
 			// Also save latest.md for easy access
 			const latestPath = path.join(reviewDir, "latest.md");
-			fs.writeFileSync(latestPath, report, "utf-8");
+			nodeFs.writeFileSync(latestPath, report, "utf-8");
 
 			// Console summary
 			const summary = [
@@ -1581,32 +528,19 @@ export default function (pi: ExtensionAPI) {
 				let formatted = 0;
 				let skipped = 0;
 
-				const formatDir = (dir: string) => {
-					let entries: nodeFs.Dirent[];
-					try {
-						entries = nodeFs.readdirSync(dir, { withFileTypes: true });
-					} catch {
-						return;
-					}
+				const targetPath = ctx.cwd || process.cwd();
+				const isTsProject = nodeFs.existsSync(
+					path.join(targetPath, "tsconfig.json"),
+				);
+				const files = getSourceFiles(targetPath, isTsProject);
 
-					for (const entry of entries) {
-						const fullPath = path.join(dir, entry.name);
-						if (
-							entry.isDirectory() &&
-							!["node_modules", ".git", "dist", "build", ".next"].includes(
-								entry.name,
-							)
-						) {
-							formatDir(fullPath);
-						} else if (/\.(ts|tsx|js|jsx|json|css)$/.test(entry.name)) {
-							const result = biomeClient.formatFile(fullPath);
-							if (result.changed) formatted++;
-							else if (result.success) skipped++;
-						}
+				for (const fullPath of files) {
+					if (/\.(ts|tsx|js|jsx|json|css)$/.test(fullPath)) {
+						const result = biomeClient.formatFile(fullPath);
+						if (result.changed) formatted++;
+						else if (result.success) skipped++;
 					}
-				};
-
-				formatDir(ctx.cwd || process.cwd());
+				}
 				ctx.ui.notify(
 					`✓ Formatted ${formatted} file(s), ${skipped} already clean`,
 					"info",
@@ -1656,9 +590,8 @@ export default function (pi: ExtensionAPI) {
 		"yaml",
 	] as const;
 
-// --- Interviewer tool (browser-based interview with diff confirmation) ---
+	// --- Interviewer tool (browser-based interview with diff confirmation) ---
 	buildInterviewer(pi, dbg);
-
 
 	pi.registerTool({
 		name: "ast_grep_search",
@@ -1919,11 +852,10 @@ export default function (pi: ExtensionAPI) {
 
 		if (!filePath) return;
 
-		const fs = require("node:fs") as typeof import("node:fs");
 		dbg(
-			`tool_call fired for: ${filePath} (exists: ${fs.existsSync(filePath)})`,
+			`tool_call fired for: ${filePath} (exists: ${nodeFs.existsSync(filePath)})`,
 		);
-		if (!fs.existsSync(filePath)) return;
+		if (!nodeFs.existsSync(filePath)) return;
 
 		// Record complexity baseline for TS/JS files
 		if (
@@ -1939,7 +871,7 @@ export default function (pi: ExtensionAPI) {
 		const hints: string[] = [];
 
 		if (/\.(ts|tsx|js|jsx)$/.test(filePath) && !pi.getFlag("no-lsp")) {
-			tsClient.updateFile(filePath, fs.readFileSync(filePath, "utf-8"));
+			tsClient.updateFile(filePath, nodeFs.readFileSync(filePath, "utf-8"));
 			const diags = tsClient.getDiagnostics(filePath);
 			if (diags.length > 0) {
 				hints.push(
@@ -2012,9 +944,9 @@ export default function (pi: ExtensionAPI) {
 		preWriteHints.delete(filePath);
 
 		// Record write for metrics (silent tracking)
-		const fs = require("node:fs") as typeof import("node:fs");
+
 		try {
-			const content = fs.readFileSync(filePath, "utf-8");
+			const content = nodeFs.readFileSync(filePath, "utf-8");
 			metricsClient.recordWrite(filePath, content);
 		} catch (err) {
 			void err;
@@ -2025,7 +957,7 @@ export default function (pi: ExtensionAPI) {
 		// TypeScript LSP diagnostics
 		if (!pi.getFlag("no-lsp") && tsClient.isTypeScriptFile(filePath)) {
 			try {
-				tsClient.updateFile(filePath, fs.readFileSync(filePath, "utf-8"));
+				tsClient.updateFile(filePath, nodeFs.readFileSync(filePath, "utf-8"));
 			} catch (err) {
 				void err;
 			}
@@ -2134,24 +1066,27 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Architectural rule validation (post-write)
-		if (architectClient.hasConfig() && fs.existsSync(filePath)) {
+		if (architectClient.hasConfig() && nodeFs.existsSync(filePath)) {
 			const relPath = path.relative(projectRoot, filePath).replace(/\\/g, "/");
-			const content = fs.readFileSync(filePath, "utf-8");
+			const content = nodeFs.readFileSync(filePath, "utf-8");
 			const lineCount = content.split("\n").length;
 
 			// Check for violations
 			const violations = architectClient.checkFile(relPath, content);
 			if (violations.length > 0) {
-				lspOutput += `\n\n🔴 Architectural violation(s) in ${relPath}:\n`;
+				lspOutput += `\n\n🔴 STOP — ${violations.length} architectural violation(s). Fix before continuing:\n`;
 				for (const v of violations) {
-					lspOutput += `  → ${v.message}\n`;
+					const lineStr = v.line ? `L${v.line}: ` : "";
+					lspOutput += `  ${lineStr}${v.message}\n`;
 				}
+				lspOutput += `    → Refactor the code to comply with the project's architectural rules.\n`;
 			}
 
 			// Check file size limit — hard stop, file is too large to reason about
 			const sizeViolation = architectClient.checkFileSize(relPath, lineCount);
 			if (sizeViolation) {
-				lspOutput += `\n\n🔴 STOP — ${sizeViolation.message}\n`;
+				lspOutput += `\n\n🔴 STOP — Architectural Limit Exceeded:\n`;
+				lspOutput += `  ${sizeViolation.message}\n`;
 				lspOutput += `    → Split into smaller, focused modules before adding more code.\n`;
 			}
 		}
@@ -2422,9 +1357,7 @@ export default function (pi: ExtensionAPI) {
 			if (depResult.hasCircular && depResult.circular.length > 0) {
 				const circularDeps = depResult.circular
 					.flatMap((d) => d.path)
-					.filter(
-						(p: string) => !filePath.endsWith(require("node:path").basename(p)),
-					);
+					.filter((p: string) => !filePath.endsWith(path.basename(p)));
 				const uniqueDeps = [...new Set(circularDeps)];
 				if (uniqueDeps.length > 0) {
 					lspOutput += `\n\n${depChecker.formatWarning(filePath, uniqueDeps)}`;

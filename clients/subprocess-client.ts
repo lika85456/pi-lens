@@ -1,21 +1,4 @@
-/**
- * Base class for CLI tool clients that communicate via subprocess.
- *
- * Provides common patterns for:
- * - Availability checking (cached)
- * - File type detection
- * - Running CLI commands
- * - Logging
- *
- * Subclasses implement:
- * - getToolName(): The CLI tool name
- * - getCheckCommand(): Command to check availability
- * - isSupportedFile(): File extensions the tool handles
- * - parseOutput(): Parse CLI output into diagnostics
- */
-
 import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 export interface Diagnostic {
@@ -42,31 +25,11 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 			: () => {};
 	}
 
-	/**
-	 * The name of the CLI tool (used in log messages)
-	 */
 	protected abstract getToolName(): string;
-
-	/**
-	 * Command and args to check if the tool is available
-	 * e.g., ["ruff", "--version"] or ["npx", "@biomejs/biome", "--version"]
-	 */
 	protected abstract getCheckCommand(): string[];
-
-	/**
-	 * File extensions this tool supports (with dots)
-	 * e.g., [".py"] or [".ts", ".tsx", ".js", ".jsx"]
-	 */
 	protected abstract getSupportedExtensions(): string[];
-
-	/**
-	 * Parse CLI output into diagnostics
-	 */
 	protected abstract parseOutput(output: string, filePath: string): T[];
 
-	/**
-	 * Check if the CLI tool is available (cached)
-	 */
 	isAvailable(): boolean {
 		if (this.available !== null) return this.available;
 
@@ -92,22 +55,13 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 		return this.available;
 	}
 
-	/**
-	 * Check if a file is supported by this tool
-	 */
 	isSupportedFile(filePath: string): boolean {
 		const ext = path.extname(filePath).toLowerCase();
 		return this.getSupportedExtensions().includes(ext);
 	}
 
-	/**
-	 * Run the tool on a file and return diagnostics
-	 */
 	abstract checkFile(filePath: string): T[];
 
-	/**
-	 * Run a command and return the result
-	 */
 	protected runCommand(
 		cmd: string[],
 		options: {
@@ -141,19 +95,5 @@ export abstract class SubprocessClient<T extends Diagnostic> {
 				stderr: err.message,
 			} as unknown as ReturnType<typeof spawnSync>;
 		}
-	}
-
-	/**
-	 * Resolve a file path to absolute
-	 */
-	protected resolvePath(filePath: string): string {
-		return path.resolve(filePath);
-	}
-
-	/**
-	 * Check if a file exists
-	 */
-	protected fileExists(filePath: string): boolean {
-		return fs.existsSync(filePath);
 	}
 }

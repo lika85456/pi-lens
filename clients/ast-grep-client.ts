@@ -10,9 +10,17 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { AstGrepParser } from "./ast-grep-parser.js";
 import { AstGrepRuleManager } from "./ast-grep-rule-manager.js";
+
+const getExtensionDir = () => {
+	if (typeof __dirname !== "undefined") {
+		return __dirname;
+	}
+	return ".";
+};
 
 // --- Types ---
 
@@ -56,13 +64,7 @@ export class AstGrepClient {
 	private ruleManager: AstGrepRuleManager;
 
 	constructor(ruleDir?: string, verbose = false) {
-		this.ruleDir =
-			ruleDir ||
-			path.join(
-				typeof __dirname !== "undefined" ? __dirname : ".",
-				"..",
-				"rules",
-			);
+		this.ruleDir = ruleDir || path.join(getExtensionDir(), "..", "rules");
 		this.log = verbose
 			? (msg: string) => console.error(`[ast-grep] ${msg}`)
 			: () => {};
@@ -146,7 +148,7 @@ export class AstGrepClient {
 	): any[] {
 		if (!this.isAvailable()) return [];
 
-		const tmpDir = require("node:os").tmpdir();
+		const tmpDir = os.tmpdir();
 		const ts = Date.now();
 		const sessionDir = path.join(tmpDir, `pi-lens-temp-${ruleId}-${ts}`);
 		const rulesSubdir = path.join(sessionDir, "rules");
