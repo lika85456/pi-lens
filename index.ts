@@ -24,10 +24,26 @@ import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeSafetyClient } from "./clients/type-safety-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
 import { AgentBehaviorClient } from "./clients/agent-behavior-client.js";
+import { CacheManager } from "./clients/cache-manager.js";
 
 import { handleBooboo } from "./commands/booboo.js";
 import { handleFix } from "./commands/fix.js";
 import { handleRefactor, initRefactorLoop } from "./commands/refactor.js";
+
+/** Parse a unified diff to extract modified line ranges in the new file. */
+function parseDiffRanges(diff: string): { start: number; end: number }[] {
+	const ranges: { start: number; end: number }[] = [];
+	for (const line of diff.split("\n")) {
+		// @@ -oldStart,oldCount +newStart,newCount @@
+		const match = line.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+		if (match) {
+			const start = Number.parseInt(match[1], 10);
+			const count = match[2] ? Number.parseInt(match[2], 10) : 1;
+			ranges.push({ start, end: start + count - 1 });
+		}
+	}
+	return ranges;
+}
 
 const _getExtensionDir = () => {
 	if (typeof __dirname !== "undefined") {
@@ -75,6 +91,7 @@ export default function (pi: ExtensionAPI) {
 	const goClient = new GoClient();
 	const rustClient = new RustClient();
 	const agentBehaviorClient = new AgentBehaviorClient();
+	const cacheManager = new CacheManager();
 
 	// --- Initialize auto-loops (must be early for event handlers) ---
 	initRefactorLoop(pi);
@@ -843,33 +860,61 @@ export default function (pi: ExtensionAPI) {
 		dbg(`session_start TODO scan: ${todoResult.items.length} items`);
 		if (todoReport) parts.push(todoReport);
 
-		// Dead code scan — only if knip is available
+		// Dead code scan — use cache if fresh
 		if (knipClient.isAvailable()) {
-			const knipResult = knipClient.analyze(cwd);
-			const knipReport = knipClient.formatResult(knipResult);
-			dbg(`session_start Knip scan done`);
-			if (knipReport) parts.push(knipReport);
+			const cached = cacheManager.readCache<ReturnType<KnipClient["analyze"]>>("knip", cwd);
+			if (cached) {
+				dbg(`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`);
+				const knipReport = knipClient.formatResult(cached.data);
+				if (knipReport) parts.push(knipReport);
+			} else {
+				const startMs = Date.now();
+				const knipResult = knipClient.analyze(cwd);
+				cacheManager.writeCache("knip", knipResult, cwd, { scanDurationMs: Date.now() - startMs });
+				const knipReport = knipClient.formatResult(knipResult);
+				dbg(`session_start Knip scan done`);
+				if (knipReport) parts.push(knipReport);
+			}
 		} else {
 			dbg(`session_start Knip: not available`);
 		}
 
-		// Duplicate code detection (cached for real-time feedback)
+		// Duplicate code detection — use cache if fresh
 		if (jscpdClient.isAvailable()) {
-			const jscpdResult = jscpdClient.scan(cwd);
-			cachedJscpdClones = jscpdResult.clones;
-			const jscpdReport = jscpdClient.formatResult(jscpdResult);
-			dbg(`session_start jscpd scan done`);
-			if (jscpdReport) parts.push(jscpdReport);
+			const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>("jscpd", cwd);
+			if (cached) {
+				dbg(`session_start jscpd: cache hit`);
+				cachedJscpdClones = cached.data.clones;
+				const jscpdReport = jscpdClient.formatResult(cached.data);
+				if (jscpdReport) parts.push(jscpdReport);
+			} else {
+				const startMs = Date.now();
+				const jscpdResult = jscpdClient.scan(cwd);
+				cachedJscpdClones = jscpdResult.clones;
+				cacheManager.writeCache("jscpd", jscpdResult, cwd, { scanDurationMs: Date.now() - startMs });
+				const jscpdReport = jscpdClient.formatResult(jscpdResult);
+				dbg(`session_start jscpd scan done`);
+				if (jscpdReport) parts.push(jscpdReport);
+			}
 		} else {
 			dbg(`session_start jscpd: not available`);
 		}
 
-		// TypeScript type coverage
+		// TypeScript type coverage — use cache if fresh
 		if (typeCoverageClient.isAvailable()) {
-			const tcResult = typeCoverageClient.scan(cwd);
-			const tcReport = typeCoverageClient.formatResult(tcResult);
-			dbg(`session_start type-coverage scan done`);
-			if (tcReport) parts.push(tcReport);
+			const cached = cacheManager.readCache<ReturnType<TypeCoverageClient["scan"]>>("type-coverage", cwd);
+			if (cached) {
+				dbg(`session_start type-coverage: cache hit`);
+				const tcReport = typeCoverageClient.formatResult(cached.data);
+				if (tcReport) parts.push(tcReport);
+			} else {
+				const startMs = Date.now();
+				const tcResult = typeCoverageClient.scan(cwd);
+				cacheManager.writeCache("type-coverage", tcResult, cwd, { scanDurationMs: Date.now() - startMs });
+				const tcReport = typeCoverageClient.formatResult(tcResult);
+				dbg(`session_start type-coverage scan done`);
+				if (tcReport) parts.push(tcReport);
+			}
 		} else {
 			dbg(`session_start type-coverage: not available`);
 		}
@@ -989,6 +1034,32 @@ export default function (pi: ExtensionAPI) {
 
 		if (event.toolName !== "write" && event.toolName !== "edit") return;
 		if (!filePath) return;
+
+		// --- Track modified ranges in turn state for async jscpd/madge at turn_end ---
+		const cwd = projectRoot;
+		try {
+			const details = event.details as { diff?: string } | undefined;
+			if (event.toolName === "edit" && details?.diff) {
+				const diff = details.diff;
+				const ranges = parseDiffRanges(diff);
+				const importsChanged = /import\s/.test(diff) || /from\s+['"]/.test(diff);
+				for (const range of ranges) {
+					cacheManager.addModifiedRange(filePath, range, importsChanged, cwd);
+				}
+			} else if (event.toolName === "write" && nodeFs.existsSync(filePath)) {
+				const content = nodeFs.readFileSync(filePath, "utf-8");
+				const lineCount = content.split("\n").length;
+				const hasImports = /^import\s/m.test(content);
+				cacheManager.addModifiedRange(
+					filePath,
+					{ start: 1, end: lineCount },
+					hasImports,
+					cwd,
+				);
+			}
+		} catch (err) {
+			dbg(`turn state tracking error: ${err}`);
+		}
 
 		dbg(`tool_result fired for: ${filePath}`);
 		dbg(`  cwd: ${process.cwd()}`);
@@ -1432,5 +1503,93 @@ export default function (pi: ExtensionAPI) {
 		return {
 			content: [...event.content, { type: "text" as const, text: lspOutput }],
 		};
+	});
+
+	// --- Turn end: batch jscpd/madge on collected files, then clear state ---
+	pi.on("turn_end", async (_event, ctx) => {
+		const cwd = ctx.cwd ?? process.cwd();
+		const turnState = cacheManager.readTurnState(cwd);
+		const files = Object.keys(turnState.files);
+
+		if (files.length === 0) return;
+
+		dbg(`turn_end: ${files.length} file(s) modified, cycles: ${turnState.turnCycles}/${turnState.maxCycles}`);
+
+		// Max cycles guard — force through after N turns with unresolved issues
+		if (cacheManager.isMaxCyclesExceeded(cwd)) {
+			dbg("turn_end: max cycles exceeded, clearing state and forcing through");
+			cacheManager.clearTurnState(cwd);
+			return;
+		}
+
+		const parts: string[] = [];
+
+		// jscpd: scan modified files, filter results to modified line ranges
+		if (jscpdClient.isAvailable()) {
+			const jscpdFiles = cacheManager.getFilesForJscpd(cwd);
+			if (jscpdFiles.length > 0) {
+				dbg(`turn_end: jscpd scanning ${jscpdFiles.length} file(s)`);
+				// Use full scan then filter — jscpd doesn't support per-file scanning
+				const result = jscpdClient.scan(cwd);
+				// Filter clones to only those intersecting modified ranges
+				const jscpdFileSet = new Set(
+					jscpdFiles.map((f) => path.resolve(cwd, f)),
+				);
+				const filtered = result.clones.filter((clone) => {
+					const resolvedA = path.resolve(clone.fileA);
+					if (!jscpdFileSet.has(resolvedA)) return false;
+					const relA = path.relative(cwd, resolvedA).replace(/\\/g, "/");
+					const state = turnState.files[relA];
+					if (!state) return false;
+					return cacheManager.isLineInModifiedRange(
+						clone.startA,
+						state.modifiedRanges,
+					);
+				});
+				if (filtered.length > 0) {
+					let report = `🔴 New duplicates in modified code:\n`;
+					for (const clone of filtered.slice(0, 5)) {
+						report += `  ${path.basename(clone.fileA)}:${clone.startA} ↔ ${path.basename(clone.fileB)}:${clone.startB} (${clone.lines} lines)\n`;
+					}
+					parts.push(report);
+				}
+				// Update the global cache with fresh results
+				cachedJscpdClones = result.clones;
+				cacheManager.writeCache("jscpd", result, cwd);
+			}
+		}
+
+		// madge: only check files where imports changed
+		if (depChecker.isAvailable()) {
+			const madgeFiles = cacheManager.getFilesForMadge(cwd);
+			if (madgeFiles.length > 0) {
+				dbg(`turn_end: madge checking ${madgeFiles.length} file(s) for circular deps`);
+				for (const file of madgeFiles) {
+					const absPath = path.resolve(cwd, file);
+					const depResult = depChecker.checkFile(absPath);
+					if (depResult.hasCircular && depResult.circular.length > 0) {
+						const circularDeps = depResult.circular
+							.flatMap((d) => d.path)
+							.filter((p: string) => !absPath.endsWith(path.basename(p)));
+						const uniqueDeps = [...new Set(circularDeps)];
+						if (uniqueDeps.length > 0) {
+							parts.push(`🟡 Circular dependency in ${file}: imports ${uniqueDeps.join(", ")}`);
+						}
+					}
+				}
+			}
+		}
+
+		// Increment turn cycle and persist
+		cacheManager.incrementTurnCycle(cwd);
+
+		if (parts.length > 0) {
+			dbg(`turn_end: ${parts.length} issue(s) found`);
+			// Issues found — state persists so next turn re-checks.
+			// After maxCycles, clearTurnState forces through.
+		} else {
+			// No issues — clear state for next batch of edits
+			cacheManager.clearTurnState(cwd);
+		}
 	});
 }
