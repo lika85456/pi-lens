@@ -5,6 +5,10 @@ severity: hint
 note: |
   Classes with more than 20 methods are harder to maintain.
   Consider extracting related functionality into separate classes.
-  Grade 2.3 — moderate complexity, better architecture.
+  Note: For precise method counts, use complexity metrics.
 rule:
-  kind: class_declaration
+  all:
+    - kind: class_declaration
+    - has:
+        field: body
+        regex: "(public |private |protected |readonly )?(async )?[a-zA-Z_][a-zA-Z0-9_]*\s*\("
