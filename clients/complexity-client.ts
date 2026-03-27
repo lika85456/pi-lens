@@ -171,95 +171,120 @@ export class ComplexityClient {
 	 * Analyze complexity metrics for a file
 	 */
 	analyzeFile(filePath: string): FileComplexity | null {
-		const absolutePath = path.resolve(filePath);
-		if (!fs.existsSync(absolutePath)) return null;
+		const parsed = this.readAndParse(filePath);
+		if (!parsed) return null;
 
 		try {
-			const content = fs.readFileSync(absolutePath, "utf-8");
-			const lines = content.split("\n");
-			const sourceFile = ts.createSourceFile(
-				filePath,
-				content,
-				ts.ScriptTarget.Latest,
-				true,
-			);
-
-			// Count lines of code (non-empty, non-comment)
-			const { codeLines, commentLines } = this.countLines(sourceFile, lines);
-
-			// Collect function metrics
-			const functions: FunctionMetrics[] = [];
-			this.collectFunctionMetrics(sourceFile, sourceFile, functions, 0);
-
-			// Calculate file-level metrics
-			const maxNestingDepth = this.calculateMaxNesting(sourceFile, 0);
-			const _cyclomatic = this.calculateCyclomaticComplexity(sourceFile);
-			const cognitive = this.calculateCognitiveComplexity(sourceFile);
-			const halstead = this.calculateHalsteadVolume(sourceFile);
-
-			// Function length stats
-			const funcLengths = functions.map((f) => f.length);
-			const avgFunctionLength =
-				funcLengths.length > 0
-					? Math.round(
-							funcLengths.reduce((a, b) => a + b, 0) / funcLengths.length,
-						)
-					: 0;
-			const maxFunctionLength =
-				funcLengths.length > 0 ? Math.max(...funcLengths) : 0;
-
-			// Function cyclomatic stats
-			const cyclomatics = functions.map((f) => f.cyclomatic);
-			const avgCyclomatic =
-				cyclomatics.length > 0
-					? Math.round(
-							cyclomatics.reduce((a, b) => a + b, 0) / cyclomatics.length,
-						)
-					: 1;
-			const maxCyclomatic =
-				cyclomatics.length > 0 ? Math.max(...cyclomatics) : 1;
-
-			// Maintainability Index (simplified Microsoft formula)
-			// MI = max(0, (171 - 5.2 * ln(Halstead) - 0.23 * Cyclomatic - 16.2 * ln(LOC)) * 100 / 171)
-			const maintainabilityIndex = this.calculateMaintainabilityIndex(
-				halstead,
-				avgCyclomatic,
-				codeLines,
-				commentLines,
-			);
-
-			// Code Entropy (Shannon entropy of code tokens)
-			const codeEntropy = this.calculateCodeEntropy(content);
-
-			// AI slop indicators
-			const maxParamsInFunction = this.calculateMaxParams(functions);
-			const aiCommentPatterns = this.countAICommentPatterns(sourceFile);
-			const singleUseFunctions = this.countSingleUseFunctions(functions);
-			const tryCatchCount = this.countTryCatch(sourceFile);
-
-			return {
-				filePath: path.relative(process.cwd(), absolutePath),
-				maxNestingDepth,
-				avgFunctionLength,
-				maxFunctionLength,
-				functionCount: functions.length,
-				cyclomaticComplexity: avgCyclomatic,
-				maxCyclomaticComplexity: maxCyclomatic,
-				cognitiveComplexity: cognitive,
-				halsteadVolume: Math.round(halstead * 10) / 10,
-				maintainabilityIndex: Math.round(maintainabilityIndex * 10) / 10,
-				linesOfCode: codeLines,
-				commentLines,
-				codeEntropy: Math.round(codeEntropy * 100) / 100,
-				maxParamsInFunction,
-				aiCommentPatterns,
-				singleUseFunctions,
-				tryCatchCount,
-			};
+			return this.computeMetrics(parsed);
 		} catch (err: any) {
 			this.log(`Analysis error for ${filePath}: ${err.message}`);
 			return null;
 		}
+	}
+
+	/**
+	 * Read file and parse to TypeScript AST
+	 */
+	private readAndParse(
+		filePath: string,
+	): { absolutePath: string; content: string; sourceFile: ts.SourceFile } | null {
+		const absolutePath = path.resolve(filePath);
+		if (!fs.existsSync(absolutePath)) return null;
+
+		const content = fs.readFileSync(absolutePath, "utf-8");
+		const sourceFile = ts.createSourceFile(
+			filePath,
+			content,
+			ts.ScriptTarget.Latest,
+			true,
+		);
+
+		return { absolutePath, content, sourceFile };
+	}
+
+	/**
+	 * Compute all metrics from parsed source
+	 */
+	private computeMetrics(parsed: {
+		absolutePath: string;
+		content: string;
+		sourceFile: ts.SourceFile;
+	}): FileComplexity {
+		const { absolutePath, content, sourceFile } = parsed;
+		const lines = content.split("\n");
+
+		// Line counts and function collection
+		const { codeLines, commentLines } = this.countLines(sourceFile, lines);
+		const functions = this.collectFunctionMetrics(sourceFile);
+
+		// File-level complexity metrics
+		const maxNestingDepth = this.calculateMaxNesting(sourceFile, 0);
+		const cognitive = this.calculateCognitiveComplexity(sourceFile);
+		const halstead = this.calculateHalsteadVolume(sourceFile);
+
+		// Aggregate function statistics
+		const funcStats = this.aggregateFunctionStats(functions);
+
+		// Derived metrics
+		const maintainabilityIndex = this.calculateMaintainabilityIndex(
+			halstead,
+			funcStats.avgCyclomatic,
+			codeLines,
+			commentLines,
+		);
+		const codeEntropy = this.calculateCodeEntropy(content);
+
+		// AI slop indicators
+		const maxParamsInFunction = this.calculateMaxParams(functions);
+		const aiCommentPatterns = this.countAICommentPatterns(sourceFile);
+		const singleUseFunctions = this.countSingleUseFunctions(functions);
+		const tryCatchCount = this.countTryCatch(sourceFile);
+
+		return {
+			filePath: path.relative(process.cwd(), absolutePath),
+			maxNestingDepth,
+			avgFunctionLength: funcStats.avgLength,
+			maxFunctionLength: funcStats.maxLength,
+			functionCount: functions.length,
+			cyclomaticComplexity: funcStats.avgCyclomatic,
+			maxCyclomaticComplexity: funcStats.maxCyclomatic,
+			cognitiveComplexity: cognitive,
+			halsteadVolume: Math.round(halstead * 10) / 10,
+			maintainabilityIndex: Math.round(maintainabilityIndex * 10) / 10,
+			linesOfCode: codeLines,
+			commentLines,
+			codeEntropy: Math.round(codeEntropy * 100) / 100,
+			maxParamsInFunction,
+			aiCommentPatterns,
+			singleUseFunctions,
+			tryCatchCount,
+		};
+	}
+
+	/**
+	 * Aggregate function metrics into summary statistics
+	 */
+	private aggregateFunctionStats(functions: FunctionMetrics[]): {
+		avgLength: number;
+		maxLength: number;
+		avgCyclomatic: number;
+		maxCyclomatic: number;
+	} {
+		if (functions.length === 0) {
+			return { avgLength: 0, maxLength: 0, avgCyclomatic: 1, maxCyclomatic: 1 };
+		}
+
+		const lengths = functions.map((f) => f.length);
+		const cyclomatics = functions.map((f) => f.cyclomatic);
+
+		const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+
+		return {
+			avgLength: Math.round(sum(lengths) / lengths.length),
+			maxLength: Math.max(...lengths),
+			avgCyclomatic: Math.max(1, Math.round(sum(cyclomatics) / cyclomatics.length)),
+			maxCyclomatic: Math.max(1, Math.max(...cyclomatics)),
+		};
 	}
 
 	/**
@@ -575,7 +600,16 @@ export class ComplexityClient {
 
 	// --- Private: Function Metrics Collection ---
 
-	private collectFunctionMetrics(
+	/**
+	 * Collect metrics for all functions in the source file
+	 */
+	private collectFunctionMetrics(sourceFile: ts.SourceFile): FunctionMetrics[] {
+		const functions: FunctionMetrics[] = [];
+		this.visitFunctionMetrics(sourceFile, sourceFile, functions, 0);
+		return functions;
+	}
+
+	private visitFunctionMetrics(
 		node: ts.Node,
 		sourceFile: ts.SourceFile,
 		functions: FunctionMetrics[],
@@ -614,7 +648,7 @@ export class ComplexityClient {
 			? nestingLevel + 1
 			: nestingLevel;
 		ts.forEachChild(node, (child) => {
-			this.collectFunctionMetrics(child, sourceFile, functions, newNesting);
+			this.visitFunctionMetrics(child, sourceFile, functions, newNesting);
 		});
 	}
 
