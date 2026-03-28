@@ -64,6 +64,9 @@
 		"project": [
 			"**/*.ts",
 			"!**/*.test.ts"
+		],
+		"ignore": [
+			"**/*.test.ts"
 		]
 	}
 }

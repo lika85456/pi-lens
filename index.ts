@@ -24,6 +24,11 @@ import {
 	getTrendSummary,
 } from "./clients/metrics-history.js";
 import { RuffClient } from "./clients/ruff-client.js";
+import {
+	formatRulesForPrompt,
+	type RuleScanResult,
+	scanProjectRules,
+} from "./clients/rules-scanner.js";
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
 import { TestRunnerClient } from "./clients/test-runner-client.js";
@@ -850,6 +855,9 @@ export default function (pi: ExtensionAPI) {
 		import("./clients/biome-client.js").BiomeDiagnostic[]
 	>();
 
+	// Project rules scan result (from .claude/rules, .agents/rules, etc.)
+	let projectRulesScan: RuleScanResult = { rules: [], hasCustomRules: false };
+
 	// --- Events ---
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -899,6 +907,21 @@ export default function (pi: ExtensionAPI) {
 		parts.push(
 			"📌 Remember: If you find ANY errors (test failures, compile errors, lint issues) in this codebase, fix them — even if you didn't cause them. Don't skip errors as 'not my fault'.",
 		);
+
+		// Scan for project-specific rules (.claude/rules, .agents/rules, CLAUDE.md, etc.)
+		projectRulesScan = scanProjectRules(cwd);
+		if (projectRulesScan.hasCustomRules) {
+			const ruleCount = projectRulesScan.rules.length;
+			const sources = [...new Set(projectRulesScan.rules.map((r) => r.source))];
+			dbg(
+				`session_start: found ${ruleCount} project rule(s) from ${sources.join(", ")}`,
+			);
+			parts.push(
+				`📋 Project rules found: ${ruleCount} file(s) in ${sources.join(", ")}. These apply alongside pi-lens defaults.`,
+			);
+		} else {
+			dbg("session_start: no project rules found");
+		}
 
 		// TODO/FIXME scan — fast, no deps
 		const todoResult = todoScanner.scanDirectory(cwd);
@@ -1230,6 +1253,16 @@ export default function (pi: ExtensionAPI) {
 
 		return {
 			content: [...event.content, { type: "text" as const, text: lspOutput }],
+		};
+	});
+
+	// --- Inject project rules into system prompt ---
+	pi.on("before_agent_start", async (event) => {
+		if (!projectRulesScan.hasCustomRules) return;
+
+		const rulesSection = formatRulesForPrompt(projectRulesScan);
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n## Project Rules (from project files)\n\nThe following project-specific rule files exist. Read them with the \`read\` tool when relevant:\n\n${rulesSection}\n`,
 		};
 	});
 
