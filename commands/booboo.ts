@@ -45,6 +45,7 @@ export async function handleBooboo(
 		category: string;
 		count: number;
 		severity: "🔴" | "🟡" | "🟢" | "ℹ️";
+		fixable: boolean; // true = can be fixed via /lens-booboo-fix
 	}[] = [];
 	const fullReport: string[] = [];
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -137,7 +138,7 @@ export async function handleBooboo(
 					summaryItems.push({
 						category: "ast-grep",
 						count: issues.length,
-						severity: issues.length > 10 ? "🔴" : "🟡",
+						severity: issues.length > 10 ? "🔴" : "🟡", fixable: true,
 					});
 
 					let fullSection = `## ast-grep (Structural Issues)\n\n**${issues.length} issue(s) found**\n\n`;
@@ -165,7 +166,7 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Similar Functions",
 				count: similarGroups.length,
-				severity: "🟡",
+				severity: "🟡", fixable: true
 			});
 
 			let fullSection = `## Similar Functions\n\n**${similarGroups.length} group(s) of structurally similar functions**\n\n`;
@@ -253,21 +254,21 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Low MI",
 				count: lowMI.length,
-				severity: lowMI.some((f) => f.maintainabilityIndex < 20) ? "🔴" : "🟡",
+				severity: lowMI.some((f) => f.maintainabilityIndex < 20) ? "🔴" : "🟡", fixable: false,
 			});
 		}
 		if (highCognitive.length > 0) {
 			summaryItems.push({
 				category: "High Complexity",
 				count: highCognitive.length,
-				severity: "🟡",
+				severity: "🟡", fixable: true
 			});
 		}
 		if (aiSlopIssues.length > 0) {
 			summaryItems.push({
 				category: "AI Slop",
 				count: (aiSlopIssues.length / 2) | 0,
-				severity: "🟡",
+				severity: "🟡", fixable: true
 			}); // Each issue is 2 lines
 		}
 
@@ -314,7 +315,7 @@ export async function handleBooboo(
 		summaryItems.push({
 			category: "TODOs",
 			count: todoResult.items.length,
-			severity: "ℹ️",
+			severity: "ℹ️", fixable: false
 		});
 		let fullSection = `## TODOs / Annotations\n\n`;
 		if (todoResult.items.length > 0) {
@@ -336,7 +337,7 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Dead Code",
 				count: knipResult.issues.length,
-				severity: "🟡",
+				severity: "🟡", fixable: true
 			});
 			let fullSection = `## Dead Code (Knip)\n\n`;
 			if (knipResult.issues.length > 0) {
@@ -359,7 +360,7 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Duplicates",
 				count: jscpdResult.clones.length,
-				severity: "🟡",
+				severity: "🟡", fixable: true
 			});
 			let fullSection = `## Code Duplication (jscpd)\n\n`;
 			if (jscpdResult.clones.length > 0) {
@@ -383,7 +384,7 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Untyped",
 				count: untyped,
-				severity: tcResult.percentage < 90 ? "🟡" : "ℹ️",
+				severity: tcResult.percentage < 90 ? "🟡" : "ℹ️", fixable: false,
 			});
 			let fullSection = `## Type Coverage\n\n**${tcResult.percentage.toFixed(1)}% typed** (${tcResult.typed}/${tcResult.total} identifiers)\n\n`;
 			if (tcResult.untypedLocations.length > 0) {
@@ -404,7 +405,7 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Circular Deps",
 				count: circular.length,
-				severity: "🔴",
+				severity: "🔴", fixable: false,
 			});
 			let fullSection = `## Circular Dependencies (Madge)\n\n**${circular.length} circular chain(s) found**\n\n`;
 			for (const dep of circular) {
@@ -454,7 +455,7 @@ export async function handleBooboo(
 			summaryItems.push({
 				category: "Architectural",
 				count: archViolations.length,
-				severity: "🔴",
+				severity: "🔴", fixable: false,
 			});
 			let fullSection = `## Architectural Rules\n\n**${archViolations.length} violation(s) found**\n\n`;
 			for (const v of archViolations) {
@@ -475,12 +476,24 @@ export async function handleBooboo(
 		ctx.ui.notify("✓ Code review clean — saved to .pi-lens/reviews/", "info");
 	} else {
 		const totalIssues = summaryItems.reduce((sum, s) => sum + s.count, 0);
-		let summary = `📊 Code Review: ${summaryItems.length} categories, ${totalIssues} total issues\n`;
+		const fixableCount = summaryItems
+			.filter((s) => s.fixable)
+			.reduce((sum, s) => sum + s.count, 0);
+		const refactorNeeded = totalIssues - fixableCount;
+
+		let summary = `📊 Code Review: ${totalIssues} issues found\n`;
 		summary += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
 		for (const item of summaryItems) {
-			summary += `${item.severity} ${item.category}: ${item.count}\n`;
+			summary += `${item.severity} ${item.category}: ${item.count}${item.fixable ? " (fixable)" : ""}\n`;
 		}
 		summary += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+		if (fixableCount > 0 && refactorNeeded > 0) {
+			summary += `🔧 ${fixableCount} fixable via /lens-booboo-fix | 🏗️ ${refactorNeeded} need /lens-booboo-refactor\n`;
+		} else if (fixableCount > 0) {
+			summary += `🔧 All ${fixableCount} issues fixable via /lens-booboo-fix\n`;
+		} else {
+			summary += `🏗️ All issues need /lens-booboo-refactor\n`;
+		}
 		summary += `📄 Full report: ${reportPath}`;
 		ctx.ui.notify(summary, "info");
 	}
