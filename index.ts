@@ -895,6 +895,12 @@ export default function (pi: ExtensionAPI) {
 
 		const parts: string[] = [];
 
+		// --- Error ownership reminder ---
+		// Shown on every session start to encourage fixing existing errors
+		parts.push(
+			"📌 Remember: If you find ANY errors (test failures, compile errors, lint issues) in this codebase, fix them — even if you didn't cause them. Don't skip errors as 'not my fault'.",
+		);
+
 		// TODO/FIXME scan — fast, no deps
 		const todoResult = todoScanner.scanDirectory(cwd);
 		const todoReport = todoScanner.formatResult(todoResult);
