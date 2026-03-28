@@ -49,44 +49,44 @@ Based on analysis of pi-lens architecture and patterns from pi-formatter.
 
 ---
 
-### Phase 2: Declarative Dispatch (Medium Effort, High Impact) 🔄 IN PROGRESS
+### Phase 2: Declarative Dispatch (Medium Effort, High Impact) ✅ DONE
 
 **Goal**: Replace 500+ lines of if/else with declarative config
 
 #### 2.1 Tool Config Types (`clients/dispatch/types.ts` - NEW) ✅
-- [x] Define `RunnerDefinition` interface with: id, appliesTo, priority, when, run
-- [x] Define `DispatchContext` interface: filePath, cwd, kind, pi, autofix, deltaMode
-- [x] Define `RunnerResult` interface: status, output, metrics
-- [x] Define `ToolPlan` and `RunnerGroup` interfaces
+- [x] `RunnerDefinition`: id, appliesTo, priority, when, run
+- [x] `DispatchContext`: filePath, cwd, kind, pi, autofix, deltaMode
+- [x] `RunnerResult` with diagnostics + semantic
+- [x] `Diagnostic`: structured issue representation
+- [x] `OutputSemantic`: blocking, warning, fixed, silent, none
+- [x] `ToolPlan` and `RunnerGroup` interfaces
 
 #### 2.2 Core Tool Dispatcher (`clients/dispatch/dispatcher.ts` - NEW) ✅
-- [x] Create `registerRunner()`, `getRunner()`, `getRunnersForKind()` registry
-- [x] Implement `dispatchForFile()` with plan-based execution
-- [x] Handle mode: "all", "fallback", "first-success"
-- [x] Support tool availability caching
+- [x] Registry: registerRunner, getRunner, getRunnersForKind
+- [x] dispatchForFile() with plan-based execution
+- [x] Mode support: "all", "fallback", "first-success"
+- [x] Output formatting with emoji
 
 #### 2.3 Execution Plan (`clients/dispatch/plan.ts` - NEW) ✅
-- [x] Define `TOOL_PLANS` for each file kind (jsts, python, go, rust, etc.)
-- [x] Map runners to groups with modes
+- [x] TOOL_PLANS for all file kinds
 
-#### 2.4 Runner Implementations (`clients/dispatch/runners/*.ts` - NEW) ✅
-- [x] biome.ts runner - Biome lint for JS/TS/JSON
-- [x] ruff.ts runner - Ruff lint for Python
-- [x] ast-grep.ts runner - Structural analysis
-- [x] ts-lsp.ts runner - TypeScript LSP diagnostics
-- [x] type-safety.ts runner - Type safety checks
-- [ ] go-vet.ts runner
-- [ ] rust-clippy.ts runner
+#### 2.4 Per-File Runners (`clients/dispatch/runners/*.ts` - NEW) ✅
+- [x] ts-lsp.ts - TypeScript LSP diagnostics
+- [x] biome.ts - Biome lint for JS/TS/JSON
+- [x] ruff.ts - Ruff lint for Python
+- [x] type-safety.ts - Type safety checks
+- [x] ast-grep.ts - Structural analysis
+- [x] architect.ts - Architectural rules + file size
+- [x] go-vet.ts - Go vet linting
+- [x] rust-clippy.ts - Rust clippy linting
 
-#### 2.5 Integrate into index.ts
-- [ ] Create `dispatchLint(ctx, filePath)` helper using dispatcher
-- [ ] Replace TypeScript LSP block with dispatcher call
-- [ ] Replace Biome block with dispatcher call
-- [ ] Replace Ruff block with dispatcher call
-- [ ] Replace type-safety block with dispatcher call
-- [ ] Replace ast-grep block with dispatcher call
+#### 2.5 Integration ✅
+- [x] dispatchLint() helper in integration.ts
+- [x] Flag --dispatch to enable (opt-in)
+- [x] Project-wide checks remain in index.ts (need global state)
 
-**Deliverables**: ~600 lines refactored, cleaner separation
+**Note**: Project-wide checks (duplicate exports, circular deps, test runner,
+jscpd) require global state and remain in index.ts.
 
 ---
 
