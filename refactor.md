@@ -49,7 +49,7 @@ Based on analysis of pi-lens architecture and patterns from pi-formatter.
 
 ---
 
-### Phase 2: Declarative Dispatch (Medium Effort, High Impact) ✅ IN PROGRESS
+### Phase 2: Declarative Dispatch (Medium Effort, High Impact) 🔄 IN PROGRESS
 
 **Goal**: Replace 500+ lines of if/else with declarative config
 
@@ -69,17 +69,22 @@ Based on analysis of pi-lens architecture and patterns from pi-formatter.
 - [x] Define `TOOL_PLANS` for each file kind (jsts, python, go, rust, etc.)
 - [x] Map runners to groups with modes
 
-#### 2.4 Runner Implementations (`clients/dispatch/runners/*.ts` - NEW)
-- [ ] biome.ts runner ✅ (sample implementation)
-- [ ] ruff.ts runner
-- [ ] ast-grep.ts runner
-- [ ] ts-lsp.ts runner
-- [ ] type-safety.ts runner
+#### 2.4 Runner Implementations (`clients/dispatch/runners/*.ts` - NEW) ✅
+- [x] biome.ts runner - Biome lint for JS/TS/JSON
+- [x] ruff.ts runner - Ruff lint for Python
+- [x] ast-grep.ts runner - Structural analysis
+- [x] ts-lsp.ts runner - TypeScript LSP diagnostics
+- [x] type-safety.ts runner - Type safety checks
+- [ ] go-vet.ts runner
+- [ ] rust-clippy.ts runner
 
-#### 2.5 Refactor index.ts
-- [ ] Extract ~400 lines from `tool_result` handler to use dispatcher
-- [ ] Extract ~100 lines from `tool_call` handler
-- [ ] Remove hardcoded tool checks, use dispatcher instead
+#### 2.5 Integrate into index.ts
+- [ ] Create `dispatchLint(ctx, filePath)` helper using dispatcher
+- [ ] Replace TypeScript LSP block with dispatcher call
+- [ ] Replace Biome block with dispatcher call
+- [ ] Replace Ruff block with dispatcher call
+- [ ] Replace type-safety block with dispatcher call
+- [ ] Replace ast-grep block with dispatcher call
 
 **Deliverables**: ~600 lines refactored, cleaner separation
 
