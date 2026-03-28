@@ -7,25 +7,17 @@
  * - security anti-patterns
  */
 
-import type { DispatchContext } from "../types.js";
+import type { DispatchContext, Diagnostic, RunnerDefinition, RunnerResult } from "../types.js";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 
-interface AstGrepResult {
-	rule: string;
-	message: string;
-	severity: "error" | "warning" | "info";
-	line: number;
-	fix?: string;
-}
-
-const astGrepRunner = {
+const astGrepRunner: RunnerDefinition = {
 	id: "ast-grep",
-	appliesTo: ["jsts", "python", "go", "rust", "cxx"] as const,
+	appliesTo: ["jsts", "python", "go", "rust", "cxx"],
 	priority: 30,
 	enabledByDefault: false,
 
-	async run(ctx: DispatchContext): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
+	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Check if ast-grep is available
 		const check = spawnSync("sg", ["--version"], {
 			encoding: "utf-8",
@@ -34,13 +26,13 @@ const astGrepRunner = {
 		});
 
 		if (check.error || check.status !== 0) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// Find ast-grep config
 		const configPath = findAstGrepConfig(ctx.cwd);
 		if (!configPath) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// Run ast-grep scan on the file
@@ -60,28 +52,20 @@ const astGrepRunner = {
 		const raw = result.stdout + result.stderr;
 
 		if (result.status === 0 && !raw.trim()) {
-			return { status: "succeeded", output: "" };
+			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
 		// Parse results
-		let results: AstGrepResult[] = [];
-		try {
-			results = parseAstGrepOutput(raw);
-		} catch {
-			// Fallback to raw output
-			return {
-				status: result.status === 0 ? "succeeded" : "failed",
-				output: raw,
-			};
-		}
+		const diagnostics = parseAstGrepOutput(raw, ctx.filePath);
 
-		if (results.length === 0) {
-			return { status: "succeeded", output: "" };
+		if (diagnostics.length === 0) {
+			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
 		return {
 			status: "failed",
-			output: formatAstGrepOutput(results),
+			diagnostics,
+			semantic: "warning",
 		};
 	},
 };
@@ -103,20 +87,26 @@ function findAstGrepConfig(cwd: string): string | undefined {
 	return undefined;
 }
 
-function parseAstGrepOutput(raw: string): AstGrepResult[] {
-	const results: AstGrepResult[] = [];
+function parseAstGrepOutput(raw: string, filePath: string): Diagnostic[] {
+	const diagnostics: Diagnostic[] = [];
 
 	// Try to parse as JSON
 	try {
 		const parsed = JSON.parse(raw);
 		if (Array.isArray(parsed)) {
 			for (const item of parsed) {
-				results.push({
-					rule: item.rule || "unknown",
+				const line = item.range?.start?.line || 1;
+				diagnostics.push({
+					id: `ast-grep-${line}-${item.rule || "unknown"}`,
 					message: item.message || item.lines || "",
+					filePath,
+					line,
 					severity: item.severity === "error" ? "error" : "warning",
-					line: item.range?.start?.line || 1,
-					fix: item.replacement,
+					semantic: item.severity === "error" ? "blocking" : "warning",
+					tool: "ast-grep",
+					rule: item.rule || "unknown",
+					fixable: !!item.replacement,
+					fixSuggestion: item.replacement ? "Run `sg fix` to auto-fix" : undefined,
 				});
 			}
 		}
@@ -127,52 +117,21 @@ function parseAstGrepOutput(raw: string): AstGrepResult[] {
 			if (line.includes(":") && line.includes("L")) {
 				const match = line.match(/L(\d+):?\s*(.+)/);
 				if (match) {
-					results.push({
-						rule: "ast-grep",
+					diagnostics.push({
+						id: `ast-grep-${match[1]}-line`,
 						message: match[2].trim(),
-						severity: "warning",
+						filePath,
 						line: parseInt(match[1], 10),
+						severity: "warning",
+						semantic: "warning",
+						tool: "ast-grep",
 					});
 				}
 			}
 		}
 	}
 
-	return results;
-}
-
-function formatAstGrepOutput(results: AstGrepResult[]): string {
-	const errors = results.filter((r) => r.severity === "error");
-	const warnings = results.filter((r) => r.severity !== "error");
-
-	let output = "";
-
-	if (errors.length > 0) {
-		output += `\n🔴 STOP — ${errors.length} structural violation(s):\n`;
-		for (const r of errors.slice(0, 10)) {
-			output += `  L${r.line}: ${r.message}\n`;
-		}
-		if (errors.length > 10) {
-			output += `  ... and ${errors.length - 10} more errors\n`;
-		}
-	}
-
-	if (warnings.length > 0) {
-		output += `\n🟡 ${warnings.length} structural warning(s):\n`;
-		for (const r of warnings.slice(0, 10)) {
-			output += `  L${r.line}: ${r.message}\n`;
-		}
-		if (warnings.length > 10) {
-			output += `  ... and ${warnings.length - 10} more warnings\n`;
-		}
-	}
-
-	const fixable = results.filter((r) => r.fix);
-	if (fixable.length > 0) {
-		output += `\n  → ${fixable.length} auto-fixable with \`sg fix\`\n`;
-	}
-
-	return output;
+	return diagnostics;
 }
 
 export default astGrepRunner;

@@ -1,65 +1,90 @@
 /**
- * Types for declarative tool dispatch system
+ * Redesigned Dispatch Types for pi-lens
  *
- * Inspired by pi-formatter's dispatch.ts but adapted for pi-lens's
- * lint-focused workflow (vs formatting workflow).
+ * Key insight: Different clients have different OUTPUT SEMANTICS:
+ * - BLOCKING: Errors that stop the agent (architect, ts-lsp errors)
+ * - WARNING: Non-blocking issues (biome warnings, type-safety)
+ * - FIXABLE: Issues with auto-fix available
+ * - SILENT: Metrics tracked but not shown (complexity, TDR)
+ * - INFORMATIONAL: Shown in session summary only
+ *
+ * The dispatcher must handle these semantics consistently.
  */
 
 import type { FileKind } from "../file-kinds.js";
 
 // --- API Interface ---
 
-/** Minimal interface for pi agent API features we use */
 export interface PiAgentAPI {
-	getFlag(flag: string): boolean;
+	getFlag(flag: string): string | boolean | undefined;
 }
 
-// --- Output Types ---
+// --- Output Semantics ---
 
-export interface LintOutput {
-	/** Primary output message (formatted for display) */
+/**
+ * How to display and handle this output
+ */
+export type OutputSemantic =
+	/** Hard stop - agent cannot continue until fixed */
+	| "blocking"
+	/** Soft stop - shown but agent can continue */
+	| "warning"
+	/** Auto-fix was applied */
+	| "fixed"
+	/** Shown in session summary only */
+	| "silent"
+	/** Not applicable / skipped */
+	| "none";
+
+export interface Diagnostic {
+	/** Unique identifier for deduplication */
+	id: string;
+	/** Human-readable message */
+	message: string;
+	/** File path */
+	filePath: string;
+	/** Line number (1-based) */
+	line?: number;
+	/** Column (1-based) */
+	column?: number;
+	/** Severity level */
+	severity: "error" | "warning" | "info";
+	/** Output semantic */
+	semantic: OutputSemantic;
+	/** Which tool produced this */
+	tool: string;
+	/** Rule/category */
+	rule?: string;
+	/** Whether auto-fix is available */
+	fixable?: boolean;
+	/** Auto-fix command/suggestion */
+	fixSuggestion?: string;
+}
+
+export interface DispatchResult {
+	/** All diagnostics found */
+	diagnostics: Diagnostic[];
+	/** Blockers that must be fixed */
+	blockers: Diagnostic[];
+	/** Warnings to address */
+	warnings: Diagnostic[];
+	/** Issues that were auto-fixed */
+	fixed: Diagnostic[];
+	/** Formatted output for display */
 	output: string;
-	/** Whether this output represents an error (hard stop) */
-	isError: boolean;
-	/** Whether this output represents a warning (soft stop) */
-	isWarning: boolean;
-	/** Whether auto-fix was applied */
-	autofixed?: boolean;
-	/** Optional hint to show user */
-	hint?: string;
+	/** Whether any blockers were found */
+	hasBlockers: boolean;
 }
 
-export interface RunnerResult {
-	/** Whether the runner ran successfully */
-	status: "succeeded" | "failed" | "skipped";
-	/** Output to display */
-	output: string;
-	/** Tool-specific metrics (optional) */
-	metrics?: Record<string, number>;
-}
+// --- Baseline Management ---
 
-// --- Runner Context ---
-
-export interface DispatchContext {
-	/** Current file being processed */
-	readonly filePath: string;
-	/** Project root */
-	readonly cwd: string;
-	/** Detected file kind */
-	readonly kind: FileKind | undefined;
-	/** Pi agent API */
-	readonly pi: PiAgentAPI;
-	/** Whether autofix is enabled */
-	readonly autofix: boolean;
-	/** Whether delta mode is enabled (only show new issues) */
-	readonly deltaMode: boolean;
-
-	/** Check if a tool is available */
-	hasTool(command: string): Promise<boolean>;
-	/** Get available tools */
-	getAvailableTools(): string[];
-	/** Log a message */
-	log(message: string): void;
+export interface BaselineStore {
+	/** Get baseline for a file */
+	get(filePath: string): unknown[] | undefined;
+	/** Set baseline for a file */
+	set(filePath: string, diagnostics: unknown[]): void;
+	/** Clear all baselines */
+	clear(): void;
 }
 
 // --- Runner Definition ---
@@ -67,46 +92,54 @@ export interface DispatchContext {
 export type RunnerMode = "all" | "fallback" | "first-success";
 
 export interface RunnerDefinition {
-	/** Unique identifier for this runner */
 	id: string;
-	/** File kinds this runner applies to */
 	appliesTo: readonly FileKind[];
-	/** Priority (lower = runs first) */
-	priority?: number;
-	/** Whether this runner should be enabled by default */
-	enabledByDefault?: boolean;
-	/** Optional condition for when to run */
+	priority: number;
+	enabledByDefault: boolean;
+	/** Check if runner should run */
 	when?: (ctx: DispatchContext) => Promise<boolean> | boolean;
 	/** Execute the runner */
 	run(ctx: DispatchContext): Promise<RunnerResult>;
 }
 
-export interface RunnerGroup {
-	mode: RunnerMode;
-	/** Runners in this group */
-	runnerIds: string[];
-	/** Optional filter for file kinds */
-	filterKinds?: FileKind[];
+export interface RunnerResult {
+	status: "succeeded" | "failed" | "skipped";
+	/** Diagnostics found */
+	diagnostics: Diagnostic[];
+	/** Output semantic for these diagnostics */
+	semantic: OutputSemantic;
+	/** Raw output string (if runner returns text instead of structured) */
+	rawOutput?: string;
 }
 
-// --- Plan Configuration ---
+// --- Dispatch Context ---
+
+export interface DispatchContext {
+	readonly filePath: string;
+	readonly cwd: string;
+	readonly kind: FileKind | undefined;
+	readonly pi: PiAgentAPI;
+	readonly autofix: boolean;
+	readonly deltaMode: boolean;
+	readonly baselines: BaselineStore;
+
+	hasTool(command: string): Promise<boolean>;
+	log(message: string): void;
+}
+
+// --- Tool Plan ---
 
 export interface ToolPlan {
-	/** Tool name for display */
 	name: string;
-	/** Groups of runners to execute */
 	groups: RunnerGroup[];
 }
 
-// --- Dispatch Options ---
-
-export interface DispatchOptions {
-	/** Maximum output length */
-	maxOutputLength?: number;
-	/** Include fixed issues in output */
-	showFixed?: boolean;
-	/** Stop on first error */
-	stopOnError?: boolean;
+export interface RunnerGroup {
+	mode: RunnerMode;
+	runnerIds: string[];
+	filterKinds?: readonly FileKind[];
+	/** Override semantic for all runners in this group */
+	semantic?: OutputSemantic;
 }
 
 // --- Registry ---

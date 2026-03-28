@@ -4,66 +4,57 @@
  * Checks for:
  * - Switch exhaustiveness
  * - Missing return statements
- * - Unreachable code
  * - Type safety issues
  */
 
-import type { DispatchContext } from "../types.js";
+import type { DispatchContext, Diagnostic, RunnerDefinition, RunnerResult } from "../types.js";
 import { readFileContent } from "./utils.js";
+import * as fs from "node:fs";
 
-interface TypeSafetyIssue {
-	line: number;
-	message: string;
-	severity: "error" | "warning";
-}
-
-const typeSafetyRunner = {
+const typeSafetyRunner: RunnerDefinition = {
 	id: "type-safety",
-	appliesTo: ["jsts"] as const,
+	appliesTo: ["jsts"],
 	priority: 20,
 	enabledByDefault: true,
 
-	async run(ctx: DispatchContext): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
+	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Only check TypeScript files
 		if (!ctx.filePath.match(/\.tsx?$/)) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Read file content
 		const content = readFileContent(ctx.filePath);
 		if (!content) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		const issues: TypeSafetyIssue[] = [];
+		const diagnostics: Diagnostic[] = [];
 
 		// Check for switch exhaustiveness patterns
-		issues.push(...checkSwitchExhaustiveness(content));
+		diagnostics.push(...checkSwitchExhaustiveness(content, ctx.filePath));
 
 		// Check for missing return patterns
-		issues.push(...checkMissingReturns(content));
+		diagnostics.push(...checkMissingReturns(content, ctx.filePath));
 
 		// Check for any type usage
-		issues.push(...checkAnyTypeUsage(content));
+		diagnostics.push(...checkAnyTypeUsage(content, ctx.filePath));
 
-		if (issues.length === 0) {
-			return { status: "succeeded", output: "" };
+		if (diagnostics.length === 0) {
+			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
-		const errors = issues.filter((i) => i.severity === "error");
-		const warnings = issues.filter((i) => i.severity === "warning");
-
+		const hasErrors = diagnostics.some((d) => d.severity === "error");
 		return {
-			status: errors.length > 0 ? "failed" : "succeeded",
-			output: formatTypeSafetyOutput(errors, warnings),
+			status: hasErrors ? "failed" : "succeeded",
+			diagnostics,
+			semantic: hasErrors ? "blocking" : "warning",
 		};
 	},
 };
 
-function checkSwitchExhaustiveness(content: string): TypeSafetyIssue[] {
-	const issues: TypeSafetyIssue[] = [];
+function checkSwitchExhaustiveness(content: string, filePath: string): Diagnostic[] {
+	const diagnostics: Diagnostic[] = [];
 
-	// Pattern: switch without exhaustive check
 	const switchRegex = /switch\s*\(\s*(\w+)\s*\)\s*\{/g;
 	let match;
 
@@ -86,35 +77,37 @@ function checkSwitchExhaustiveness(content: string): TypeSafetyIssue[] {
 
 		// Check if it has a default case
 		if (!/\bdefault\s*:/ .test(switchBlock)) {
-			// Count cases
 			const caseCount = (switchBlock.match(/\bcase\s+/g) || []).length;
 
-			// If it's an enum-like variable, suggest adding default
 			if (caseCount > 2) {
 				const lineNum = content.slice(0, switchStart).split("\n").length;
-				issues.push({
+				diagnostics.push({
+					id: `switch-${lineNum}-${switchVar}`,
+					message: `Switch on '${switchVar}' has ${caseCount} cases but no default`,
+					filePath,
 					line: lineNum,
-					message: `Switch on '${switchVar}' has ${caseCount} cases but no default — add 'default: break;' or exhaustive checking`,
 					severity: "warning",
+					semantic: "warning",
+					tool: "type-safety",
+					rule: "switch-exhaustiveness",
+					fixSuggestion: "Add 'default: break;' or use exhaustive checking",
 				});
 			}
 		}
 	}
 
-	return issues;
+	return diagnostics;
 }
 
-function checkMissingReturns(content: string): TypeSafetyIssue[] {
-	const issues: TypeSafetyIssue[] = [];
+function checkMissingReturns(content: string, filePath: string): Diagnostic[] {
+	const diagnostics: Diagnostic[] = [];
 
-	// Pattern: function returning non-void without return in all paths
 	const funcRegex = /function\s+(\w+)\s*\([^)]*\)\s*:\s*([^\s{]+)\s*\{/g;
 	let match;
 
 	while ((match = funcRegex.exec(content)) !== null) {
 		const returnType = match[2].trim();
 
-		// Skip void/never/Promise<void> returns
 		if (returnType === "void" || returnType === "never" || returnType.includes("Promise<void>")) {
 			continue;
 		}
@@ -135,57 +128,45 @@ function checkMissingReturns(content: string): TypeSafetyIssue[] {
 
 		const funcBlock = content.slice(blockStart, blockEnd);
 
-		// Check if there's a return statement
 		if (!/\breturn\b/.test(funcBlock)) {
 			const lineNum = content.slice(0, funcStart).split("\n").length;
-			issues.push({
-				line: lineNum,
+			diagnostics.push({
+				id: `missing-return-${lineNum}-${funcName}`,
 				message: `Function '${funcName}' returns '${returnType}' but has no return statement`,
+				filePath,
+				line: lineNum,
 				severity: "error",
+				semantic: "blocking",
+				tool: "type-safety",
+				rule: "missing-return",
 			});
 		}
 	}
 
-	return issues;
+	return diagnostics;
 }
 
-function checkAnyTypeUsage(content: string): TypeSafetyIssue[] {
-	const issues: TypeSafetyIssue[] = [];
+function checkAnyTypeUsage(content: string, filePath: string): Diagnostic[] {
+	const diagnostics: Diagnostic[] = [];
 
-	// Pattern: `: any` or `as any`
 	const anyRegex = /:\s*any\b|as\s+any\b/g;
 	let match;
 
 	while ((match = anyRegex.exec(content)) !== null) {
 		const lineNum = content.slice(0, match.index).split("\n").length;
-		issues.push({
-			line: lineNum,
+		diagnostics.push({
+			id: `any-type-${lineNum}`,
 			message: "Avoid 'any' type — use 'unknown' or define a proper interface",
+			filePath,
+			line: lineNum,
 			severity: "warning",
+			semantic: "warning",
+			tool: "type-safety",
+			rule: "no-any-type",
 		});
 	}
 
-	return issues;
-}
-
-function formatTypeSafetyOutput(errors: TypeSafetyIssue[], warnings: TypeSafetyIssue[]): string {
-	let output = "";
-
-	if (errors.length > 0) {
-		output += `\n🔴 STOP — ${errors.length} type safety violation(s):\n`;
-		for (const issue of errors.slice(0, 10)) {
-			output += `  L${issue.line}: ${issue.message}\n`;
-		}
-	}
-
-	if (warnings.length > 0) {
-		output += `\n🟡 ${warnings.length} type safety warning(s):\n`;
-		for (const issue of warnings.slice(0, 10)) {
-			output += `  L${issue.line}: ${issue.message}\n`;
-		}
-	}
-
-	return output;
+	return diagnostics;
 }
 
 export default typeSafetyRunner;

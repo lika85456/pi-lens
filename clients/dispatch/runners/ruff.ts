@@ -2,19 +2,19 @@
  * Ruff runner for dispatch system
  *
  * Ruff handles both formatting and linting for Python files.
- * Much faster than flake8 + black + isort combined.
  */
 
-import type { DispatchContext } from "../types.js";
+import type { DispatchContext, Diagnostic, RunnerDefinition, RunnerResult } from "../types.js";
 import { spawnSync } from "node:child_process";
+import { stripAnsi } from "../../sanitize.js";
 
-const ruffRunner = {
+const ruffRunner: RunnerDefinition = {
 	id: "ruff-lint",
-	appliesTo: ["python"] as const,
+	appliesTo: ["python"],
 	priority: 10,
 	enabledByDefault: true,
 
-	async run(ctx: DispatchContext): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
+	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Check if ruff is available
 		const check = spawnSync("ruff", ["--version"], {
 			encoding: "utf-8",
@@ -23,7 +23,7 @@ const ruffRunner = {
 		});
 
 		if (check.error || check.status !== 0) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// Run ruff check
@@ -37,57 +37,47 @@ const ruffRunner = {
 			shell: true,
 		});
 
-		const output = result.stdout + result.stderr;
+		const raw = stripAnsi(result.stdout + result.stderr);
 
 		if (result.status === 0) {
-			return { status: "succeeded", output: "" };
+			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
+
+		// Parse diagnostics
+		const diagnostics = parseRuffOutput(raw, ctx.filePath);
 
 		return {
 			status: "failed",
-			output: formatRuffOutput(output, ctx.autofix),
+			diagnostics,
+			semantic: "warning",
 		};
 	},
 };
 
-function formatRuffOutput(raw: string, autofix: boolean): string {
-	const clean = raw.replace(/\x1b\[[0-9;]*m/g, "");
+function parseRuffOutput(raw: string, filePath: string): Diagnostic[] {
+	const lines = raw.split("\n").filter((l) => l.trim());
+	const diagnostics: Diagnostic[] = [];
 
-	if (!clean.trim()) {
-		return "";
-	}
-
-	const lines = clean.split("\n").filter((l) => l.trim());
-	if (lines.length === 0) {
-		return "";
-	}
-
-	// Count issues
-	const issueCount = lines.filter((l) => l.includes(":") && !l.startsWith(" ")).length;
-
-	if (issueCount === 0) {
-		return "";
-	}
-
-	const prefix = autofix ? "🟠" : "🔴";
-	let output = `\n${prefix} Fix ${issueCount} Ruff issue(s):\n`;
-
-	// Show first 15 issues
-	for (const line of lines.slice(0, 15)) {
-		if (line.trim()) {
-			output += `  ${line}\n`;
+	for (const line of lines) {
+		// Parse ruff output: file:line:col: message (code)
+		const match = line.match(/^(.+?):(\d+):(\d+):\s*(.+?)\s+\((.+?)\)/);
+		if (match) {
+			diagnostics.push({
+				id: `ruff-${match[2]}-${match[5]}`,
+				message: `${match[5]}: ${match[4]}`,
+				filePath,
+				line: parseInt(match[2], 10),
+				column: parseInt(match[3], 10),
+				severity: line.includes("error") ? "error" : "warning",
+				semantic: "warning",
+				tool: "ruff",
+				rule: match[5],
+				fixable: true,
+			});
 		}
 	}
 
-	if (lines.length > 15) {
-		output += `  ... and ${lines.length - 15} more\n`;
-	}
-
-	if (autofix) {
-		output += `\n  → Auto-fix applied, remaining issues shown above`;
-	}
-
-	return output;
+	return diagnostics;
 }
 
 export default ruffRunner;

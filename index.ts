@@ -34,6 +34,7 @@ import { CacheManager } from "./clients/cache-manager.js";
 import { handleBooboo } from "./commands/booboo.js";
 import { handleFix } from "./commands/fix.js";
 import { handleRefactor, initRefactorLoop } from "./commands/refactor.js";
+import { dispatchLint } from "./clients/dispatch/integration.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
  * Handles pi's custom diff format:
@@ -1574,6 +1575,17 @@ export default function (pi: ExtensionAPI) {
 		// Agent behavior warnings (blind writes, thrashing)
 		if (behaviorWarnings.length > 0) {
 			lspOutput += `\n\n${agentBehaviorClient.formatWarnings(behaviorWarnings)}`;
+		}
+
+		// --- OPT-IN: Declarative dispatch (experimental) ---
+		// Set flag --dispatch to use the new declarative dispatch system
+		// This is a preview of Phase 2 - eventually will replace the blocks above
+		if (pi.getFlag("dispatch")) {
+			dbg("dispatch: using declarative dispatch system");
+			const dispatchOutput = await dispatchLint(filePath, projectRoot, pi);
+			if (dispatchOutput) {
+				lspOutput += `\n\n--- Declarative Dispatch ---\n${dispatchOutput}`;
+			}
 		}
 
 		if (!lspOutput) return;

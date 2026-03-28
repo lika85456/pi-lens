@@ -13,8 +13,13 @@ dist/
 build/
 out/
 
-# Build artifacts
-index.js
+# Compiled TypeScript
+*.js
+*.js.map
+*.d.ts
+!*.test.js
+
+# Rust
 src/main.rs
 
 # Internal planning docs

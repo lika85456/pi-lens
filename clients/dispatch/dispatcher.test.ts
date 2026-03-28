@@ -10,7 +10,7 @@ import {
 	listRunners,
 	createDispatchContext,
 } from "./dispatcher.js";
-import type { RunnerDefinition, DispatchContext } from "./types.js";
+import type { RunnerDefinition, DispatchContext, RunnerResult } from "./types.js";
 
 // --- Test Runners ---
 
@@ -18,8 +18,9 @@ const testRunner1: RunnerDefinition = {
 	id: "test-runner-1",
 	appliesTo: ["jsts", "python"],
 	priority: 10,
-	async run(): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
-		return { status: "succeeded", output: "Test runner 1 ran" };
+	enabledByDefault: true,
+	async run(): Promise<RunnerResult> {
+		return { status: "succeeded", diagnostics: [], semantic: "none" };
 	},
 };
 
@@ -27,8 +28,9 @@ const testRunner2: RunnerDefinition = {
 	id: "test-runner-2",
 	appliesTo: ["python"],
 	priority: 20,
-	async run(): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
-		return { status: "succeeded", output: "Test runner 2 ran" };
+	enabledByDefault: true,
+	async run(): Promise<RunnerResult> {
+		return { status: "succeeded", diagnostics: [], semantic: "none" };
 	},
 };
 
@@ -36,9 +38,10 @@ const testRunnerWithCondition: RunnerDefinition = {
 	id: "test-runner-conditional",
 	appliesTo: ["jsts"],
 	priority: 5,
+	enabledByDefault: false,
 	when: async (ctx) => ctx.autofix,
-	async run(): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
-		return { status: "succeeded", output: "Conditional runner ran" };
+	async run(): Promise<RunnerResult> {
+		return { status: "succeeded", diagnostics: [], semantic: "none" };
 	},
 };
 

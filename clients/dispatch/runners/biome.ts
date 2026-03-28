@@ -2,7 +2,7 @@
  * Biome runner for dispatch system
  */
 
-import type { DispatchContext, RunnerDefinition } from "../types.js";
+import type { DispatchContext, Diagnostic, RunnerDefinition, RunnerResult } from "../types.js";
 import { spawnSync } from "node:child_process";
 
 const biomeRunner: RunnerDefinition = {
@@ -11,7 +11,19 @@ const biomeRunner: RunnerDefinition = {
 	priority: 10,
 	enabledByDefault: true,
 
-	async run(ctx: DispatchContext): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
+	async run(ctx: DispatchContext): Promise<RunnerResult> {
+		// Check if biome is available
+		const check = spawnSync("npx", ["@biomejs/biome", "--version"], {
+			encoding: "utf-8",
+			timeout: 5000,
+			shell: true,
+		});
+
+		if (check.error || check.status !== 0) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
+		// Run biome check
 		const args = ctx.autofix
 			? ["check", "--write", ctx.filePath]
 			: ["check", ctx.filePath];
@@ -22,62 +34,49 @@ const biomeRunner: RunnerDefinition = {
 			shell: true,
 		});
 
-		if (result.error) {
-			return { status: "skipped", output: "" };
-		}
-
 		const output = result.stdout + result.stderr;
 
 		if (result.status === 0) {
-			return { status: "succeeded", output: "" };
+			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
+
+		// Parse diagnostics
+		const diagnostics = parseBiomeOutput(output, ctx.filePath, ctx.autofix);
 
 		return {
 			status: "failed",
-			output: formatBiomeOutput(output, ctx.autofix),
+			diagnostics,
+			semantic: "warning",
 		};
 	},
 };
 
-function formatBiomeOutput(raw: string, autofix: boolean): string {
-	// Remove ANSI codes
+function parseBiomeOutput(raw: string, filePath: string, autofix: boolean): Diagnostic[] {
 	const clean = raw.replace(/\x1b\[[0-9;]*m/g, "");
-
-	if (!clean.trim()) {
-		return "";
-	}
-
 	const lines = clean.split("\n").filter((l) => l.trim());
-	if (lines.length === 0) {
-		return "";
-	}
+	const diagnostics: Diagnostic[] = [];
 
-	let output = "";
-
-	// Parse biome output
-	const issues: string[] = [];
 	for (const line of lines) {
-		// Look for error/warning lines
-		if (line.includes("error") || line.includes("warning")) {
-			issues.push(line);
+		// Parse biome output format: file:line:col message (category)
+		const match = line.match(/^(.+?):(\d+):(\d+)\s+(.+?)\s*\((.+?)\)/);
+		if (match) {
+			diagnostics.push({
+				id: `biome-${match[2]}-${match[5]}`,
+				message: `${match[5]}: ${match[4]}`,
+				filePath,
+				line: parseInt(match[2], 10),
+				column: parseInt(match[3], 10),
+				severity: line.includes("error") ? "error" : "warning",
+				semantic: "warning",
+				tool: "biome",
+				rule: match[5],
+				fixable: true,
+				fixSuggestion: autofix ? "Auto-fix applied" : "Run with --autofix-biome to fix",
+			});
 		}
 	}
 
-	if (issues.length > 0) {
-		const prefix = autofix ? "🟠" : "🔴";
-		output += `\n${prefix} Fix ${issues.length} Biome issue(s):\n`;
-		for (const issue of issues.slice(0, 20)) {
-			output += `  ${issue}\n`;
-		}
-		if (issues.length > 20) {
-			output += `  ... and ${issues.length - 20} more\n`;
-		}
-		if (autofix) {
-			output += `\n  → Auto-fix applied, remaining issues shown above`;
-		}
-	}
-
-	return output;
+	return diagnostics;
 }
 
 export default biomeRunner;

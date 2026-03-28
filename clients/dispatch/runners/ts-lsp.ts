@@ -4,20 +4,20 @@
  * Wraps the existing TypeScriptClient for LSP diagnostics.
  */
 
-import type { DispatchContext } from "../types.js";
+import type { DispatchContext, Diagnostic, RunnerDefinition, RunnerResult } from "../types.js";
 import { TypeScriptClient } from "../../typescript-client.js";
 import { readFileContent } from "./utils.js";
 
-const tsLspRunner = {
+const tsLspRunner: RunnerDefinition = {
 	id: "ts-lsp",
-	appliesTo: ["jsts"] as const,
+	appliesTo: ["jsts"],
 	priority: 5,
 	enabledByDefault: true,
 
-	async run(ctx: DispatchContext): Promise<{ status: "succeeded" | "failed" | "skipped"; output: string }> {
+	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Only check TypeScript files
 		if (!ctx.filePath.match(/\.tsx?$/)) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// Use the existing TypeScriptClient
@@ -25,49 +25,37 @@ const tsLspRunner = {
 
 		const content = readFileContent(ctx.filePath);
 		if (!content) {
-			return { status: "skipped", output: "" };
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 		tsClient.updateFile(ctx.filePath, content);
 
 		const diags = tsClient.getDiagnostics(ctx.filePath);
 
 		if (diags.length === 0) {
-			return { status: "succeeded", output: "" };
+			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
-		// Separate unused imports from other diagnostics
-		const unusedImports = diags.filter((d) => d.code === 6133 || d.code === 6196);
-		const otherDiags = diags.filter((d) => d.code !== 6133 && d.code !== 6196);
+		// Convert to diagnostics
+		const diagnostics: Diagnostic[] = [];
 
-		let output = "";
-
-		if (unusedImports.length > 0) {
-			output += `\n🧹 Remove ${unusedImports.length} unused import(s):\n`;
-			for (const d of unusedImports.slice(0, 10)) {
-				output += `  L${d.range.start.line + 1}: ${d.message}\n`;
-			}
-		}
-
-		const errors = otherDiags.filter((d) => d.severity !== 2);
-		const warnings = otherDiags.filter((d) => d.severity === 2);
-
-		if (errors.length > 0) {
-			output += `\n🔴 Fix ${errors.length} TypeScript error(s):\n`;
-			for (const d of errors.slice(0, 10)) {
-				output += `  L${d.range.start.line + 1}: ${d.message}\n`;
-			}
-		}
-
-		if (warnings.length > 0) {
-			output += `\n🟡 ${warnings.length} TypeScript warning(s):\n`;
-			for (const d of warnings.slice(0, 10)) {
-				output += `  L${d.range.start.line + 1}: ${d.message}\n`;
-			}
+		for (const d of diags) {
+			const severity = d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info";
+			diagnostics.push({
+				id: `ts-${d.range.start.line}-${d.code}`,
+				message: d.message,
+				filePath: ctx.filePath,
+				line: d.range.start.line + 1,
+				severity,
+				semantic: d.severity === 1 ? "blocking" : "warning",
+				tool: "ts-lsp",
+				rule: `TS${d.code}`,
+			});
 		}
 
 		return {
-			status: errors.length > 0 ? "failed" : "succeeded",
-			output,
+			status: diagnostics.some((d) => d.severity === "error") ? "failed" : "succeeded",
+			diagnostics,
+			semantic: "warning",
 		};
 	},
 };

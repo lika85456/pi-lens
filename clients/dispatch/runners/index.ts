@@ -11,7 +11,7 @@ import ruffRunner from "./ruff.js";
 import tsLspRunner from "./ts-lsp.js";
 import typeSafetyRunner from "./type-safety.js";
 
-// Register all runners
+// Register all runners (ordered by priority)
 registerRunner(tsLspRunner);
 registerRunner(biomeRunner);
 registerRunner(ruffRunner);
