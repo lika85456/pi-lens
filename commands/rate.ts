@@ -105,7 +105,7 @@ export async function gatherScores(
 	const securityIssues: string[] = [];
 	let secretsFound = 0;
 
-	// Check for secrets in source files
+	// Check for secrets in source files (skip test files)
 	const secretPatterns = [
 		{ name: "API Key (sk-)", pattern: /sk-[a-zA-Z0-9]{20,}/ },
 		{ name: "GitHub Token", pattern: /ghp_[a-zA-Z0-9]{36}/ },
@@ -118,7 +118,24 @@ export async function gatherScores(
 		},
 	];
 
+	function isTestFile(filePath: string): boolean {
+		const normalized = filePath.replace(/\\/g, "/");
+		return (
+			normalized.includes(".test.") ||
+			normalized.includes(".spec.") ||
+			normalized.includes("/test/") ||
+			normalized.includes("/tests/") ||
+			normalized.includes("__tests__/") ||
+			normalized.includes("test-utils") ||
+			normalized.startsWith("test-") ||
+			normalized.includes(".fixture.") ||
+			normalized.includes(".mock.")
+		);
+	}
+
 	for (const file of files.slice(0, 100)) {
+		// Skip test files
+		if (isTestFile(file)) continue;
 		try {
 			const content = nodeFs.readFileSync(file, "utf-8");
 			for (const line of content.split("\n")) {
