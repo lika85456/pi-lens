@@ -3,6 +3,8 @@
  *
  * Provides real Python type-checking (not just linting).
  * Catches type errors like: result: str = add(1, 2)  # Type "int" not assignable to "str"
+ *
+ * Requires: pyright (pip install pyright or npm install -g pyright)
  */
 
 import { spawnSync } from "node:child_process";
@@ -13,6 +15,22 @@ import type {
 	RunnerResult,
 } from "../types.js";
 
+// Cache pyright availability check
+let pyrightAvailable: boolean | null = null;
+
+function isPyrightAvailable(): boolean {
+	if (pyrightAvailable !== null) return pyrightAvailable;
+
+	// Check if pyright CLI is available (do NOT auto-install via npx)
+	const check = spawnSync("pyright", ["--version"], {
+		encoding: "utf-8",
+		timeout: 5000,
+		shell: true,
+	});
+	pyrightAvailable = !check.error && check.status === 0;
+	return pyrightAvailable;
+}
+
 const pyrightRunner: RunnerDefinition = {
 	id: "pyright",
 	appliesTo: ["python"],
@@ -20,10 +38,15 @@ const pyrightRunner: RunnerDefinition = {
 	enabledByDefault: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		// Run pyright with JSON output
-		const result = spawnSync("npx", ["pyright", "--outputjson", ctx.filePath], {
+		// Skip if pyright is not installed
+		if (!isPyrightAvailable()) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
+		// Run pyright with JSON output (use direct command, not npx)
+		const result = spawnSync("pyright", ["--outputjson", ctx.filePath], {
 			encoding: "utf-8",
-			timeout: 60000, // Pyright can be slower on first run
+			timeout: 60000,
 			shell: true,
 		});
 

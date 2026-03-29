@@ -395,7 +395,7 @@ Each rule includes a `message` and `note` that are shown in diagnostics, so the 
 | `type-coverage` | `npm i -D type-coverage` | TypeScript `any` coverage percentage |
 | `madge` | `npm i -D madge` | Circular dependency detection |
 | `ruff` | `pip install ruff` | Python lint + format + autofix |
-| `pyright` | `npx pyright` (auto-installed) | Python type-checking |
+| `pyright` | `pip install pyright` or `npm i -g pyright` | Python type-checking (optional, graceful skip if not installed) |
 
 ---
 

@@ -298,6 +298,11 @@ All notable changes to pi-lens will be documented in this file.
 ### Changed
 - **Improved ast-grep tool descriptions**: Better pattern guidance to prevent overly broad searches.
 
+## [2.2.1] - 2026-03-29
+
+### Fixed
+- **No auto-install**: Runners (biome, pyright) now use direct CLI commands instead of `npx`. If not installed, gracefully skip instead of attempting to download.
+
 ## [2.2.0] - 2026-03-29
 
 ### Added
