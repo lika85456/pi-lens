@@ -16,6 +16,72 @@ pi install git:github.com/apmantza/pi-lens
 
 ---
 
+## Features
+
+### On every write / edit
+
+Every file write is automatically checked. Blocking issues appear inline:
+
+```
+🔴 STOP — 1 issue(s) must be fixed:
+  L23: var total = sum(items); — use 'let' or 'const'
+```
+
+**Runners:** TypeScript type-checking, Python type-checking (pyright), linting (ruff, biome), secrets scan, architectural rules.
+
+### Code quality scoring
+
+```
+/lens-rate
+```
+
+```
+📊 CODE QUALITY SCORE: 85/100 (B)
+┌─────────────────────────────────────────────────────────┐
+│  🔷 Type Safety  🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  85 │
+│  🧩 Complexity   🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  82 │
+│  🔒 Security     🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 │
+│  🏗️ Architecture  🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  80 │
+│  🗑️ Dead Code    🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜  90 │
+│  ✅ Tests        🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 │
+└─────────────────────────────────────────────────────────┘
+```
+
+### On-demand commands
+
+| Command | What it does |
+|---------|--------------|
+| `/lens-booboo` | Full codebase review (design smells, complexity, dead code, duplicates, type coverage) |
+| `/lens-booboo-fix` | Automated mechanical fixes for lint issues |
+| `/lens-booboo-refactor` | Interactive architectural refactoring |
+| `/lens-rate` | Code quality score with visual breakdown |
+| `/lens-metrics` | Complexity metrics for all files |
+| `/lens-format` | Apply Biome formatting |
+
+### Context-aware rules
+
+Rules are automatically skipped for test files — no more `no-console-log` warnings in `*.test.ts`.
+
+### Project rules integration
+
+Scans for `.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md` at session start. Project-specific rules are surfaced in the system prompt.
+
+### Secret scanning
+
+Catches secrets in ANY file type on write/edit — `.env`, `.yaml`, `.json`, not just TypeScript:
+
+```
+🔴 STOP — 1 potential secret(s) in src/config.ts:
+  L12: Possible Stripe or OpenAI API key (sk-*)
+  → Remove before continuing. Use env vars instead.
+```
+
+### Delta-mode feedback
+
+First edit: full feedback. Subsequent edits: only NEW issues. Pre-existing issues are tracked and excluded from inline output.
+
+---
+
 ## Dependent Tools
 
 pi-lens works out of the box for TypeScript/JavaScript. For full language support, install these tools — **all are optional and gracefully skip if not installed**:
@@ -54,355 +120,20 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 |------|---------|--------------|
 | `@ast-grep/cli` | `npm i -D @ast-grep/cli` | Structural pattern matching (80+ rules) |
 
-**Example setup for a TypeScript + Python project:**
-
-```bash
-# TypeScript tooling
-npm i -D @biomejs/biome knip jscpd type-coverage
-
-# Python tooling
-pip install ruff pyright
-```
-
-pi-lens automatically detects which tools are available and enables their runners accordingly.
-
----
-
-## What's New (v2.2)
-
-### `/lens-rate` — Code Quality Scoring
-
-Visual scoring breakdown across 6 dimensions with grade A-F:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  📊 CODE QUALITY SCORE: 85/100 (B)                      │
-├─────────────────────────────────────────────────────────┤
-│  🔷 Type Safety  🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  85 │
-│  🧩 Complexity   🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  82 │
-│  🔒 Security     🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 │
-│  🏗️ Architecture  🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜  80 │
-│  🗑️ Dead Code    🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜  90 │
-│  ✅ Tests        🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100 │
-└─────────────────────────────────────────────────────────┘
-```
-
-Scores are calculated from real scan data: type-coverage, complexity metrics, secret detection, architect rules, knip, and test results.
-
-### Python Type-Checking (Pyright)
-
-Python files now get **real type-checking** via pyright, not just linting:
-
-```python
-# ruff won't catch this, but pyright will:
-def add(x: int, y: int) -> int:
-    return x + y
-
-result: str = add(1, 2)  # ❌ pyright: Type "int" not assignable to "str"
-```
-
-Pyright runs alongside ruff — pyright catches type errors, ruff catches style issues.
-
----
-
-## What's New (v2.1)
-
-### Content-Level Secret Scanning
-
-Secrets are now blocked **before** they're saved, on **all file types**:
-
-```
-🔴 STOP — 1 potential secret(s) in src/config.ts:
-  L12: Possible Stripe or OpenAI API key (sk-*)
-  → Remove before continuing. Use env vars instead.
-```
-
-Works on `.env`, `.yaml`, `.json`, `.md` — not just TypeScript. Catches `sk-*`, `ghp_*`, `AKIA*`, private keys, hardcoded passwords.
-
-### Compact Output
-
-Inline feedback stripped to **blocking only** — no more warning noise:
-
-```
-🔴 STOP — 2 issue(s) must fixed:
-  L23: var total = sum(items); — use 'let' or 'const'
-```
-
-Warnings are tracked and surfaced via `/lens-booboo`. booboo-fix and booboo-refactor output compacted to summaries with TSV files for full details.
-
-### Project Rules Integration
-
-Scans for `.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md` at session start. Project-specific rules are surfaced in the system prompt — the agent knows to read them when relevant. Works alongside pi-lens architect rules.
-
----
-
-## What's New (v2.0)
-
-### Declarative Dispatch System
-
-The core linting engine has been redesigned from ~400 lines of nested `if/else` blocks into a clean, extensible dispatch architecture:
-
-```
-file → detectFileKind() → getRunnersForKind() → run all runners → aggregate output
-```
-
-**Key improvements:**
-- **Extensible**: Add new linters by dropping a runner file in `clients/dispatch/runners/` — no need to touch the core
-- **Unified output**: All tools report through the same format (🔴 blocking, 🟡 warning, ✅ fixed)
-- **Delta mode built-in**: Each runner supports baseline tracking to show only *new* violations
-- **Conditional execution**: Runners can have `when` conditions (e.g., only run when `--autofix` is enabled)
-
-**Runners:** `ts-lsp`, `biome`, `ruff`, `ast-grep`, `type-safety`, `architect`, `go-vet`, `rust-clippy`
-
-### Asynchronous Session Start
-
-Session initialization now runs all scans concurrently with caching:
-
-```
-session_start
-  ├─ TODO/FIXME scan (fast, uncached)
-  ├─ Knip dead code (cached 30 min)
-  ├─ jscpd duplicates (cached 30 min)
-  ├─ Type coverage (cached 30 min)
-  └─ Export scanning (async, for duplicate export detection)
-```
-
-Each scan runs independently — expensive scans (jscpd, knip) are cached in `.pi-lens/cache/` with 30-minute TTL. The agent sees results immediately without waiting for slow tools.
-
-### Inline Messaging
-
-Every `write` or `edit` operation returns structured feedback directly in the tool result:
-
-```typescript
-// tool_result handler runs dispatchLint() → formats output → appends to result
-return {
-  content: [...event.content, { type: "text", text: lspOutput }],
-};
-```
-
-**Message types:**
-| Prefix | Meaning |
-|--------|---------|
-| 🔴 | Blocking error — must fix before continuing |
-| 🟡 | Warning — should fix, but not blocking |
-| ✅ | Auto-fixed issue — no action needed |
-| 📊 | Silent metric — tracked but not shown |
-| 📐 | Architectural rule — reference only |
-
-### File Type Detection
-
-Centralized file-kind detection (`clients/file-kinds.ts`) replaces scattered regex checks:
-
-```typescript
-const kind = detectFileKind(filePath); // "jsts" | "python" | "go" | "rust" | ...
-const runners = getRunnersForKind(kind); // All applicable runners
-```
-
-### Project Rules Integration
-
-pi-lens now scans for project-specific rule files (`.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md`) at session start. These are surfaced in the system prompt so the agent knows to read them when relevant.
-
-This works **alongside** pi-lens architect rules — your project's markdown rules provide general guidance, while pi-lens handles automated regex-based checks on every write.
-
----
-
-## Features
-
-### On every write / edit
-
-| Tool | What it checks |
-|---|---|
-| **TypeScript LSP** | Type errors and warnings, using the project's `tsconfig.json` (walks up from the file to find it; falls back to `ES2020 + DOM` defaults) |
-| **ast-grep** | 60+ structural rules: `no-var`, `no-eval`, `no-debugger`, `no-as-any`, `prefer-template`, `no-throw-string`, `no-hardcoded-secrets`, `no-return-await`, nested ternaries, strict equality, and more |
-| **Biome** | Lint + format for JS/TS/JSX/TSX/CSS/JSON. Auto-fix disabled by default, use `/lens-format` to apply |
-| **Ruff** | Lint + format for Python. Auto-fixes on every write by default |
-| **Test Runner** | Runs corresponding test file when you edit source code (vitest, jest, pytest). Silent if no test file exists. |
-| **jscpd** | Code duplication detection. Warns when editing a file that has duplicates with other files in the project. |
-| **Duplicate Exports** | Detects when you redefine a function that already exists elsewhere in the codebase. |
-
-### Delta-mode feedback
-
-ast-grep and Biome run in **delta mode** — only violations *introduced by the current edit* are shown. Pre-existing issues are silent. Fixed violations are acknowledged. Skipped rules (`long-method`, `large-class`, etc.) are suppressed — they're architectural and handled by `/lens-booboo-refactor`.
-
-```
-🔴 Fix 2 TypeScript error(s) — these must be resolved:
-  L10: Type 'string' is not assignable to type 'number'
-
-🔴 STOP — you introduced 1 new structural violation(s). Fix before continuing:
-  no-var: Use 'const' or 'let' instead of 'var' (L23)
-    → var has function scope and can lead to unexpected hoisting behavior.
-  → Auto-fixable: check the hints above
-
-✅ ast-grep: fixed no-console-log (-1)
-
-🔴 STOP — you introduced 1 new Biome violation(s). Fix before continuing:
-  L23:5 [style/useConst] This let declares a variable that is only assigned once.
-  → Auto-fixable: `npx @biomejs/biome check --write utils.ts`
-
-🔴 STOP — this file has 1 duplicate block(s). Extract to a shared utility before adding more code:
-  15 lines duplicated with helpers.ts:20
-
-🔴 Do not redefine — 1 function(s) already exist elsewhere:
-  formatDate (already in helpers.ts)
-  → Import the existing function instead
-
-[Tests] ✗ 1/3 failed, 2 passed
-  ✗ should format date
-  → Fix failing tests before proceeding
-```
-
-### Pre-write hints
-
-Before every write or edit, the agent is warned about blocking TypeScript errors already in the file:
-
-```
-⚠ Pre-write: file already has 5 TypeScript error(s) — fix before adding more
-```
-
-### Session start (silent caching)
-
-On every new session, scans run silently in the background. Data is cached for real-time feedback during the session and surfaced on-demand via explicit commands:
-
-| Scanner | Cached for |
-|---|---|
-| **TODO scanner** | `/lens-booboo` reports |
-| **Knip** | Dead code detection in `/lens-booboo` and `/lens-booboo-fix` |
-| **jscpd** | Duplicate detection on write; `/lens-booboo` reports |
-| **type-coverage** | `/lens-booboo` reports |
-| **Complexity baselines** | Regressed/improved delta tracking via `/lens-metrics` |
-| **Project rules** | Scans for `.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md` |
-
-### Project Rules Integration
-
-pi-lens scans for project-specific rule files at session start. If found, they're listed in the system prompt so the agent knows to read them when relevant:
-
-```
-📋 Project rules found: 2 file(s) in .claude/rules, root. These apply alongside pi-lens defaults.
-```
-
-**Scanned locations:**
-| Location | Description |
-|----------|-------------|
-| `.claude/rules/` | Claude Code rule files (recursive) |
-| `.agents/rules/` | Generic agent rule files (recursive) |
-| `CLAUDE.md` | Claude Code project context |
-| `AGENTS.md` | Generic agent context |
-
-These files provide **general project guidance** (coding conventions, workflow rules, architecture notes). They coexist with pi-lens architect rules — your rules inform the agent's behavior, while pi-lens provides automated regex-based checks on every write.
-
-### On-demand commands
-
-| Command | Description |
-|---|---|
-| `/lens-booboo [path]` | Full code review: TODOs, dead code, duplicates, type coverage, circular dependencies. Saves full report to `.pi-lens/reviews/` |
-| `/lens-booboo-fix [path]` | Iterative automated fix loop. Runs Biome/Ruff autofix, then scans for fixable issues (ast-grep agent rules, dead code). Generates a fix plan for the agent to execute. Re-run for up to 3 iterations, then reset. |
-| `/lens-booboo-refactor [path]` | Interactive architectural refactor. Scans for worst offender by combined debt score (ast-grep skip rules + complexity metrics). Opens a browser interview with impact metrics — agent proposes refactoring options with rationale, user picks one, agent implements and shows a post-change report. |
-| `/lens-format [file\|--all]` | Apply Biome formatting |
-| `/lens-metrics [path]` | Measure complexity metrics for all files. Exports `report.md` with grades (A-F), summary stats, top 10 worst files, and **historical trends** (📈📉 per file) |
-
-### On-demand tools
-
-| Tool | Description |
-|---|---|
-| **`ast_grep_search`** | Search code patterns using AST-aware matching. Supports meta-variables: `$VAR` (single node), `$$$` (multiple). Optional: `selector` (extract specific AST node), `context` (show surrounding lines). Example: `console.log($MSG)` |
-| **`ast_grep_replace`** | Replace code patterns with AST-aware rewriting. Dry-run by default, use `apply=true` to apply changes. Example: `pattern='console.log($MSG)' rewrite='logger.info($MSG)'` |
-
-Supported languages: c, cpp, csharp, css, dart, elixir, go, haskell, html, java, javascript, json, kotlin, lua, php, python, ruby, rust, scala, sql, swift, tsx, typescript, yaml
-
----
-
-## Installation
-
-```bash
-# Core (required for JS/TS feedback)
-npm install -D @biomejs/biome @ast-grep/cli
-
-# Dead code + duplicate detection + type coverage (highly recommended)
-npm install -D knip jscpd type-coverage
-
-# Circular dependency detection
-npm install -D madge
-
-# Python support
-pip install ruff
-```
-
 ---
 
 ## Flags
 
-| Flag | Default | Description |
-|---|---|---|
-| `--autofix-biome` | `false` | Auto-fix Biome lint/format issues on every write |
-| `--autofix-ruff` | **`true`** | Auto-fix Ruff issues on every write |
-| `--no-biome` | `false` | Disable Biome |
-| `--no-ast-grep` | `false` | Disable ast-grep |
-| `--no-ruff` | `false` | Disable Ruff |
-| `--no-lsp` | `false` | Disable TypeScript LSP |
-| `--no-madge` | `false` | Disable circular dependency checking |
-| `--no-tests` | `false` | Disable test runner on write |
-| `--no-go` | `false` | Disable Go linting |
-| `--no-rust` | `false` | Disable Rust linting |
-| `--lens-verbose` | `false` | Enable verbose logging |
+| Flag | Description |
+|------|-------------|
+| `--lens-verbose` | Enable console logging |
+| `--autofix-biome` | Auto-fix lint issues with Biome |
 
 ---
 
-## Fix loop commands
+## Rules
 
-### `/lens-booboo-fix` — automated mechanical fixes
-
-Iterative loop that auto-fixes what it can, then generates a fix plan for the agent. Scan order:
-
-1. **Biome + Ruff** — auto-fix lint/format issues silently
-2. **jscpd** — within-file duplicate blocks (extract to shared utilities)
-3. **Knip** — dead code (delete unused exports/files)
-4. **ast-grep** — structural violations on surviving code (agent fixes)
-5. **AI slop** — files with 2+ complexity signals
-6. **Remaining Biome** — issues that couldn't be auto-fixed even with `--unsafe`
-
-Run up to 3 iterations per session. Session auto-resets after hitting max — just run again.
-
-```
-📋 BOOBOO FIX PLAN — Iteration 1/3 (44 fixable items remaining)
-✅ Fixed 249 issues since last iteration.
-
-⚡ Auto-fixed: Biome --write --unsafe, Ruff --fix + format already ran.
-
-## 🔨 Fix these [12 items]
-
-### no-console-log (14)
-→ Remove or replace with class logger method
-  - `clients/ruff-client.ts:47`
-  - `clients/biome-client.ts:48`
-  ...
-
-## ⏭️ Skip [109 items — architectural]
-  - **long-method** (79): Extraction requires understanding the function's purpose.
-  - **large-class** (16): Splitting a class requires architectural decisions.
-```
-
-### `/lens-booboo-refactor` — interactive architectural refactoring
-
-Surfaces the worst offender in the codebase by combined debt score (ast-grep skip rules + complexity metrics). The agent analyzes the code, generates refactoring options with impact estimates, and presents them in a browser interview.
-
-**Two-step flow:**
-1. **Option selection** — browser opens with numbered radio cards, each showing rationale + impact metrics (`linesReduced`, `miProjection`, `cognitiveProjection`). One option is recommended.
-2. **Post-change report** — after implementing, agent shows what changed (git diff + line counts) and how metrics evolved. User can say "looks good" or request changes via chat.
-
-```
-🏗️ BOOBOO REFACTOR — worst offender identified
-
-File: index.ts (debt score: 35)
-Complexity: MI: 2.7, Cognitive: 1590, Nesting: 10
-
-Violations:
-  - long-method (×18)
-  - long-parameter-list (×6)
-```
-
-The agent then calls the built-in `interviewer` tool, which opens a browser form with the generated options. Zero dependencies — Node's built-in `http` module + platform CLI (`start`/`open`/`xdg-open`).
-
----
+pi-lens includes 80+ ast-grep rules for:
 
 ## ast-grep rules
 
@@ -446,3 +177,343 @@ The LSP walks up from the edited file's directory until it finds a `tsconfig.jso
 - `strict: true`
 
 The compiler options are refreshed automatically when you switch between projects within a session.
+
+---
+
+
+---
+
+## Changelog
+
+
+## [2.1.1] - 2026-03-29
+
+### Added
+- **Content-level secret scanning**: Catches secrets in ANY file type on write/edit (`.env`, `.yaml`, `.json`, not just TypeScript). Blocks before save with patterns for `sk-*`, `ghp_*`, `AKIA*`, private keys, hardcoded passwords.
+- **Project rules integration**: Scans for `.claude/rules/`, `.agents/rules/`, `CLAUDE.md`, `AGENTS.md` at session start and surfaces in system prompt.
+- **Grep-ability rules**: New ast-grep rules for `no-default-export` and `no-relative-cross-package-import` to improve agent searchability.
+
+### Changed
+- **Inline feedback stripped to blocking only**: Warnings no longer shown inline (noise). Only blocking violations and test failures interrupt the agent.
+- **booboo-fix output compacted**: Summary in terminal, full plan in `.pi-lens/reports/fix-plan.tsv`.
+- **booboo-refactor output compacted**: Top 5 worst offenders in terminal, full ranked list in `.pi-lens/reports/refactor-ranked.tsv`.
+- **`ast_grep_search` new params**: Added `selector` (extract specific AST node) and `context` (show surrounding lines).
+- **`ast_grep_replace` mode indicator**: Shows `[DRY-RUN]` or `[APPLIED]` prefix.
+- **no-hardcoded-secrets**: Fixed to only flag actual hardcoded strings (not `process.env` assignments).
+- **no-process-env**: Now only flags secret-related env vars (not PORT, NODE_ENV, etc.).
+- **Removed Factory AI article reference** from architect.yaml.
+
+## [2.0.40] - 2026-03-27
+
+### Changed
+- **Passive capture on every file edit**: `captureSnapshot()` now called from `tool_call` hook with 5s debounce. Zero latency — reuses complexity metrics already computed for real-time feedback.
+- **Skip duplicate snapshots**: Same commit + same MI = no write (reduces noise).
+
+## [2.0.39] - 2026-03-27
+
+### Added
+- **Historical metrics tracking**: New `clients/metrics-history.ts` module captures complexity snapshots per commit. Tracks MI, cognitive complexity, and nesting depth across sessions.
+- **Trend analysis in `/lens-metrics`**: New "Trend" column shows 📈/📉/➡️ with MI delta. "Trend Summary" section aggregates improving/stable/regressing counts with worst regressions.
+- **Passive capture**: Snapshots captured on every file edit (tool_call hook) + `/lens-metrics` run. Max 20 snapshots per file (sliding window).
+
+## [2.0.38] - 2026-03-27
+
+### Changed
+- **Refactored 4 client files** via `/lens-booboo-refactor` loop:
+  - `biome-client.ts`: Extracted `withValidatedPath()` guard pattern (4 methods consolidated)
+  - `complexity-client.ts`: Extracted `analyzeFile()` pipeline into `readAndParse()`, `computeMetrics()`, `aggregateFunctionStats()`
+  - `dependency-checker.ts`: Simplified `importsChanged()` — replaced 3 for-loops with `setsEqual()` helper
+  - `ast-grep-client.ts`: Simplified `groupSimilarFunctions()` with `filter().map()` pattern + `extractFunctionName()` helper
+
+## [2.0.29] - 2026-03-26
+
+### Added
+- **`clients/ts-service.ts`**: Shared TypeScript service that creates one `ts.Program` per session. Both `complexity-client` and `type-safety-client` now share the same program instead of creating a new one per file. Significant performance improvement on large codebases.
+
+### Removed
+- **3 redundant ast-grep rules** that overlap with Biome: `no-var`, `prefer-template`, `no-useless-concat`. Biome handles these natively with auto-fix. ast-grep no longer duplicates this coverage.
+- **`prefer-const` from RULE_ACTIONS** — no longer needed (Biome handles directly).
+
+### Changed
+- **Consolidated rule overlap**: Biome is now the single source of truth for style/format rules. ast-grep focuses on structural patterns Biome doesn't cover (security, design smells, AI slop).
+
+## [2.0.27] - 2026-03-26
+
+### Added
+- **`switch-exhaustiveness` check**: New type safety rule detects missing cases in union type switches. Uses TypeScript compiler API for type-aware analysis. Reports as inline blocker: `🔴 STOP — Switch on 'X' is not exhaustive. Missing cases: 'Y'`.
+- **`clients/type-safety-client.ts`**: New client for type safety checks. Extensible for future checks (null safety, exhaustive type guards).
+
+### Changed
+- **Type safety violations added to inline feedback**: Missing switch cases now block the agent mid-task, same as TypeScript errors.
+- **Type safety violations in `/lens-booboo-fix`**: Marked as agent-fixable (add missing case or default clause).
+
+## [2.0.26] - 2026-03-26
+
+### Added
+- **5 new ast-grep rules** for AI slop detection:
+  - `no-process-env`: Block direct `process.env` access (use DI or config module) — error level
+  - `no-param-reassign`: Detect function parameter reassignment — warning level
+  - `no-single-char-var`: Flag single-character variable names — info level
+  - `switch-without-default`: Ensure switch statements have default case — warning level
+  - `no-architecture-violation`: Block cross-layer imports (models/db) — error level
+
+### Changed
+- **RULE_ACTIONS updated** for new rules:
+  - `agent` type (inline + booboo-fix): `no-param-reassign`, `switch-without-default`, `switch-exhaustiveness`
+  - `skip` type (booboo-refactor only): `no-process-env`, `no-single-char-var`, `no-architecture-violation`
+
+## [2.0.24] - 2026-03-26
+
+### Changed
+- **Simplified `/lens-booboo-refactor` confirmation flow**: Post-change report instead of pre-change gate. Agent implements first, then shows what was changed (git diff + metrics delta). User reviews and can request refinements via chat. No more temp files or dry-run diffs.
+- **Confirmation screen**: "✅ Looks good — move to next offender" / "💬 Request changes" (chat textarea). Diff display is optional.
+
+## [2.0.23] - 2026-03-26
+
+### Changed
+- **Extracted interviewer and scan modules from `index.ts`**: `index.ts` reduced by 460 lines.
+  - `clients/interviewer.ts` — all browser interview infrastructure (HTML generation, HTTP server, browser launch, option selection, diff confirmation screen)
+  - `clients/scan-architectural-debt.ts` — shared scanning utilities (`scanSkipViolations`, `scanComplexityMetrics`, `scoreFiles`, `extractCodeSnippet`)
+- **`/lens-booboo-refactor`** now uses imported scan functions instead of duplicated inline code.
+
+## [2.0.22] - 2026-03-26
+
+### Added
+- **Impact metrics in interview options**: Each option now supports an `impact` object (`linesReduced`, `miProjection`, `cognitiveProjection`) rendered as colored badges in the browser form. Agent estimates impact when presenting refactoring options.
+- **Iterative confirmation loop**: Confirmation screen now includes "🔄 Describe a different approach" option with free-text textarea. Agent regenerates plan+diff based on feedback, re-opens confirmation. Repeat until user confirms or cancels.
+- **Auto-close on confirm**: Browser tab closes automatically after user submits.
+
+## [2.0.21] - 2026-03-26
+
+### Added
+- **Two-step confirmation for `/lens-booboo-refactor`**: Agent implements changes, then calls `interviewer` with `confirmationMode=true` to show plan (markdown) + unified diff (green/red line coloring) + line counts at the top. User can Confirm, Cancel, or describe a different approach.
+- **Plan + diff confirmation screen**: Plan rendered as styled markdown, diff rendered with syntax-colored `+`/`-` lines. Line counts (`+N / −N`) shown in diff header.
+
+## [2.0.20] - 2026-03-26
+
+### Added
+- **Impact metrics in interview options**: Structured `impact` field per option with `linesReduced`, `miProjection`, `cognitiveProjection`. Rendered as colored badges (green for lines reduced, blue for metric projections) inside each option card.
+
+## [2.0.19] - 2026-03-26
+
+### Changed
+- **`/lens-booboo-fix` jscpd filter**: Only within-file duplicates shown in actionable section. Cross-file duplicates are architectural — shown in skip section only.
+- **AI slop filter tightened**: Require 2+ signals per file (was 1+). Single-issue flags on small files are noise — skip them.
+
+## [2.0.18] - 2026-03-26
+
+### Fixed
+- **`/lens-booboo-fix` max iterations**: Session file auto-deletes when hitting max iterations. Previously blocked with a manual "delete .pi-lens/fix-session.json" message.
+
+## [2.0.17] - 2026-03-26
+
+### Changed
+- **Agent-driven option generation**: `/lens-booboo-refactor` no longer hardcodes refactoring options per violation type. The command scans and presents the problem + code to the agent; the agent analyzes the actual code and generates 3-5 contextual options with rationale and impact estimates. Calls the `interviewer` tool to present them.
+- **`interviewer` tool**: Generic, reusable browser-based interview mechanism. Accepts `question`, `options` (with `value`, `label`, `context`, `recommended`, `impact`), and `confirmationMode`. Zero dependencies — Node's built-in `http` module + platform CLI `open`/`start`/`xdg-open`.
+
+## [2.0.16] - 2026-03-26
+
+### Added
+- **`/lens-booboo-refactor`**: Interactive architectural refactor session. Scans for worst offender by combined debt score (ast-grep skip violations + complexity metrics). Opens a browser interview with the problem, code context, and AI-generated options. Steers the agent to propose a plan and wait for user confirmation before making changes.
+
+### Changed
+- **Inline tool_result suppresses skip-category rules**: `long-method`, `large-class`, `long-parameter-list`, `no-shadow`, `no-as-any`, `no-non-null-assertion`, `no-star-imports` no longer show as hard stops in real-time feedback. They are architectural — handled by `/lens-booboo-refactor` instead.
+
+## [2.0.15] - 2026-03-26
+
+### Removed
+- **Complexity metrics from real-time feedback**: MI, cognitive complexity, nesting depth, try/catch counts, and entropy scores removed from tool_result output. These were always noise — the agent never acted on "MI dropped to 5.6" mid-task. Metrics still available via `/lens-metrics` and `/lens-booboo`.
+- **Session summary injection**: The `[Session Start]` block (TODOs, dead code, jscpd, type-coverage) is no longer injected into the first tool result. Scans still run for caching purposes (exports, clones, baselines). Data surfaced on-demand via explicit commands.
+- **`/lens-todos`**: Removed (covered by `/lens-booboo`).
+- **`/lens-dead-code`**: Removed (covered by `/lens-booboo`).
+- **`/lens-deps`**: Removed — circular dep scan added to `/lens-booboo` as Part 8.
+
+### Changed
+- **Hardened stop signals**: New violations (ast-grep, Biome, jscpd, duplicate exports) now all use `🔴 STOP` framing. The agent is instructed to fix these before continuing.
+- **`/lens-booboo` now includes circular dependencies**: Added as Part 8 (after type coverage) using `depChecker.scanProject`.
+
+## [2.0.14] - 2026-03-26
+
+### Fixed
+- **`/lens-booboo-fix` excludes `.js` compiled output**: Detects `tsconfig.json` and excludes `*.js` from jscpd, ast-grep, and complexity scans. Prevents double-counting of the same code in `.ts` and `.js` forms.
+- **`raw-strings` rule added to skip list**: 230 false positives in CLI/tooling codebases.
+- **`typescript-client.ts` duplication**: Extracted `resolvePosition()`, `resolveTree()`, and `toLocations()` helpers, deduplicating 6+ LSP methods.
+- **All clients**: `console.log` → `console.error` in verbose loggers (stderr for debug, stdout for data).
+
+## [2.0.13] - 2026-03-26
+
+### Removed
+- **`raw-strings` ast-grep rule**: Not an AI-specific pattern. Humans write magic strings too. Biome handles style. Generated 230 false positives on first real run.
+
+## [2.0.12] - 2026-03-26
+
+### Fixed
+- **`/lens-booboo-fix` sequential scan order**: Reordered to Biome/Ruff → jscpd (duplicates) → knip (dead code) → ast-grep → AI slop → remaining Biome. Duplicates should be fixed before violations (fixing one fixes both). Dead code should be deleted before fixing violations in it.
+
+### Changed
+- **Remaining Biome section rephrased**: "These couldn't be auto-fixed even with `--unsafe` — fix each manually."
+
+## [2.0.11] - 2026-03-26
+
+### Added
+- **Circular dependency scan to `/lens-booboo`**: Added as Part 8, using `depChecker.scanProject()` to detect circular chains across the codebase.
+
+### Removed
+- **`/lens-todos`**, **`/lens-dead-code`**, **`/lens-deps`**: Removed standalone commands — all covered by `/lens-booboo`.
+
+## [2.0.10] - 2026-03-26
+
+### Changed
+- **Session summary injection removed**: The `[Session Start]` block is no longer injected into the first tool result. Scans still run silently for caching (exports for duplicate detection, clones for jscpd, complexity baselines for deltas).
+
+## [2.0.1] - 2026-03-25
+
+### Fixed
+- **ast-grep in `/lens-booboo` was silently dropping all results** — newer ast-grep versions exit `0` with `--json` even when issues are found; fixed the exit code check.
+- **Renamed "Design Smells" to "ast-grep"** in booboo report — the scan runs all 65 rules (security, correctness, style, design), not just design smells.
+
+### Changed
+- **Stronger real-time feedback messages** — all messages now use severity emoji and imperative language:
+  - `🔴 Fix N TypeScript error(s) — these must be resolved`
+  - `🧹 Remove N unused import(s) — they are dead code`
+  - `🔴 You introduced N new structural violation(s) — fix before moving on`
+  - `🟠 You introduced N new Biome violation(s) — fix before moving on`
+  - `🟡 Complexity issues — refactor when you get a chance`
+  - `🟠 This file has N duplicate block(s) — extract to shared utilities`
+  - `🔴 Do not redefine — N function(s) already exist elsewhere`
+- **Biome fix command is now a real bash command** — `npx @biomejs/biome check --write <file>` instead of `/lens-format` (which is a pi UI command, not runnable from agent tools).
+- **Complexity warnings skip test files in real-time** — same exclusion as lens-booboo.
+
+## [2.0.0] - 2026-03-25
+
+### Added
+- **`/lens-metrics` command**: Measure complexity metrics for all files. Exports a full `report.md` with A-F grades, summary stats, AI slop aggregate table, and top 10 worst files with actionable warnings.
+- **`/lens-booboo` saves full report**: Results saved to `.pi-lens/reviews/booboo-<timestamp>.md` — no truncation, all issues, agent-readable.
+- **AI slop indicators**: Four new real-time and report-based detectors:
+  - `AI-style comments` — emoji and boilerplate comment phrases
+  - `Many try/catch blocks` — lazy error handling pattern
+  - `Over-abstraction` — single-use helper functions
+  - `Long parameter list` — functions with > 6 params
+- **`SubprocessClient` base class**: Shared foundation for CLI tool clients (availability check, logging, command execution).
+- **Shared test utilities**: `createTempFile` and `setupTestEnvironment` extracted to `clients/test-utils.ts`, eliminating copy-paste across 13 test files.
+
+### Changed
+- **Delta mode for real-time feedback**: ast-grep and Biome now only show *new* violations introduced by the current edit — not all pre-existing ones. Fixed violations shown as `✓ Fixed: rule-name (-N)`. No change = silent.
+- **Removed redundant pre-write hints**: ast-grep and Biome pre-write counts removed (delta mode makes them obsolete). TypeScript pre-write warning kept (blocking errors).
+- **Test files excluded from AI slop warnings**: MI/complexity thresholds are inherently low in test files — warnings suppressed for `*.test.ts` / `*.spec.ts`.
+- **Test files excluded from TODO scanner**: Test fixture annotations (`FIXME`, `BUG`, etc.) no longer appear in TODO reports.
+- **ast-grep excludes test files and `.pi-lens/`**: Design smell scan in `/lens-booboo` skips test files (no magic-numbers noise) and internal review reports.
+- **jscpd excludes non-code files**: `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.lock`, and `.pi-lens/` excluded from duplicate detection — no more false positives from report files.
+- **Removed unused dependencies**: `vscode-languageserver-protocol` and `vscode-languageserver-types` removed; `@sinclair/typebox` added (was unlisted).
+
+### Fixed
+- Removed 3 unconditional `console.log` calls leaking `[scan_exports]` to terminal.
+- Duplicate Biome scan in `tool_call` hook eliminated (was scanning twice for pre-write hint + baseline).
+
+## [1.3.14] - 2026-03-25
+
+### Added
+- **Actionable feedback messages**: All real-time warnings now include specific guidance on what to do.
+- **Code entropy metric**: Shannon entropy in bits (threshold: >3.5 indicates risky AI-induced complexity).
+- **Advanced pattern matching**: `/lens-booboo` now finds structurally similar functions (e.g., `formatDate` and `formatTimestamp`).
+- **Duplicate export detection**: Warns when redefining a function that already exists in the codebase.
+- **Biome formatting noise removed**: Only lint issues shown in real-time; use `/lens-format` for formatting.
+
+## [1.3.10] - 2026-03-25
+
+### Added
+- **Actionable complexity warnings**: Real-time feedback when metrics break limits with specific fix guidance.
+
+## [1.3.9] - 2026-03-25
+
+### Fixed
+- **Entropy calculation**: Corrected to use bits with 3.5-bit threshold for AI-induced complexity.
+
+## [1.3.8] - 2026-03-25
+
+### Added
+- **Code entropy metric**: Shannon entropy to detect repetitive or unpredictable code patterns.
+
+## [1.3.7] - 2026-03-25
+
+### Added
+- **Advanced pattern matching in `/lens-booboo`**: Finds structurally similar functions across the codebase.
+
+## [1.3.6] - 2026-03-25
+
+### Added
+- **Duplicate export detection on write**: Warns when defining a function that already exists elsewhere.
+
+## [1.3.5] - 2026-03-25
+
+### Changed
+- **Consistent command prefix**: All commands now start with `lens-`.
+  - `/find-todos` → `/lens-todos`
+  - `/dead-code` → `/lens-dead-code`
+  - `/check-deps` → `/lens-deps`
+  - `/format` → `/lens-format`
+  - `/design-review` + `/lens-metrics` → `/lens-booboo`
+
+## [1.5.0] - 2026-03-23
+
+### Added
+- **Real-time jscpd duplicate detection**: Code duplication is now detected on every write. Duplicates involving the edited file are shown to the agent in real-time.
+- **`/lens-review` command**: Combined code review: design smells + complexity metrics in one command.
+
+### Changed
+- **Consistent command prefix**: All commands now start with `lens-`.
+  - `/find-todos` → `/lens-todos`
+  - `/dead-code` → `/lens-dead-code`
+  - `/check-deps` → `/lens-deps`
+  - `/format` → `/lens-format`
+  - `/design-review` + `/lens-metrics` → `/lens-review`
+
+## [1.4.0] - 2026-03-23
+
+### Added
+- **Test runner feedback**: Runs corresponding test file on every write (vitest, jest, pytest). Silent if no test file exists. Disable with `--no-tests`.
+- **Complexity metrics**: AST-based analysis: Maintainability Index, Cyclomatic/Cognitive Complexity, Halstead Volume, nesting depth, function length.
+- **`/lens-metrics` command**: Full project complexity scan.
+- **Design smell rules**: New `long-method`, `long-parameter-list`, and `large-class` rules for structural quality checks.
+- **`/design-review` command**: Analyze files for design smells. Usage: `/design-review [path]`
+- **Go language support**: New Go client for Go projects.
+- **Rust language support**: New Rust client for Rust projects.
+
+### Changed
+- **Improved ast-grep tool descriptions**: Better pattern guidance to prevent overly broad searches.
+
+## [2.2.1] - 2026-03-29
+
+### Fixed
+- **No auto-install**: Runners (biome, pyright) now use direct CLI commands instead of `npx`. If not installed, gracefully skip instead of attempting to download.
+
+## [2.2.0] - 2026-03-29
+
+### Added
+- **`/lens-rate` command**: Visual code quality scoring across 6 dimensions (Type Safety, Complexity, Security, Architecture, Dead Code, Tests). Shows grade A-F and colored progress bars.
+- **Pyright runner**: Real Python type-checking via pyright. Catches type errors like `result: str = add(1, 2)` that ruff misses. Runs alongside ruff (pyright for types, ruff for linting).
+- **Vitest config**: Increased test timeout to 15s for CLI spawn tests. Fixes flaky test failures when npx downloads packages.
+
+### Fixed
+- **Test flakiness**: Availability tests (biome, knip, jscpd) no longer timeout when npx is downloading packages.
+
+## [1.3.0] - 2026-03-23
+
+### Changed
+- **Biome auto-fix disabled by default**: Biome still provides linting feedback, but no longer auto-fixes on write. Use `/format` to apply fixes or enable with `--autofix-biome`.
+
+### Added
+- **ast-grep search/replace tools**: New `ast_grep_search` and `ast_grep_replace` tools for AST-aware code pattern matching. Supports meta-variables and 24 languages.
+- **Rule descriptions in diagnostics**: ast-grep violations now include the rule's message and note, making feedback more actionable for the agent.
+
+### Changed
+- **Reduced console noise**: Extension no longer prints to console by default. Enable with `--lens-verbose`.
+
+## [1.2.0] - 2026-03-23
+
+### Added
+- GitHub repository link in npm package
+
+## [1.1.2] - Previous
+
+- See git history for earlier releases
