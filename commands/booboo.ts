@@ -77,7 +77,16 @@ export async function handleBooboo(
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 	const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
 
+	// Helper to time each part
+	const timers: Record<string, number> = {};
+	const startTimer = (part: string) => { timers[part] = Date.now(); };
+	const getElapsed = (part: string) => {
+		const elapsed = Date.now() - (timers[part] || Date.now());
+		return elapsed < 1000 ? `${elapsed}ms` : `${(elapsed / 1000).toFixed(1)}s`;
+	};
+
 	// Part 1: Design smells via ast-grep
+	startTimer("part1");
 	ctx.ui.notify("🔍 Part 1: Running ast-grep design smells...", "info");
 	if (clients.astGrep.isAvailable()) {
 		const configPath = path.join(
@@ -216,7 +225,7 @@ export async function handleBooboo(
 					fullReport.push(fullSection);
 				}
 			}
-			ctx.ui.notify(`✓ Part 1: Design smells (${summaryItems.find(s => s.category === "ast-grep")?.count ?? 0} issues)`, "info");
+			ctx.ui.notify(`✓ Part 1: Design smells (${summaryItems.find(s => s.category === "ast-grep")?.count ?? 0} issues, ${getElapsed("part1")})`, "info");
 		} catch (err) {
 			// Ast-grep scan failed, skip this section
 			void err;
@@ -224,6 +233,7 @@ export async function handleBooboo(
 	}
 
 	// Part 2: Similar functions
+	startTimer("part2");
 	ctx.ui.notify("🔍 Part 2: Finding similar functions...", "info");
 	if (clients.astGrep.isAvailable()) {
 		const similarGroups = await clients.astGrep.findSimilarFunctions(
@@ -251,11 +261,12 @@ export async function handleBooboo(
 			fullReport.push(fullSection);
 		}
 		const simCount = summaryItems.find(s => s.category === "Similar Functions")?.count ?? 0;
-		ctx.ui.notify(`✓ Part 2: Similar functions (${simCount} groups)`, "info");
+		ctx.ui.notify(`✓ Part 2: Similar functions (${simCount} groups, ${getElapsed("part2")})`, "info");
 	}
 
 	// Part 2b: Semantic similarity (Amain 57×72 matrix)
 	try {
+		startTimer("part2b");
 		ctx.ui.notify("🔍 Analyzing semantic code similarity...", "info");
 		const { glob } = await import("glob");
 		const sourceFiles = await glob("**/*.ts", {
@@ -297,13 +308,14 @@ export async function handleBooboo(
 			}
 		}
 		const semCount = summaryItems.find(s => s.category === "Semantic Duplicates")?.count ?? 0;
-		ctx.ui.notify(`✓ Part 2b: Semantic similarity (${semCount} pairs)`, "info");
+		ctx.ui.notify(`✓ Part 2b: Semantic similarity (${semCount} pairs, ${getElapsed("part2b")})`, "info");
 	} catch (err) {
 		// Skip if similarity analysis fails
 		console.error("[booboo] Semantic similarity analysis failed:", err);
 	}
 
 	// Part 3: Complexity metrics
+	startTimer("part3");
 	ctx.ui.notify("🔍 Part 3: Analyzing complexity metrics...", "info");
 	const results: import("../clients/complexity-client.js").FileComplexity[] =
 		[];
@@ -434,9 +446,10 @@ export async function handleBooboo(
 		fullReport.push(fullSection);
 	}
 	const complexityCount = summaryItems.find(s => s.category === "Complexity")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 3: Complexity metrics (${results.length} files, ${complexityCount} issues)`, "info");
+	ctx.ui.notify(`✓ Part 3: Complexity metrics (${results.length} files, ${complexityCount} issues, ${getElapsed("part3")})`, "info");
 
 	// Part 4: TODOs
+	startTimer("part4");
 	ctx.ui.notify("🔍 Part 4: Scanning for TODOs...", "info");
 	const todoResult = clients.todo.scanDirectory(targetPath);
 	if (todoResult.items.length > 0) {
@@ -459,9 +472,10 @@ export async function handleBooboo(
 		fullReport.push(fullSection);
 	}
 	const todoCount = summaryItems.find(s => s.category === "TODOs")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 4: TODOs (${todoCount} items)`, "info");
+	ctx.ui.notify(`✓ Part 4: TODOs (${todoCount} items, ${getElapsed("part4")})`, "info");
 
 	// Part 5: Dead code
+	startTimer("part5");
 	ctx.ui.notify("🔍 Part 5: Checking for dead code...", "info");
 	if (clients.knip.isAvailable()) {
 		const knipResult = clients.knip.analyze(targetPath);
@@ -486,9 +500,10 @@ export async function handleBooboo(
 		}
 	}
 	const deadCodeCount = summaryItems.find(s => s.category === "Dead Code")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 5: Dead code (${deadCodeCount} issues)`, "info");
+	ctx.ui.notify(`✓ Part 5: Dead code (${deadCodeCount} issues, ${getElapsed("part5")})`, "info");
 
 	// Part 6: Duplicate code
+	startTimer("part6");
 	ctx.ui.notify("🔍 Part 6: Finding duplicate code...", "info");
 	if (clients.jscpd.isAvailable()) {
 		const jscpdResult = clients.jscpd.scan(targetPath);
@@ -513,9 +528,10 @@ export async function handleBooboo(
 		}
 	}
 	const dupeCount = summaryItems.find(s => s.category === "Duplicates")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 6: Duplicate code (${dupeCount} blocks)`, "info");
+	ctx.ui.notify(`✓ Part 6: Duplicate code (${dupeCount} blocks, ${getElapsed("part6")})`, "info");
 
 	// Part 7: Type coverage
+	startTimer("part7");
 	ctx.ui.notify("🔍 Part 7: Checking type coverage...", "info");
 	if (clients.typeCoverage.isAvailable()) {
 		const tcResult = clients.typeCoverage.scan(targetPath);
@@ -555,9 +571,10 @@ export async function handleBooboo(
 		}
 	}
 	const typeCoverageCount = summaryItems.find(s => s.category === "Type Coverage")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 7: Type coverage (${typeCoverageCount} files low)`, "info");
+	ctx.ui.notify(`✓ Part 7: Type coverage (${typeCoverageCount} files low, ${getElapsed("part7")})`, "info");
 
 	// Part 8: Circular deps
+	startTimer("part8");
 	ctx.ui.notify("🔍 Part 8: Scanning for circular dependencies...", "info");
 	if (!pi.getFlag("no-madge") && clients.depChecker.isAvailable()) {
 		const { circular } = clients.depChecker.scanProject(targetPath);
@@ -576,9 +593,10 @@ export async function handleBooboo(
 		}
 	}
 	const circularCount = summaryItems.find(s => s.category === "Circular Deps")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 8: Circular deps (${circularCount} chains)`, "info");
+	ctx.ui.notify(`✓ Part 8: Circular deps (${circularCount} chains, ${getElapsed("part8")})`, "info");
 
 	// Part 9: Arch rules
+	startTimer("part9");
 	ctx.ui.notify("🔍 Part 9: Checking architectural rules...", "info");
 	if (!clients.architect.hasConfig()) {
 		clients.architect.loadConfig(process.cwd());
@@ -623,7 +641,7 @@ export async function handleBooboo(
 		}
 	}
 	const archCount = summaryItems.find(s => s.category === "Architectural")?.count ?? 0;
-	ctx.ui.notify(`✓ Part 9: Arch rules (${archCount} violations)`, "info");
+	ctx.ui.notify(`✓ Part 9: Arch rules (${archCount} violations, ${getElapsed("part9")})`, "info");
 
 	// --- Create structured JSON report (for AI processing) ---
 	nodeFs.mkdirSync(reviewDir, { recursive: true });
