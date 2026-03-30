@@ -52,6 +52,7 @@ import {
 	enableDebug as enableBusDebug,
 } from "./clients/bus/index.js";
 import { dispatchLintWithEffect } from "./clients/services/effect-integration.js";
+import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
  * Handles pi's custom diff format:
@@ -238,6 +239,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerFlag("lens-effect", {
 		description: "Enable Effect-TS concurrent runner execution (Phase 2)",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("lens-lsp", {
+		description: "Enable LSP (Language Server Protocol) for semantic analysis (Phase 3)",
 		type: "boolean",
 		default: false,
 	});
@@ -1136,6 +1143,23 @@ export default function (pi: ExtensionAPI) {
 			});
 		}
 
+		// --- LSP integration (Phase 3) ---
+		if (pi.getFlag("lens-lsp") && fileContent) {
+			const lspService = getLSPService();
+			lspService.hasLSP(filePath).then(async (hasLSP) => {
+				if (hasLSP) {
+					// Open or update file in LSP
+					if (event.toolName === "write") {
+						await lspService.openFile(filePath, fileContent);
+					} else {
+						await lspService.updateFile(filePath, fileContent);
+					}
+				}
+			}).catch((err) => {
+				dbg(`LSP error: ${err}`);
+			});
+		}
+
 		// --- Secrets scan (blocking - must check before other linting) ---
 		if (fileContent) {
 			const secretFindings = scanForSecrets(fileContent, filePath);
@@ -1472,5 +1496,11 @@ export default function (pi: ExtensionAPI) {
 
 		// Clear fixed tracking so files can be fixed again on next turn
 		fixedThisTurn.clear();
+
+		// --- LSP cleanup on turn end (Phase 3) ---
+		// Only shutdown if no files are being actively edited
+		if (pi.getFlag("lens-lsp") && files.length === 0) {
+			resetLSPService();
+		}
 	});
 }
