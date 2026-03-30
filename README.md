@@ -437,7 +437,13 @@ The compiler options are refreshed automatically when you switch between project
 |------|-------------|
 | `--lens-verbose` | Enable console logging |
 | `--autofix-biome` | Auto-fix lint issues with Biome |
+| `--autofix-ruff` | Auto-fix lint issues with Ruff (Python) |
 | `--no-tests` | Disable test runner on write |
+| `--no-madge` | Skip circular dependency checks |
+| `--no-ast-grep` | Skip ast-grep structural analysis |
+| `--no-biome` | Skip Biome linting |
+| `--no-lsp` | Skip TypeScript/Python LSP type checking |
+| `--error-debt` | Track test regressions across sessions |
 
 ---
 
