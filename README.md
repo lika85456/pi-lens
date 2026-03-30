@@ -97,15 +97,18 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 | **biome** | TS/JS | 10 | Warning | Linting issues (delta-tracked) |
 | **ruff** | Python | 10 | Warning | Python linting (delta-tracked) |
 | **ast-grep-napi** | TS/JS | 15 | Warning | **100x faster** structural analysis |
+| **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
 | **python-slop** | Python | 25 | Warning | AI slop detection (~40 patterns) |
-| **go-vet** | Go | 20 | Warning | Go static analysis |
-| **rust-clippy** | Rust | 20 | Warning | Rust linting |
+| **ast-grep** | Go, Rust, Python, etc. | 30 | Warning | Structural analysis via CLI (fallback for non-TS/JS) |
 | **similarity** | TS | 35 | Silent | Semantic duplicate detection (metrics only) |
 | **architect** | All | 40 | Warning | Architectural rule violations |
-| **secrets** | All | - | Blocking | Secret scanning (hard stops) |
-| **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
+| **go-vet** | Go | 50 | Warning | Go static analysis |
+| **rust-clippy** | Rust | 50 | Warning | Rust linting |
 
-> **Note:** `ts-slop` and `ast-grep-cli` runners are disabled — functionality merged into `ast-grep-napi` (100x faster).
+**Disabled runners:** `ts-slop` (merged into `ast-grep-napi`)
+
+**Non-runner checks** (handled separately in `tool_result` hook):
+- **Secrets scanning** — Blocks on hardcoded secrets in ANY file type
 
 ### Runner Output Semantics
 
