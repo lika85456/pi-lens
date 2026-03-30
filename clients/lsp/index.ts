@@ -11,7 +11,8 @@
 import { Effect } from "effect";
 import type { LSPClientInfo } from "./client.js";
 import { createLSPClient } from "./client.js";
-import { getServersForFile, getServerById, type LSPServerInfo } from "./server.js";
+import { getServerById, type LSPServerInfo } from "./server.js";
+import { getServersForFileWithConfig, initLSPConfig } from "./config.js";
 import { getLanguageId } from "./language.js";
 import { launchLSP } from "./launch.js";
 import { RunnerStarted, RunnerCompleted, DiagnosticFound } from "../bus/events.js";
@@ -46,7 +47,7 @@ export class LSPService {
 	 * Get or create LSP client for a file
 	 */
 	async getClientForFile(filePath: string): Promise<SpawnedServer | undefined> {
-		const servers = getServersForFile(filePath);
+		const servers = getServersForFileWithConfig(filePath);
 		if (servers.length === 0) return undefined;
 
 		// Try each matching server
@@ -129,7 +130,7 @@ export class LSPService {
 	 * Check if LSP is available for a file
 	 */
 	async hasLSP(filePath: string): Promise<boolean> {
-		const servers = getServersForFile(filePath);
+		const servers = getServersForFileWithConfig(filePath);
 		if (servers.length === 0) return false;
 
 		// Check if any server can provide a root

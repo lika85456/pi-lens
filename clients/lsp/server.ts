@@ -436,6 +436,59 @@ export const PrismaServer: LSPServerInfo = {
 	},
 };
 
+// --- Web Framework & Styling Servers ---
+
+export const VueServer: LSPServerInfo = {
+	id: "vue",
+	name: "Vue Language Server",
+	extensions: [".vue"],
+	root: createRootDetector(["package-lock.json", "bun.lockb", "bun.lock", "pnpm-lock.yaml", "yarn.lock"]),
+	async spawn(root) {
+		const proc = launchViaPackageManager("@vue/language-server", ["--stdio"], { cwd: root });
+		return { process: proc };
+	},
+};
+
+export const SvelteServer: LSPServerInfo = {
+	id: "svelte",
+	name: "Svelte Language Server",
+	extensions: [".svelte"],
+	root: createRootDetector(["package-lock.json", "bun.lockb", "bun.lock", "pnpm-lock.yaml", "yarn.lock"]),
+	async spawn(root) {
+		const proc = launchViaPackageManager("svelte-language-server", ["--stdio"], { cwd: root });
+		return { process: proc };
+	},
+};
+
+export const ESLintServer: LSPServerInfo = {
+	id: "eslint",
+	name: "ESLint Language Server",
+	extensions: [".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"],
+	root: createRootDetector([
+		".eslintrc",
+		".eslintrc.json",
+		".eslintrc.js",
+		"eslint.config.js",
+		"eslint.config.mjs",
+		"package.json",
+	]),
+	async spawn(root) {
+		const proc = launchViaPackageManager("vscode-eslint", ["--stdio"], { cwd: root });
+		return { process: proc };
+	},
+};
+
+export const CssServer: LSPServerInfo = {
+	id: "css",
+	name: "CSS Language Server",
+	extensions: [".css", ".scss", ".sass", ".less"],
+	root: async () => process.cwd(),
+	async spawn() {
+		const proc = launchViaPackageManager("vscode-css-languageserver", ["--stdio"], {});
+		return { process: proc };
+	},
+};
+
 // --- Registry ---
 
 export const LSP_SERVERS: LSPServerInfo[] = [
@@ -466,6 +519,11 @@ export const LSP_SERVERS: LSPServerInfo[] = [
 	YamlServer,
 	JsonServer,
 	PrismaServer,
+	// Web frameworks & styling
+	VueServer,
+	SvelteServer,
+	ESLintServer,
+	CssServer,
 ];
 
 /**
