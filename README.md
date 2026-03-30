@@ -48,6 +48,38 @@ Every file write/edit triggers the **dispatcher-runner system** in delta mode:
 
 > **Note:** Only **blocking** issues (`ts-lsp`, `pyright` errors, `type-safety` switch errors, secrets) appear inline. Warnings are tracked but not shown inline (noise reduction) — run `/lens-booboo` to see all warnings.
 
+### Code Review
+
+```
+/lens-booboo [path]
+```
+
+Full codebase analysis with **10 tracked runners** producing a comprehensive report:
+
+| # | Runner | What it finds |
+|---|--------|---------------|
+| 1 | **ast-grep (design smells)** | Structural issues (empty catch, no-debugger, etc.) |
+| 2 | **ast-grep (similar functions)** | Duplicate function patterns across files |
+| 3 | **semantic similarity (Amain)** | 57×72 matrix semantic clones (>75% similarity) |
+| 4 | **complexity metrics** | Low MI, high cognitive complexity, AI slop indicators |
+| 5 | **TODO scanner** | TODO/FIXME annotations and tech debt markers |
+| 6 | **dead code (Knip)** | Unused exports, files, dependencies |
+| 7 | **duplicate code (jscpd)** | Copy-paste blocks with line/token counts |
+| 8 | **type coverage** | Percentage typed vs `any`, low-coverage files |
+| 9 | **circular deps (Madge)** | Import cycles and dependency chains |
+| 10 | **architectural rules** | Layer violations, file size limits, path rules |
+
+**Output:**
+- **Terminal:** Progress `[1/10] runner...` with timing, summary with findings per runner
+- **JSON:** `.pi-lens/reviews/booboo-{timestamp}.json` (structured data for AI processing)
+- **Markdown:** `.pi-lens/reviews/booboo-{timestamp}.md` (human-readable report)
+
+**Usage:**
+```bash
+/lens-booboo              # Scan current directory
+/lens-booboo ./src        # Scan specific path
+```
+
 ### Automated Fixes
 
 ```
