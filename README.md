@@ -106,18 +106,50 @@ Full codebase analysis with **10 tracked runners** producing a comprehensive rep
 /lens-booboo ./src        # Scan specific path
 ```
 
-### Automated Fixes
+### Automated Fixes (/lens-booboo-fix)
 
 ```
-/lens-booboo-fix
+/lens-booboo-fix [--apply]
 ```
 
-Sequential automated fixing:
-1. Biome/Ruff auto-fixes (mechanical issues)
-2. jscpd duplicate resolution
-3. knip dead code removal
-4. AST-grep structural fixes
-5. AI-guided slop cleanup
+**Reads the latest `/lens-booboo` review and applies sequential fixes.**
+
+**Execution flow:**
+1. Load latest booboo review from `.pi-lens/reviews/booboo-{timestamp}.json`
+2. Apply Biome/Ruff auto-fixes for mechanical issues
+3. Report findings that need manual review (duplicates, complexity, dead code)
+4. Prompt AI to fix remaining structural issues
+
+**Fixes applied automatically:**
+- ✅ Biome formatting/lint fixes (JS/TS/JSON)
+- ✅ Ruff auto-fixes (Python)
+
+**Requires manual review:**
+- 🔧 AST-grep design smells (structural changes)
+- 🔧 Duplicate code blocks (extract shared logic)
+- 🔧 High complexity files (refactor needed)
+- 🗑️ Dead code (unused exports — safe to remove after review)
+
+**Prerequisite:** Must run `/lens-booboo` first to generate the review file.
+
+---
+
+### Delta Review (/lens-booboo-delta)
+
+```
+/lens-booboo-delta [path] [--apply]
+```
+
+**One-shot review of git-changed files only.**
+
+Unlike `/lens-booboo` (full codebase), this only scans files modified since the last commit:
+- Uses `git diff HEAD --name-only` to find changed files
+- Applies same 10-runner analysis but only on changed files
+- Faster for quick checks on work-in-progress
+
+**Use case:** Check your current work before committing, without scanning the entire codebase.
+
+---
 
 ### Test Runner
 
@@ -346,8 +378,9 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 
 | Command | Status | Description |
 |---------|--------|-------------|
-| `/lens-booboo` | ✅ Active | Full codebase review (8-part analysis) |
-| `/lens-booboo-fix` | ✅ Active | Automated mechanical fixes |
+| `/lens-booboo` | ✅ Active | Full codebase review (10-part analysis) |
+| `/lens-booboo-fix` | ✅ Active | Fix issues from last `/lens-booboo` review |
+| `/lens-booboo-delta` | ✅ Active | Review git-changed files only |
 | `/lens-booboo-refactor` | ✅ Active | Interactive architectural refactoring |
 | `/lens-format` | ✅ Active | Apply Biome formatting |
 | `/lens-tdi` | ✅ Active | Technical Debt Index and trends |

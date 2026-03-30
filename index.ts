@@ -37,6 +37,7 @@ import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
 import { handleBooboo } from "./commands/booboo.js";
+import { handleFixFromBooboo } from "./commands/fix-from-booboo.js";
 import { handleFixSimplified } from "./commands/fix-simplified.js";
 import { handleRate } from "./commands/rate.js";
 import { handleRefactor, initRefactorLoop } from "./commands/refactor.js";
@@ -327,7 +328,27 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("lens-booboo-fix", {
 		description:
-			"One-shot code review: analyzes changed files for issues and suggests fixes. Usage: /lens-booboo-fix [path] [--apply] [--false-positive 'type:file:line']",
+			"Sequential automated fixing: reads /lens-booboo results and applies fixes for design smells, duplicates, dead code, and AI slop. Usage: /lens-booboo-fix [--apply]",
+		handler: (args, ctx) =>
+			handleFixFromBooboo(
+				args,
+				ctx,
+				{
+					tsClient,
+					astGrep: astGrepClient,
+					ruff: ruffClient,
+					biome: biomeClient,
+					knip: knipClient,
+					jscpd: jscpdClient,
+					complexity: complexityClient,
+				},
+				pi,
+			),
+	});
+
+	pi.registerCommand("lens-booboo-delta", {
+		description:
+			"One-shot review of changed files only: analyzes git-modified files for issues. Usage: /lens-booboo-delta [path] [--apply] [--false-positive 'type:file:line']",
 		handler: (args, ctx) =>
 			handleFixSimplified(
 				args,
