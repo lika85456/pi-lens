@@ -127,6 +127,29 @@ Sequential automated fixing:
 
 Interactive architectural refactoring session. Scans for worst offenders by debt score, opens browser interview with AI-generated options, and implements changes with user confirmation.
 
+### Complexity Metrics
+
+pi-lens calculates comprehensive code quality metrics for every source file:
+
+| Metric | Range | Description | Thresholds |
+|--------|-------|-------------|------------|
+| **Maintainability Index (MI)** | 0-100 | Composite score combining complexity, size, and structure | <20: 🔴 Unmaintainable, 20-40: 🟡 Poor, >60: ✅ Good |
+| **Cognitive Complexity** | 0+ | Human mental effort to understand code (nesting penalties) | >20: 🟡 Hard to understand, >50: 🔴 Very complex |
+| **Cyclomatic Complexity** | 1+ | Independent code paths (branch points + 1) | >10: 🟡 Complex function, >20: 🔴 Highly complex |
+| **Max Cyclomatic** | 1+ | Worst function in file | >10 flagged |
+| **Nesting Depth** | 0+ | Maximum block nesting level | >4: 🟡 Deep nesting, >6: 🔴 Excessive |
+| **Code Entropy** | 0-8+ bits | Shannon entropy — unpredictability of code patterns | >3.5: 🟡 Risky AI-induced complexity |
+| **Halstead Volume** | 0+ | Vocabulary × length — unique ops/operands | High = many different operations |
+
+**AI Slop Indicators:**
+- Low MI + high cognitive complexity + high entropy = potential AI-generated spaghetti code
+- Excessive comments (>40%) + low MI = hand-holding anti-patterns
+- Single-use helpers with high entropy = over-abstraction
+
+**Usage:**
+- `/lens-booboo` — Shows complexity table for all files
+- `tool_result` — Complexity tracked per file, AI slop warnings inline
+
 ### Delta-mode feedback
 
 All runners operate in **delta mode**:
