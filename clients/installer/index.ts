@@ -1,9 +1,27 @@
 /**
  * Auto-Installation System for pi-lens
  * 
- * Automatically installs required tools when they're not found:
- * - typescript-language-server (for LSP)
- * - pyright (Python type checking)
+ * Automatically installs required tools when they're not found.
+ * Covers 14/31 LSP servers (npm/pip installable) plus linting tools.
+ * 
+ * Core LSP (5):
+ * - typescript-language-server (TypeScript)
+ * - pyright (Python)
+ * - yaml-language-server (YAML)
+ * - vscode-json-languageserver (JSON)
+ * - bash-language-server (Bash)
+ * 
+ * Web Framework LSP (4):
+ * - @vue/language-server (Vue)
+ * - svelte-language-server (Svelte)
+ * - vscode-eslint-language-server (ESLint)
+ * - vscode-css-languageserver (CSS/SCSS/Sass/Less)
+ * 
+ * DevOps/Config LSP (2):
+ * - dockerfile-language-server-nodejs (Dockerfile)
+ * - @prisma/language-server (Prisma)
+ * 
+ * Linting/Structural (3):
  * - ruff (Python linting)
  * - @biomejs/biome (JS/TS/JSON linting)
  * - @ast-grep/cli (structural search)
@@ -11,7 +29,7 @@
  * Strategies:
  * - npm packages via npx/bun
  * - pip packages
- * - GitHub releases (for platform-specific binaries)
+ * - GitHub releases (for platform-specific binaries - not yet implemented)
  */
 
 import { spawn } from "child_process";
@@ -35,6 +53,7 @@ interface ToolDefinition {
 }
 
 const TOOLS: ToolDefinition[] = [
+	// Core LSP servers
 	{
 		id: "typescript-language-server",
 		name: "TypeScript Language Server",
@@ -53,6 +72,7 @@ const TOOLS: ToolDefinition[] = [
 		packageName: "pyright",
 		binaryName: "pyright",
 	},
+	// Linting/formatting tools
 	{
 		id: "ruff",
 		name: "Ruff",
@@ -79,6 +99,91 @@ const TOOLS: ToolDefinition[] = [
 		installStrategy: "npm",
 		packageName: "@ast-grep/cli",
 		binaryName: "sg",
+	},
+	// Config/Data LSP servers
+	{
+		id: "yaml-language-server",
+		name: "YAML Language Server",
+		checkCommand: "yaml-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "yaml-language-server",
+		binaryName: "yaml-language-server",
+	},
+	{
+		id: "vscode-json-languageserver",
+		name: "JSON Language Server",
+		checkCommand: "vscode-json-languageserver",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-langservers-extracted",
+		binaryName: "vscode-json-languageserver",
+	},
+	// Shell/DevOps LSP servers
+	{
+		id: "bash-language-server",
+		name: "Bash Language Server",
+		checkCommand: "bash-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "bash-language-server",
+		binaryName: "bash-language-server",
+	},
+	{
+		id: "dockerfile-language-server",
+		name: "Dockerfile Language Server",
+		checkCommand: "dockerfile-language-server-nodejs",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "dockerfile-language-server-nodejs",
+		binaryName: "dockerfile-language-server-nodejs",
+	},
+	// Web framework LSP servers
+	{
+		id: "vue-language-server",
+		name: "Vue Language Server",
+		checkCommand: "vue-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "@vue/language-server",
+		binaryName: "vue-language-server",
+	},
+	{
+		id: "svelte-language-server",
+		name: "Svelte Language Server",
+		checkCommand: "svelteserver",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "svelte-language-server",
+		binaryName: "svelteserver",
+	},
+	{
+		id: "eslint-server",
+		name: "ESLint Language Server",
+		checkCommand: "vscode-eslint-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-langservers-extracted",
+		binaryName: "vscode-eslint-language-server",
+	},
+	{
+		id: "css-language-server",
+		name: "CSS Language Server",
+		checkCommand: "vscode-css-languageserver",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-langservers-extracted",
+		binaryName: "vscode-css-languageserver",
+	},
+	// Database/ORM LSP servers
+	{
+		id: "prisma-language-server",
+		name: "Prisma Language Server",
+		checkCommand: "prisma-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "@prisma/language-server",
+		binaryName: "prisma-language-server",
 	},
 ];
 
