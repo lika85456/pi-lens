@@ -13,6 +13,8 @@ export const EXCLUDED_DIRS = [
 	"build",
 	".next",
 	".pi-lens",
+	".pi",              // pi agent directory
+	".ruff_cache",      // Python linter cache
 	"venv",
 	".venv",
 	"coverage",
