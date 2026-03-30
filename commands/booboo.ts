@@ -78,6 +78,7 @@ export async function handleBooboo(
 	const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
 
 	// Part 1: Design smells via ast-grep
+	ctx.ui.notify("🔍 Part 1: Running ast-grep design smells...", "info");
 	if (clients.astGrep.isAvailable()) {
 		const configPath = path.join(
 			getExtensionDir(),
@@ -223,6 +224,7 @@ export async function handleBooboo(
 	}
 
 	// Part 2: Similar functions
+	ctx.ui.notify("🔍 Part 2: Finding similar functions...", "info");
 	if (clients.astGrep.isAvailable()) {
 		const similarGroups = await clients.astGrep.findSimilarFunctions(
 			targetPath,
@@ -302,6 +304,7 @@ export async function handleBooboo(
 	}
 
 	// Part 3: Complexity metrics
+	ctx.ui.notify("🔍 Part 3: Analyzing complexity metrics...", "info");
 	const results: import("../clients/complexity-client.js").FileComplexity[] =
 		[];
 	const aiSlopIssues: string[] = [];
@@ -434,6 +437,7 @@ export async function handleBooboo(
 	ctx.ui.notify(`✓ Part 3: Complexity metrics (${results.length} files, ${complexityCount} issues)`, "info");
 
 	// Part 4: TODOs
+	ctx.ui.notify("🔍 Part 4: Scanning for TODOs...", "info");
 	const todoResult = clients.todo.scanDirectory(targetPath);
 	if (todoResult.items.length > 0) {
 		summaryItems.push({
@@ -458,6 +462,7 @@ export async function handleBooboo(
 	ctx.ui.notify(`✓ Part 4: TODOs (${todoCount} items)`, "info");
 
 	// Part 5: Dead code
+	ctx.ui.notify("🔍 Part 5: Checking for dead code...", "info");
 	if (clients.knip.isAvailable()) {
 		const knipResult = clients.knip.analyze(targetPath);
 		if (knipResult.issues.length > 0) {
@@ -484,6 +489,7 @@ export async function handleBooboo(
 	ctx.ui.notify(`✓ Part 5: Dead code (${deadCodeCount} issues)`, "info");
 
 	// Part 6: Duplicate code
+	ctx.ui.notify("🔍 Part 6: Finding duplicate code...", "info");
 	if (clients.jscpd.isAvailable()) {
 		const jscpdResult = clients.jscpd.scan(targetPath);
 		if (jscpdResult.clones.length > 0) {
@@ -509,7 +515,8 @@ export async function handleBooboo(
 	const dupeCount = summaryItems.find(s => s.category === "Duplicates")?.count ?? 0;
 	ctx.ui.notify(`✓ Part 6: Duplicate code (${dupeCount} blocks)`, "info");
 
-	// Part 7: Type coverage (report as percentage, not individual any types)
+	// Part 7: Type coverage
+	ctx.ui.notify("🔍 Part 7: Checking type coverage...", "info");
 	if (clients.typeCoverage.isAvailable()) {
 		const tcResult = clients.typeCoverage.scan(targetPath);
 		if (tcResult.percentage < 100) {
@@ -551,6 +558,7 @@ export async function handleBooboo(
 	ctx.ui.notify(`✓ Part 7: Type coverage (${typeCoverageCount} files low)`, "info");
 
 	// Part 8: Circular deps
+	ctx.ui.notify("🔍 Part 8: Scanning for circular dependencies...", "info");
 	if (!pi.getFlag("no-madge") && clients.depChecker.isAvailable()) {
 		const { circular } = clients.depChecker.scanProject(targetPath);
 		if (circular.length > 0) {
@@ -571,6 +579,7 @@ export async function handleBooboo(
 	ctx.ui.notify(`✓ Part 8: Circular deps (${circularCount} chains)`, "info");
 
 	// Part 9: Arch rules
+	ctx.ui.notify("🔍 Part 9: Checking architectural rules...", "info");
 	if (!clients.architect.hasConfig()) {
 		clients.architect.loadConfig(process.cwd());
 	}
