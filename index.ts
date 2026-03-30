@@ -1130,6 +1130,29 @@ export default function (pi: ExtensionAPI) {
 			lspOutput += `\n\n✅ Auto-fixed ${fixedCount} issue(s) in ${path.basename(filePath)}`;
 		}
 
+		// --- Test runner: run corresponding tests on write ---
+		if (!pi.getFlag("no-tests")) {
+			const testInfo = testRunnerClient.findTestFile(filePath, cwd);
+			if (testInfo) {
+				dbg(`test-runner: found test file ${testInfo.testFile} for ${filePath}`);
+				const detectedRunner = testRunnerClient.detectRunner(cwd);
+				if (detectedRunner) {
+					const testResult = testRunnerClient.runTestFile(
+						testInfo.testFile,
+						cwd,
+						detectedRunner.runner,
+						detectedRunner.config,
+					);
+					if (testResult && !testResult.error) {
+						const testOutput = testRunnerClient.formatResult(testResult);
+						if (testOutput) {
+							lspOutput += `\n\n${testOutput}`;
+						}
+					}
+				}
+			}
+		}
+
 		// Agent behavior warnings (blind writes, thrashing)
 		if (behaviorWarnings.length > 0) {
 			lspOutput += `\n\n${agentBehaviorClient.formatWarnings(behaviorWarnings)}`;
