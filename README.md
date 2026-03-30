@@ -52,7 +52,10 @@ Interactive architectural refactoring session. Scans for worst offenders by debt
 
 ### Delta-mode feedback
 
-First edit: full feedback. Subsequent edits: only NEW issues. Pre-existing issues are tracked and excluded from inline output.
+All runners operate in **delta mode**:
+- **First write/edit:** Full scan, all issues tracked
+- **Subsequent edits:** Only **NEW** issues shown (pre-existing issues filtered out)
+- **Goal:** Reduce noise — don't spam agent with issues they didn't cause
 
 ---
 
@@ -60,7 +63,7 @@ First edit: full feedback. Subsequent edits: only NEW issues. Pre-existing issue
 
 ### Runner System
 
-pi-lens uses a **dispatcher-runner architecture** for extensible multi-language support:
+pi-lens uses a **dispatcher-runner architecture** for extensible multi-language support. Runners are executed by priority (lower = earlier).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -68,24 +71,50 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 │  Routes files to appropriate runners based on file kind     │
 └─────────────────────────────────────────────────────────────┘
                               │
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-┌──────────────┐    ┌─────────────────┐    ┌──────────────┐
-│  ts-lsp      │    │  ast-grep-napi  │    │   biome      │
-│  (priority 5)│    │  (priority 15)  │    │ (priority 10)│
-└──────────────┘    └─────────────────┘    └──────────────┘
-        │                     │                     │
-        ▼                     ▼                     ▼
-┌──────────────┐    ┌─────────────────┐    ┌──────────────┐
-│  pyright     │    │   python-slop   │    │   ruff       │
-│  (priority 5)│    │  (priority 25)  │    │ (priority 10)│
-└──────────────┘    └─────────────────┘    └──────────────┘
-        │                     │
-        ▼                     ▼
-┌──────────────┐    ┌─────────────────┐
-│  go-vet      │    │  rust-clippy    │
-│  (priority 20)│   │  (priority 20)  │
-└──────────────┘    └─────────────────┘
+    ┌─────────────────────────┼─────────────────────────┐
+    │                         │                         │
+    ▼                         ▼                         ▼
+┌──────────┐           ┌──────────┐           ┌──────────────┐
+│ ts-lsp   │           │ pyright  │           │ biome        │
+│ (prio 5) │           │ (prio 5) │           │ (prio 10)    │
+│ TS type  │           │ Py type  │           │ TS/JS lint   │
+└──────────┘           └──────────┘           └──────────────┘
+                                                      │
+    ┌─────────────────────────┼───────────────────────┘
+    │                         │
+    ▼                         ▼
+┌──────────┐           ┌──────────────┐
+│ ruff     │           │ ast-grep-napi│
+│ (prio 10)│           │ (prio 15)    │
+│ Py lint  │           │ TS/JS struct │
+└──────────┘           └──────────────┘
+                              │
+    ┌─────────────────────────┼─────────────────────────┐
+    │                         │                         │
+    ▼                         ▼                         ▼
+┌──────────┐           ┌──────────┐           ┌──────────┐
+│type-safe │           │py-slop   │           │ast-grep  │
+│(prio 20) │           │(prio 25) │           │(prio 30) │
+│TS switch │           │Py slop   │           │Other lang│
+└──────────┘           └──────────┘           └──────────┘
+                                                      │
+    ┌─────────────────────────┼─────────────────────────┘
+    │                         │
+    ▼                         ▼
+┌──────────┐           ┌──────────┐
+│similarity│           │ architect│
+│(prio 35) │           │ (prio 40)│
+│Dup det  │           │ Arch rules│
+└──────────┘           └──────────┘
+                              │
+    ┌─────────────────────────┼─────────────────────────┐
+    │                         │                         │
+    ▼                         ▼                         ▼
+┌──────────┐           ┌──────────┐           ┌──────────┐
+│ go-vet   │           │rust-clipy│           │ [more...]│
+│ (prio 50)│           │(prio 50) │           │          │
+│ Go vet   │           │ Rust lint│           │          │
+└──────────┘           └──────────┘           └──────────┘
 ```
 
 ### Available Runners
