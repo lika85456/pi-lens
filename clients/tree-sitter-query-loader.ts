@@ -37,6 +37,18 @@ export interface TreeSitterQuery {
 export class TreeSitterQueryLoader {
 	private queries: Map<string, TreeSitterQuery[]> = new Map();
 	private loaded = false;
+	private verbose: boolean;
+
+	constructor(verbose = false) {
+		this.verbose = verbose;
+	}
+
+	/** Debug logging helper */
+	private dbg(msg: string): void {
+		if (this.verbose) {
+			console.error(`[query-loader] ${msg}`);
+		}
+	}
 
 	/**
 	 * Load all queries from the rules/tree-sitter-queries directory
@@ -47,7 +59,7 @@ export class TreeSitterQueryLoader {
 		const queriesDir = path.join(process.cwd(), "rules", "tree-sitter-queries");
 		
 		if (!fs.existsSync(queriesDir)) {
-			console.error(`[query-loader] Queries directory not found: ${queriesDir}`);
+			this.dbg(`Queries directory not found: ${queriesDir}`);
 			return this.queries;
 		}
 
@@ -73,7 +85,7 @@ export class TreeSitterQueryLoader {
 
 			if (langQueries.length > 0) {
 				this.queries.set(lang, langQueries);
-				console.error(`[query-loader] Loaded ${langQueries.length} queries for ${lang}`);
+				this.dbg(`Loaded ${langQueries.length} queries for ${lang}`);
 			}
 		}
 
@@ -92,7 +104,7 @@ export class TreeSitterQueryLoader {
 			const parsed = this.parseYaml(content);
 			
 			if (!parsed.id || !parsed.query) {
-				console.error(`[query-loader] Invalid query file: ${filePath}`);
+				this.dbg(`Invalid query file: ${filePath}`);
 				return null;
 			}
 
@@ -117,7 +129,7 @@ export class TreeSitterQueryLoader {
 				filePath,
 			};
 		} catch (err) {
-			console.error(`[query-loader] Failed to parse ${filePath}: ${err}`);
+			this.dbg(`Failed to parse ${filePath}: ${err}`);
 			return null;
 		}
 	}

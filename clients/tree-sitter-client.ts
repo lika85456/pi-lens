@@ -92,9 +92,18 @@ export class TreeSitterClient {
 	private LanguageLoader: any = null;
 	private queryLoader = new TreeSitterQueryLoader();
 	private queriesLoaded = false;
+	private verbose: boolean;
 
-	constructor() {
+	constructor(verbose = false) {
 		this.grammarsDir = this.findGrammarsDir();
+		this.verbose = verbose;
+	}
+
+	/** Debug logging helper */
+	private dbg(msg: string): void {
+		if (this.verbose) {
+			console.error(`[tree-sitter] ${msg}`);
+		}
 	}
 
 	/** Find tree-sitter grammar directory */
@@ -147,7 +156,7 @@ export class TreeSitterClient {
 			// biome-ignore lint/suspicious/noExplicitAny: Dynamic import of optional dependency
 			const ParserClass = mod.Parser || mod.default || mod;
 			if (!ParserClass || typeof ParserClass.init !== "function") {
-				console.error("[tree-sitter] Parser class not found or missing init method");
+				this.dbg("Parser class not found or missing init method");
 				return false;
 			}
 			
@@ -158,13 +167,13 @@ export class TreeSitterClient {
 			
 			// Log what we're trying to load
 			const wasmPath = path.join(process.cwd(), "node_modules", "web-tree-sitter", "tree-sitter.wasm");
-			console.error(`[tree-sitter] Looking for WASM at: ${wasmPath}, exists: ${fs.existsSync(wasmPath)}`);
+			this.dbg(`Looking for WASM at: ${wasmPath}, exists: ${fs.existsSync(wasmPath)}`);
 			
 			await ParserClass.init({
 				locateFile: (scriptName: string) => {
 					// Always return the full path to the WASM file
 					const fullPath = path.join(process.cwd(), "node_modules", "web-tree-sitter", scriptName);
-					console.error(`[tree-sitter] locateFile: ${scriptName} -> ${fullPath}`);
+					this.dbg(`locateFile: ${scriptName} -> ${fullPath}`);
 					return fullPath;
 				},
 			});
@@ -173,9 +182,9 @@ export class TreeSitterClient {
 				try {
 					await this.queryLoader.loadQueries();
 					this.queriesLoaded = true;
-					console.error(`[tree-sitter] Queries loaded successfully`);
+					this.dbg(`Queries loaded successfully`);
 				} catch (err) {
-					console.error(`[tree-sitter] Failed to load queries: ${err}`);
+					this.dbg(`Failed to load queries: ${err}`);
 					// Continue anyway - fallbacks will work
 				}
 			}
@@ -183,53 +192,53 @@ export class TreeSitterClient {
 			this.initialized = true;
 			return true;
 		} catch (err) {
-			console.error(`[tree-sitter] Init error: ${err}`);
+			this.dbg(`Init error: ${err}`);
 			return false;
 		}
 	}
 
 	/** Load language grammar */
 	private async loadLanguage(languageId: string): Promise<TreeSitterLanguage | null> {
-		console.error(`[tree-sitter] Loading language: ${languageId}`);
+		this.dbg(`Loading language: ${languageId}`);
 		
 		if (this.languages.has(languageId)) {
-			console.error(`[tree-sitter] Language ${languageId} already loaded`);
+			this.dbg(`Language ${languageId} already loaded`);
 			return this.languages.get(languageId)!;
 		}
 		
 		if (!this.ParserClass) {
-			console.error(`[tree-sitter] ParserClass not initialized`);
+			this.dbg(`ParserClass not initialized`);
 			return null;
 		}
 
 		const grammarFile = LANGUAGE_TO_GRAMMAR[languageId];
 		if (!grammarFile) {
-			console.error(`[tree-sitter] No grammar file for ${languageId}`);
+			this.dbg(`No grammar file for ${languageId}`);
 			return null;
 		}
 
 		const grammarPath = path.join(this.grammarsDir, grammarFile);
-		console.error(`[tree-sitter] Grammar path: ${grammarPath}, exists: ${fs.existsSync(grammarPath)}`);
+		this.dbg(`Grammar path: ${grammarPath}, exists: ${fs.existsSync(grammarPath)}`);
 		
 		if (!fs.existsSync(grammarPath)) {
-			console.error(`[tree-sitter] Grammar file not found: ${grammarPath}`);
+			this.dbg(`Grammar file not found: ${grammarPath}`);
 			return null;
 		}
 
 		try {
 			if (!this.LanguageLoader?.load) {
-				console.error(`[tree-sitter] LanguageLoader.load not available`);
+				this.dbg(`LanguageLoader.load not available`);
 				return null;
 			}
-			console.error(`[tree-sitter] Calling Language.load...`);
+			this.dbg(`Calling Language.load...`);
 			const language = await this.LanguageLoader.load(grammarPath);
-			console.error(`[tree-sitter] Language loaded: ${language?.name || "unknown"}`);
+			this.dbg(`Language loaded: ${language?.name || "unknown"}`);
 			if (language) {
 				this.languages.set(languageId, language);
 			}
 			return language;
 		} catch (err) {
-			console.error(`[tree-sitter] Language load error: ${err}`);
+			this.dbg(`Language load error: ${err}`);
 			return null;
 		}
 	}
@@ -251,21 +260,21 @@ export class TreeSitterClient {
 
 	/** Parse a file and return the AST tree */
 	async parseFile(filePath: string, languageId: string): Promise<TreeSitterTree | null> {
-		console.error(`[tree-sitter] Parsing ${filePath} with language ${languageId}`);
+		this.dbg(`Parsing ${filePath} with language ${languageId}`);
 		const parser = await this.getParser(languageId);
 		if (!parser) {
-			console.error(`[tree-sitter] Failed to get parser for ${languageId}`);
+			this.dbg(`Failed to get parser for ${languageId}`);
 			return null;
 		}
 
 		try {
 			const content = fs.readFileSync(filePath, "utf-8");
-			console.error(`[tree-sitter] File content length: ${content.length}`);
+			this.dbg(`File content length: ${content.length}`);
 			const tree = parser.parse(content);
-			console.error(`[tree-sitter] Parsed, root node type: ${tree.rootNode.type}`);
+			this.dbg(`Parsed, root node type: ${tree.rootNode.type}`);
 			return tree;
 		} catch (err) {
-			console.error(`[tree-sitter] Parse error: ${err}`);
+			this.dbg(`Parse error: ${err}`);
 			return null;
 		}
 	}
@@ -308,17 +317,17 @@ export class TreeSitterClient {
 		}
 
 		// Compile pattern into tree-sitter query
-		console.error(`[tree-sitter] Compiling pattern: ${pattern.slice(0, 50)}...`);
+		this.dbg(`Compiling pattern: ${pattern.slice(0, 50)}...`);
 		const compiled = await this.compileQuery(pattern, languageId);
 		if (!compiled) {
-			console.error(`[tree-sitter] Pattern compilation failed`);
+			this.dbg(`Pattern compilation failed`);
 			return [];
 		}
-		console.error(`[tree-sitter] Pattern compiled, metavars: ${compiled.metavars.join(", ")}`);
+		this.dbg(`Pattern compiled, metavars: ${compiled.metavars.join(", ")}`);
 
 		// Collect source files
 		const files = this.collectFiles(rootDir, languageId, options.fileFilter);
-		console.error(`[tree-sitter] Scanning ${files.length} files...`);
+		this.dbg(`Scanning ${files.length} files...`);
 		
 		const matches: StructuralMatch[] = [];
 		const maxResults = options.maxResults ?? 50;
@@ -357,7 +366,7 @@ export class TreeSitterClient {
 		const loadedQuery = this.queryLoader.findMatchingQuery(pattern, languageId);
 		
 		if (loadedQuery) {
-			console.error(`[tree-sitter] Using loaded query: ${loadedQuery.id}`);
+			this.dbg(`Using loaded query: ${loadedQuery.id}`);
 			return {
 				query: loadedQuery.query,
 				metavars: loadedQuery.metavars,
@@ -461,22 +470,22 @@ export class TreeSitterClient {
 	): Promise<{ query: any; metavars: string[]; postFilter?: string; postFilterParams?: unknown } | null> {
 		const language = await this.loadLanguage(languageId);
 		if (!language) {
-			console.error(`[tree-sitter] Could not load language ${languageId}`);
+			this.dbg(`Could not load language ${languageId}`);
 			return null;
 		}
 
 		const { query: queryStr, metavars, postFilter, postFilterParams } = this.patternToQuery(pattern, languageId);
-		console.error(`[tree-sitter] Query string: ${queryStr.slice(0, 100)}...`);
+		this.dbg(`Query string: ${queryStr.slice(0, 100)}...`);
 		
 		try {
 			// biome-ignore lint/suspicious/noExplicitAny: Query constructor
 			const Query = (await import("web-tree-sitter")).Query;
 			// biome-ignore lint/suspicious/noExplicitAny: Language type compatibility
 			const query = new Query(language as any, queryStr);
-			console.error(`[tree-sitter] Query compiled with ${query.patternCount} patterns`);
+			this.dbg(`Query compiled with ${query.patternCount} patterns`);
 			return { query, metavars, postFilter, postFilterParams };
 		} catch (err) {
-			console.error(`[tree-sitter] Query compilation failed: ${err}`);
+			this.dbg(`Query compilation failed: ${err}`);
 			return null;
 		}
 	}
@@ -573,10 +582,10 @@ export class TreeSitterClient {
 			}
 			
 			if (matches.length > 0) {
-				console.error(`[tree-sitter] Found ${matches.length} matches in ${path.basename(filePath)}`);
+				this.dbg(`Found ${matches.length} matches in ${path.basename(filePath)}`);
 			}
 		} catch (err) {
-			console.error(`[tree-sitter] Query matching error: ${err}`);
+			this.dbg(`Query matching error: ${err}`);
 		}
 		
 		return matches;
