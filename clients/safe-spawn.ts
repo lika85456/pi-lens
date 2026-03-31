@@ -27,9 +27,18 @@ export interface SafeSpawnOptions {
 
 /**
  * Escape an argument for Windows shell execution.
- * Handles spaces, quotes, and special characters.
+ * Handles spaces, quotes, $variables, and special characters.
  */
 function escapeWindowsArg(arg: string): string {
+	// Check if this looks like an ast-grep pattern with meta-variables ($NAME)
+	// In Git Bash/MSYS2 on Windows, $VAR gets expanded by the shell
+	// We need to use single quotes to prevent expansion
+	if (arg.includes("$")) {
+		// Use single quotes for arguments with $variables
+		// Escape single quotes within the argument
+		return `'${arg.replace(/'/g, "'\\''")}'`;
+	}
+
 	// If no special characters, return as-is
 	if (!/[\s\"]/.test(arg)) return arg;
 
