@@ -18,6 +18,7 @@ import type { FileKind } from "../file-kinds.js";
 import { detectFileKind } from "../file-kinds.js";
 import { isTestFile } from "../file-utils.js";
 import { safeSpawn } from "../safe-spawn.js";
+import { formatDiagnostic, formatDiagnostics, EMOJI } from "./utils/format-utils.js";
 
 import type {
 	BaselineStore,
@@ -155,52 +156,6 @@ function filterDelta<T extends { id: string }>(
 	const newItems = after.filter((d) => !beforeSet.has(keyFn(d)));
 
 	return { new: newItems, fixed };
-}
-
-// --- Output Formatting ---
-
-const EMOJI: Record<string, string> = {
-	blocking: "🔴",
-	warning: "🟡",
-	fixed: "✅",
-	info: "ℹ️",
-	silent: "📊",
-	none: "",
-};
-
-export function formatDiagnostic(d: Diagnostic): string {
-	const line = d.line ? `L${d.line}: ` : "";
-	const indented = d.message.split("\n").join("\n  ");
-	return `  ${line}${indented}`;
-}
-
-function formatDiagnostics(
-	diagnostics: Diagnostic[],
-	semantic: OutputSemantic,
-	maxDisplay = 10,
-): string {
-	if (diagnostics.length === 0) return "";
-
-	const emoji = EMOJI[semantic] ?? EMOJI.warning;
-	let output = "";
-
-	if (semantic === "blocking") {
-		output += `\n${emoji} STOP — ${diagnostics.length} issue(s) must be fixed:\n`;
-	} else if (semantic === "warning") {
-		output += `\n${emoji} ${diagnostics.length} warning(s):\n`;
-	} else if (semantic === "fixed") {
-		output += `\n${emoji} Auto-fixed ${diagnostics.length} issue(s):\n`;
-	}
-
-	for (const d of diagnostics.slice(0, maxDisplay)) {
-		output += `${formatDiagnostic(d)}\n`;
-	}
-
-	if (diagnostics.length > maxDisplay) {
-		output += `  ... and ${diagnostics.length - maxDisplay} more\n`;
-	}
-
-	return output;
 }
 
 // --- Main Dispatch Function ---

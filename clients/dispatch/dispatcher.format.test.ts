@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDiagnostic } from "./dispatcher.js";
+import { formatDiagnostic } from "./utils/format-utils.js";
 
 describe("formatDiagnostic with code fixes", () => {
 	it("should format multi-line messages with proper indentation", () => {

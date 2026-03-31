@@ -67,17 +67,20 @@ async function runWithLSPClient(ctx: DispatchContext): Promise<RunnerResult> {
 	}
 
 	// Convert LSP diagnostics to our format
-	const diagnostics: Diagnostic[] = lspDiags.map((d) => ({
-		id: `ts-lsp:${d.code ?? "unknown"}:${d.range.start.line}`,
-		message: d.message,
-		filePath: ctx.filePath,
-		line: d.range.start.line + 1,
-		column: d.range.start.character + 1,
-		severity: d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info",
-		semantic: d.severity === 1 ? "blocking" : "warning",
-		tool: "ts-lsp",
-		code: String(d.code ?? ""),
-	}));
+	// Defensive: filter out malformed diagnostics that may lack range
+	const diagnostics: Diagnostic[] = lspDiags
+		.filter((d) => d.range?.start?.line !== undefined)
+		.map((d) => ({
+			id: `ts-lsp:${d.code ?? "unknown"}:${d.range.start.line}`,
+			message: d.message,
+			filePath: ctx.filePath,
+			line: d.range.start.line + 1,
+			column: d.range.start.character + 1,
+			severity: d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info",
+			semantic: d.severity === 1 ? "blocking" : "warning",
+			tool: "ts-lsp",
+			code: String(d.code ?? ""),
+		}));
 
 	return {
 		status: "failed",

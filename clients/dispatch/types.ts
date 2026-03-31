@@ -48,7 +48,7 @@ export interface Diagnostic {
 	/** Column (1-based) */
 	column?: number;
 	/** Severity level */
-	severity: "error" | "warning" | "info";
+	severity: "error" | "warning" | "info" | "hint";
 	/** Output semantic */
 	semantic: OutputSemantic;
 	/** Which tool produced this */

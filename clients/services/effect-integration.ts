@@ -25,6 +25,9 @@ import {
 	FileModified,
 	type Diagnostic,
 } from "../bus/events.js";
+import { formatDiagnostic, formatDiagnostics } from "../dispatch/utils/format-utils.js";
+// Import runners to register them in the dispatcher
+import "../dispatch/runners/index.js";
 
 import type { DispatchContext, RunnerGroup } from "../dispatch/types.js";
 
@@ -99,7 +102,7 @@ async function runGroupConcurrent(
 				line: d.line,
 				column: d.column,
 				severity: d.severity === "error" ? "error" : d.severity === "warning" ? "warning" : "info",
-				semantic: result.semantic ?? "warning",
+				semantic: d.semantic ?? result.semantic ?? "warning",
 				tool: runnerId,
 				rule: d.rule,
 				fixable: d.fixable,
@@ -121,6 +124,7 @@ async function runGroupConcurrent(
 					id: d.id,
 					message: d.message,
 					severity: d.severity,
+					semantic: d.semantic,
 				})),
 				durationMs: Date.now() - runnerStart,
 			};
@@ -159,7 +163,7 @@ async function runGroupConcurrent(
 					message: d.message,
 					filePath: ctx.filePath,
 					severity: d.severity,
-					semantic: group.semantic ?? "warning",
+					semantic: d.semantic ?? group.semantic ?? "warning",
 					tool: result.runnerId,
 				}))
 			);
@@ -170,51 +174,6 @@ async function runGroupConcurrent(
 		results: concurrentResults,
 		diagnostics: allDiagnostics,
 	};
-}
-
-// --- Formatting ---
-
-const EMOJI: Record<string, string> = {
-	blocking: "🔴",
-	warning: "🟡",
-	fixed: "✅",
-	silent: "📊",
-	none: "",
-};
-
-function formatDiagnostic(d: Diagnostic): string {
-	const line = d.line ? `L${d.line}: ` : "";
-	const indented = d.message.split("\n").join("\n  ");
-	return `  ${line}${indented}`;
-}
-
-function formatDiagnostics(
-	diagnostics: Diagnostic[],
-	semantic: string,
-	maxDisplay = 10,
-): string {
-	if (diagnostics.length === 0) return "";
-
-	const emoji = EMOJI[semantic] ?? EMOJI.warning;
-	let output = "";
-
-	if (semantic === "blocking") {
-		output += `\n${emoji} STOP — ${diagnostics.length} issue(s) must be fixed:\n`;
-	} else if (semantic === "warning") {
-		output += `\n${emoji} ${diagnostics.length} warning(s):\n`;
-	} else if (semantic === "fixed") {
-		output += `\n${emoji} Auto-fixed ${diagnostics.length} issue(s):\n`;
-	}
-
-	for (const d of diagnostics.slice(0, maxDisplay)) {
-		output += `${formatDiagnostic(d)}\n`;
-	}
-
-	if (diagnostics.length > maxDisplay) {
-		output += `  ... and ${diagnostics.length - maxDisplay} more\n`;
-	}
-
-	return output;
 }
 
 // --- Main Dispatch Function ---

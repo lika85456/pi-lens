@@ -85,10 +85,12 @@ export async function createLSPClient(options: {
 			pendingDiagnostics.delete(filePath);
 
 			// Publish to bus
+			// Defensive: filter out malformed diagnostics that may lack range
+			const validDiags = newDiags.filter((d) => d.range?.start?.line !== undefined);
 			DiagnosticFound.publish({
 				runnerId: serverId,
 				filePath,
-				diagnostics: newDiags.map((d) => ({
+				diagnostics: validDiags.map((d) => ({
 					id: `${serverId}:${d.code ?? "unknown"}:${d.range.start.line}`,
 					message: d.message,
 					filePath,

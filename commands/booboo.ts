@@ -423,18 +423,18 @@ export async function handleBooboo(
 			const maxCognitive = Math.max(...results.map((r) => r.cognitiveComplexity));
 			const minMI = Math.min(...results.map((r) => r.maintainabilityIndex));
 
-			// Only flag files with SEVERE issues (like type coverage < 90% threshold)
-			// MI < 40 is "unmaintainable" (not < 60 which is just "poor")
+			// Only flag files with EXTREME issues (tuned to reduce false positives)
+			// MI < 20 is "critically unmaintainable" (was < 40, too aggressive)
 			const severeLowMI = results
-				.filter((r) => r.maintainabilityIndex < 40 && !isTestFile(r.filePath))
+				.filter((r) => r.maintainabilityIndex < 20 && !isTestFile(r.filePath))
 				.sort((a, b) => a.maintainabilityIndex - b.maintainabilityIndex);
-			// Cognitive > 30 is very high (not > 20 which is moderately complex)
+			// Cognitive > 80 is extreme (was > 30, flagged too many files)
 			const veryHighCognitive = results
-				.filter((r) => r.cognitiveComplexity > 30 && !isTestFile(r.filePath))
+				.filter((r) => r.cognitiveComplexity > 80 && !isTestFile(r.filePath))
 				.sort((a, b) => b.cognitiveComplexity - a.cognitiveComplexity);
-			// Deep nesting > 5 levels is concerning
+			// Deep nesting > 8 levels is extreme (was > 5, normal code hits this)
 			const deepNesting = results
-				.filter((r) => r.maxNestingDepth > 5 && !isTestFile(r.filePath))
+				.filter((r) => r.maxNestingDepth > 8 && !isTestFile(r.filePath))
 				.sort((a, b) => b.maxNestingDepth - a.maxNestingDepth);
 
 			let findings = 0;

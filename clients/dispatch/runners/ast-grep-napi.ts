@@ -53,19 +53,24 @@ function getLang(filePath: string, sgModule: typeof import("@ast-grep/napi")): a
 	}
 }
 
-// YAML rule loading
+// YAML rule types
+interface YamlRuleCondition {
+	kind?: string;
+	pattern?: string;
+	regex?: string;
+	has?: YamlRuleCondition;
+	any?: YamlRuleCondition[];
+	all?: YamlRuleCondition[];
+	not?: YamlRuleCondition;
+}
+
 interface YamlRule {
 	id: string;
 	language?: string;
 	severity?: string;
 	message?: string;
 	metadata?: { weight?: number; category?: string };
-	rule?: {
-		pattern?: string;
-		kind?: string;
-		regex?: string;
-		any?: Array<{ pattern?: string; kind?: string }>;
-	};
+	rule?: YamlRuleCondition;
 }
 
 function loadYamlRules(ruleDir: string): YamlRule[] {
@@ -98,9 +103,24 @@ function parseSimpleYaml(content: string): YamlRule | null {
 	const lines = content.split("\n");
 	const rule: YamlRule = { id: "", metadata: {} };
 	let currentSection: "root" | "rule" | "metadata" = "root";
-	let currentSubSection = "";
+	let sectionStack: Array<{ name: string; indent: number; obj: any }> = [];
 	let multilineBuffer: string[] = [];
 	let multilineKey = "";
+	
+	function getCurrentObj(): any {
+		if (sectionStack.length === 0) return rule;
+		return sectionStack[sectionStack.length - 1].obj;
+	}
+	
+	function getIndent(line: string): number {
+		let count = 0;
+		for (const char of line) {
+			if (char === " ") count++;
+			else if (char === "\t") count += 2;
+			else break;
+		}
+		return count;
+	}
 	
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
@@ -109,76 +129,253 @@ function parseSimpleYaml(content: string): YamlRule | null {
 		
 		if (trimmed === "---") continue;
 		
-		// Check for multiline continuation (lines starting with spaces that aren't keys)
+		const indent = getIndent(line);
+		
+		// Pop stack if indent decreased
+		while (sectionStack.length > 0 && indent <= sectionStack[sectionStack.length - 1].indent) {
+			sectionStack.pop();
+		}
+		
+		// Check for multiline continuation
 		if (line.startsWith(" ") && !trimmed.includes(":") && multilineKey) {
 			multilineBuffer.push(trimmed);
 			continue;
 		}
 		
-		// Flush multiline buffer if we hit a new key
+		// Flush multiline buffer
 		if (multilineKey && multilineBuffer.length > 0) {
 			const value = multilineBuffer.join("\n");
-			if (multilineKey === "pattern" && rule.rule) {
-				rule.rule.pattern = value;
+			const current = getCurrentObj();
+			if (multilineKey === "pattern" && current) {
+				current.pattern = value;
 			}
 			multilineKey = "";
 			multilineBuffer = [];
 		}
 		
-		if (trimmed.startsWith("id:")) {
-			rule.id = trimmed.substring(3).trim();
-		} else if (trimmed.startsWith("language:")) {
-			rule.language = trimmed.substring(9).trim();
-		} else if (trimmed.startsWith("severity:")) {
-			rule.severity = trimmed.substring(9).trim();
-		} else if (trimmed.startsWith("message:")) {
-			const msg = trimmed.substring(8).trim();
-			// Check if this is the start of a multiline message
-			if (msg === "|") {
+		const colonIndex = trimmed.indexOf(":");
+		const key = colonIndex > 0 ? trimmed.substring(0, colonIndex).trim() : trimmed;
+		const value = colonIndex > 0 ? trimmed.substring(colonIndex + 1).trim() : "";
+		
+		if (key === "id") {
+			rule.id = value.replace(/^["']|["']$/g, "");
+		} else if (key === "language") {
+			rule.language = value;
+		} else if (key === "severity") {
+			rule.severity = value;
+		} else if (key === "message") {
+			if (value === "|") {
 				multilineKey = "message";
 			} else {
-				rule.message = msg.replace(/^["']|["']$/g, "");
+				rule.message = value.replace(/^["']|["']$/g, "");
 			}
-		} else if (trimmed === "metadata:") {
+		} else if (key === "metadata") {
 			currentSection = "metadata";
-		} else if (trimmed === "rule:") {
+			const newObj = {};
+			rule.metadata = newObj;
+			sectionStack.push({ name: "metadata", indent, obj: newObj });
+		} else if (key === "rule") {
 			currentSection = "rule";
-			rule.rule = {};
-		} else if (currentSection === "rule" && trimmed.startsWith("pattern:")) {
-			if (!rule.rule) rule.rule = {};
-			const pat = trimmed.substring(8).trim();
-			if (pat === "|") {
-				multilineKey = "pattern";
-			} else {
-				rule.rule.pattern = pat.replace(/^["']|["']$/g, "");
+			const newObj: YamlRuleCondition = {};
+			rule.rule = newObj;
+			sectionStack.push({ name: "rule", indent, obj: newObj });
+		} else if (sectionStack.length > 0) {
+			const current = getCurrentObj();
+			const currentSectionName = sectionStack[sectionStack.length - 1]?.name;
+			
+			if (key === "weight" && currentSectionName === "metadata") {
+				if (!rule.metadata) rule.metadata = {};
+				rule.metadata.weight = parseInt(value, 10) || 3;
+			} else if (key === "category" && currentSectionName === "metadata") {
+				if (!rule.metadata) rule.metadata = {};
+				rule.metadata.category = value.replace(/^["']|["']$/g, "");
+			} else if (key === "pattern") {
+				if (value === "|") {
+					multilineKey = "pattern";
+				} else {
+					// Strip all surrounding quotes (handle nested quotes from YAML)
+					let stripped = value;
+					while (stripped.startsWith('"') && stripped.endsWith('"') && stripped.length > 1) {
+						stripped = stripped.slice(1, -1);
+					}
+					while (stripped.startsWith("'") && stripped.endsWith("'") && stripped.length > 1) {
+						stripped = stripped.slice(1, -1);
+					}
+					current.pattern = stripped;
+				}
+			} else if (key === "kind") {
+				current.kind = value;
+			} else if (key === "regex") {
+				// Strip all surrounding quotes
+				let stripped = value;
+				while (stripped.startsWith('"') && stripped.endsWith('"') && stripped.length > 1) {
+					stripped = stripped.slice(1, -1);
+				}
+				while (stripped.startsWith("'") && stripped.endsWith("'") && stripped.length > 1) {
+					stripped = stripped.slice(1, -1);
+				}
+				current.regex = stripped;
+			} else if (key === "has" || key === "not") {
+				const newObj: YamlRuleCondition = {};
+				current[key] = newObj;
+				sectionStack.push({ name: key, indent, obj: newObj });
+			} else if (key === "any" || key === "all") {
+				if (!current[key]) current[key] = [];
+				// Check if next lines with more indent are list items
+				let j = i + 1;
+				while (j < lines.length) {
+					const nextLine = lines[j];
+					const nextTrimmed = nextLine.trim();
+					if (!nextTrimmed || nextTrimmed.startsWith("#")) {
+						j++;
+						continue;
+					}
+					const nextIndent = getIndent(nextLine);
+					if (nextIndent <= indent) break;
+					
+					if (nextTrimmed.startsWith("- ")) {
+						// New list item
+						const itemObj: YamlRuleCondition = {};
+						current[key].push(itemObj);
+						sectionStack.push({ name: key, indent: nextIndent, obj: itemObj });
+						// Parse the item content after "- "
+						const itemContent = nextTrimmed.substring(2);
+						if (itemContent.includes(":")) {
+							const [itemKey, itemVal] = itemContent.split(":", 2);
+							if (itemKey.trim() === "pattern") {
+								itemObj.pattern = itemVal.trim().replace(/^["']|["']$/g, "");
+							} else if (itemKey.trim() === "kind") {
+								itemObj.kind = itemVal.trim();
+							}
+						} else if (itemContent) {
+							// Assume it's a pattern
+							itemObj.pattern = itemContent.replace(/^["']|["']$/g, "");
+						}
+					}
+					j++;
+				}
 			}
-		} else if (currentSection === "rule" && trimmed.startsWith("kind:")) {
-			if (!rule.rule) rule.rule = {};
-			rule.rule.kind = trimmed.substring(5).trim();
-		} else if (currentSection === "rule" && trimmed.startsWith("regex:")) {
-			if (!rule.rule) rule.rule = {};
-			rule.rule.regex = trimmed.substring(6).trim();
-		} else if (currentSection === "metadata" && trimmed.startsWith("weight:")) {
-			if (!rule.metadata) rule.metadata = {};
-			rule.metadata.weight = parseInt(trimmed.substring(7).trim(), 10) || 3;
-		} else if (currentSection === "metadata" && trimmed.startsWith("category:")) {
-			if (!rule.metadata) rule.metadata = {};
-			rule.metadata.category = trimmed.substring(9).trim();
 		}
 	}
 	
 	// Flush remaining multiline buffer
-	if (multilineKey && multilineBuffer.length > 0 && multilineKey === "pattern" && rule.rule) {
-		rule.rule.pattern = multilineBuffer.join("\n");
+	if (multilineKey && multilineBuffer.length > 0) {
+		const value = multilineBuffer.join("\n");
+		const current = getCurrentObj();
+		if (multilineKey === "pattern" && current) {
+			current.pattern = value;
+		} else if (multilineKey === "message") {
+			rule.message = value;
+		}
 	}
 	
 	return rule.id ? rule : null;
 }
 
-function getPatternFromRule(rule: YamlRule): string | undefined {
-	if (rule.rule?.pattern) return rule.rule.pattern;
-	if (rule.rule?.kind) return rule.rule.kind; // Use kind as fallback
-	return undefined;
+/**
+ * Check if a rule uses structured conditions (has/any/all/not/regex)
+ */
+function isStructuredRule(rule: YamlRule): boolean {
+	if (!rule.rule) return false;
+	return !!(rule.rule.has || rule.rule.any || rule.rule.all || rule.rule.not || rule.rule.regex);
+}
+
+/**
+ * Execute a structured rule using manual AST traversal
+ */
+function executeStructuredRule(
+	rootNode: any,
+	condition: YamlRuleCondition,
+	matches: any[] = []
+): any[] {
+	// Start with finding nodes by kind or pattern
+	let candidates: any[] = [];
+	
+	if (condition.pattern) {
+		// Use pattern matching via findAll
+		try {
+			candidates = rootNode.findAll(condition.pattern);
+		} catch {
+			return matches;
+		}
+	} else if (condition.kind) {
+		// Manual traversal for kind matching
+		function findByKind(node: any, kind: string): any[] {
+			const results: any[] = [];
+			if (node.kind() === kind) {
+				results.push(node);
+			}
+			for (const child of node.children()) {
+				results.push(...findByKind(child, kind));
+			}
+			return results;
+		}
+		candidates = findByKind(rootNode, condition.kind);
+	} else {
+		// No kind or pattern, search all nodes
+		function getAllNodes(node: any): any[] {
+			const results = [node];
+			for (const child of node.children()) {
+				results.push(...getAllNodes(child));
+			}
+			return results;
+		}
+		candidates = getAllNodes(rootNode);
+	}
+	
+	// Filter candidates by conditions
+	for (const candidate of candidates) {
+		let matchesCondition = true;
+		
+		// Check 'has' condition
+		if (condition.has && matchesCondition) {
+			const subMatches = executeStructuredRule(candidate, condition.has, []);
+			if (subMatches.length === 0) matchesCondition = false;
+		}
+		
+		// Check 'not' condition
+		if (condition.not && matchesCondition) {
+			const subMatches = executeStructuredRule(candidate, condition.not, []);
+			if (subMatches.length > 0) matchesCondition = false;
+		}
+		
+		// Check 'any' condition (at least one must match)
+		if (condition.any && matchesCondition) {
+			let anyMatches = false;
+			for (const subCondition of condition.any) {
+				const subMatches = executeStructuredRule(candidate, subCondition, []);
+				if (subMatches.length > 0) {
+					anyMatches = true;
+					break;
+				}
+			}
+			if (!anyMatches) matchesCondition = false;
+		}
+		
+		// Check 'all' condition (all must match)
+		if (condition.all && matchesCondition) {
+			for (const subCondition of condition.all) {
+				const subMatches = executeStructuredRule(candidate, subCondition, []);
+				if (subMatches.length === 0) {
+					matchesCondition = false;
+					break;
+				}
+			}
+		}
+		
+		// Check 'regex' condition
+		if (condition.regex && matchesCondition) {
+			const text = candidate.text();
+			const regex = new RegExp(condition.regex);
+			if (!regex.test(text)) matchesCondition = false;
+		}
+		
+		if (matchesCondition) {
+			matches.push(candidate);
+		}
+	}
+	
+	return matches;
 }
 
 const astGrepNapiRunner: RunnerDefinition = {
@@ -221,9 +418,8 @@ const astGrepNapiRunner: RunnerDefinition = {
 		const diagnostics: Diagnostic[] = [];
 		const rootNode = root.root();
 
-		// Load rules from both directories
+		// Load rules from ts-slop-rules only (complementary to ast-grep CLI)
 		const ruleDirs = [
-			path.join(process.cwd(), "rules/ast-grep-rules/rules"),
 			path.join(process.cwd(), "rules/ts-slop-rules/rules"),
 		];
 
@@ -231,16 +427,41 @@ const astGrepNapiRunner: RunnerDefinition = {
 			const rules = loadYamlRules(ruleDir);
 			
 			for (const rule of rules) {
-				const pattern = getPatternFromRule(rule);
-				if (!pattern) continue;
-				
-				// Skip rules for different languages
-				if (rule.language && rule.language !== "typescript" && rule.language !== "javascript") {
+				// Skip rules for different languages (case-insensitive)
+				const lang = rule.language?.toLowerCase();
+				if (lang && lang !== "typescript" && lang !== "javascript") {
 					continue;
 				}
 
 				try {
-					const matches = rootNode.findAll(pattern);
+					let matches: any[] = [];
+					
+					if (isStructuredRule(rule) && rule.rule) {
+						// Use structured rule execution
+						matches = executeStructuredRule(rootNode, rule.rule, []);
+					} else if (rule.rule?.pattern || rule.rule?.kind) {
+						// Use simple pattern matching
+						const pattern = rule.rule.pattern || rule.rule.kind;
+						if (pattern) {
+							try {
+								matches = rootNode.findAll(pattern);
+							} catch {
+								// Pattern failed, try manual traversal for kind
+								if (rule.rule.kind) {
+									function findByKind(node: any, kind: string): any[] {
+										const results: any[] = [];
+										if (node.kind() === kind) results.push(node);
+										for (const child of node.children()) {
+											results.push(...findByKind(child, kind));
+										}
+										return results;
+									}
+									matches = findByKind(rootNode, rule.rule.kind);
+								}
+							}
+						}
+					}
+					
 					for (const match of matches) {
 						const range = match.range();
 						const weight = rule.metadata?.weight || 3;
@@ -256,11 +477,11 @@ const astGrepNapiRunner: RunnerDefinition = {
 							semantic: severity === "error" ? "blocking" : "warning",
 							tool: "ast-grep-napi",
 							rule: rule.id,
-							fixable: false, // TODO: extract from fix: field
+							fixable: false,
 						});
 					}
 				} catch {
-					// Pattern failed, skip
+					// Rule failed, skip
 				}
 			}
 		}

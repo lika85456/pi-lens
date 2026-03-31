@@ -34,6 +34,7 @@ export interface RunnerResult {
 		id: string;
 		message: string;
 		severity: "error" | "warning" | "info" | "hint";
+		semantic?: "blocking" | "warning" | "fixed" | "silent" | "none";
 	}>;
 	durationMs: number;
 	error?: string;
@@ -46,6 +47,7 @@ export interface ConcurrentRunnerResult {
 		id: string;
 		message: string;
 		severity: "error" | "warning" | "info" | "hint";
+		semantic?: "blocking" | "warning" | "fixed" | "silent" | "none";
 	}>;
 	durationMs: number;
 	error?: string;

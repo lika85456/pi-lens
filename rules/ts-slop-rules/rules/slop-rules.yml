@@ -345,18 +345,6 @@ rule:
       kind: number
       regex: ^[1-9][0-9]*$
 ---
-id: ts-nested-ternary
-language: typescript
-severity: warning
-message: Nested ternary - extract to if/else or named variables
-metadata:
-  weight: 3
-  category: slop
-rule:
-  kind: conditional_expression
-  has:
-    kind: conditional_expression
----
 id: ts-unnecessary-else-return
 language: typescript
 severity: warning

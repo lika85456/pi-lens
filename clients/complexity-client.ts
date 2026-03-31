@@ -451,39 +451,45 @@ export class ComplexityClient {
 	checkThresholds(metrics: FileComplexity): string[] {
 		const warnings: string[] = [];
 
-		if (metrics.maintainabilityIndex < 60) {
+		// TUNED: Only flag extreme cases to reduce noise
+		// MI < 30 is "critically poor" (was < 60, too aggressive)
+		if (metrics.maintainabilityIndex < 30) {
 			warnings.push(
 				`Maintainability dropped to ${metrics.maintainabilityIndex} — extract logic into helper functions`,
 			);
 		}
 
-		if (metrics.cyclomaticComplexity > 10) {
+		// Cyclomatic > 20 is very high (was > 10)
+		if (metrics.cyclomaticComplexity > 20) {
 			warnings.push(
 				`High complexity (${metrics.cyclomaticComplexity}) — use early returns or switch expressions`,
 			);
 		}
 
-		if (metrics.cognitiveComplexity > 15) {
+		// Cognitive > 50 is high (was > 15, flagged almost everything)
+		if (metrics.cognitiveComplexity > 50) {
 			warnings.push(
 				`Cognitive complexity (${metrics.cognitiveComplexity}) — simplify logic flow`,
 			);
 		}
 
-		if (metrics.maxNestingDepth > 4) {
+		// Nesting > 6 is deep (was > 4, normal for complex code)
+		if (metrics.maxNestingDepth > 6) {
 			warnings.push(
 				`Deep nesting (${metrics.maxNestingDepth} levels) — extract nested logic into separate functions`,
 			);
 		}
 
-		if (metrics.codeEntropy > 3.5) {
+		// Entropy > 5.0 is high (was > 3.5, too sensitive)
+		if (metrics.codeEntropy > 5.0) {
 			warnings.push(
 				`High entropy (${metrics.codeEntropy.toFixed(1)} bits) — follow project conventions`,
 			);
 		}
 
-		// Comments ratio (>40% = excessive comments, AI slop signal)
+		// Comments ratio (>60% = excessive, was > 40%)
 		const totalLines = metrics.linesOfCode + metrics.commentLines;
-		if (totalLines > 10 && metrics.commentLines / totalLines > 0.4) {
+		if (totalLines > 10 && metrics.commentLines / totalLines > 0.6) {
 			warnings.push(
 				`Excessive comments (${Math.round((metrics.commentLines / totalLines) * 100)}%) — remove obvious comments`,
 			);

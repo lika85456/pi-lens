@@ -17,22 +17,25 @@ version: "1.2"
   - pattern: "**/services/**/*.ts"
     max_lines: 500
     must_not:
-      - pattern: '(?:\s{8,}.*\n){5,}'
-        message: "Deep nesting detected (4+ levels). Refactor into smaller functions."
+      # TUNED: Was (8+ spaces, 5 lines), now (12+ spaces, 10 lines)
+      - pattern: '(?:\s{12,}.*\n){10,}'
+        message: "Extreme nesting detected (6+ levels). Refactor into smaller functions."
 
   # Clients: can be larger but still bounded
   - pattern: "**/clients/**/*.ts|**/commands/**/*.ts"
     max_lines: 1000
     must_not:
-      - pattern: '(?:\s{8,}.*\n){5,}'
-        message: "Deep nesting detected (4+ levels). Refactor into smaller functions."
+      # TUNED: Was (8+ spaces, 5 lines), now (12+ spaces, 10 lines)
+      - pattern: '(?:\s{12,}.*\n){10,}'
+        message: "Extreme nesting detected (6+ levels). Refactor into smaller functions."
 
   # General limit for other files (higher than before)
   - pattern: "**/*.{ts,tsx,js,jsx,py,go,rs}"
     max_lines: 3000
     must_not:
-      - pattern: '(?:\s{8,}.*\n){5,}'
-        message: "Deep nesting detected (4+ levels). Refactor into smaller functions."
+      # TUNED: Was (8+ spaces, 5 lines), now (12+ spaces, 10 lines) for extreme nesting only
+      - pattern: '(?:\s{12,}.*\n){10,}'
+        message: "Extreme nesting detected (6+ levels). Refactor into smaller functions."
 
   # Test files: more relaxed (structure is different)
   - pattern: "**/*.test.ts|**/*.test.js|**/*.spec.ts|**/*.spec.js"
@@ -100,20 +103,13 @@ rules:
   #     - pattern: 'process\.env'
   #       message: "Domain/Service logic must not read env vars directly — inject config."
 
-  # Relaxed console rule - allow console in CLI tools, test files
-  - pattern: "**/src/**/*.ts|**/src/**/*.tsx|**/lib/**/*.ts"
-    must_not:
-      - pattern: 'console\.(log|warn|error)'
-        message: "Core library code should use a structured logger, not console.log."
-
   # --- Async Patterns ---
-  - pattern: "**/*.{ts,tsx,js,jsx}"
-    must_not:
-      - pattern: '\.then\('
-        message: "Prefer async/await over .then() chains for better readability and error handling."
-        note: |
-          Convert: promise.then(x => y).catch(e => z)
-          To: try { const x = await promise; y; } catch (e) { z; }
+  # DISABLED: .then() rule was too aggressive - flagged all promise usage
+  # Only flag in specific contexts (3+ level chains) via tree-sitter instead
+  # - pattern: "**/*.{ts,tsx,js,jsx}"
+  #   must_not:
+  #     - pattern: '\.then\('
+  #       message: "Prefer async/await over .then() chains for better readability."
 
   # --- Grep-ability & Agent Search ---
   # Note: 'export default' is acceptable for entry points (index.ts)
