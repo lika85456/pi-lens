@@ -1,6 +1,6 @@
 # pi-lens
 
-Real-time code quality feedback for [pi](https://github.com/mariozechner/pi-coding-agent). Every file write and edit is automatically analyzed — type errors, security issues, lint violations, and code smells appear instantly in the agent's tool results.
+Real-time code feedback for [pi](https://github.com/mariozechner/pi-coding-agent) — LSP, linters, formatters, TODO scanner, dead code detection, duplicate detection, type coverage, spellcheck, shellcheck, oxlint, complexity metrics, automated fixes, and interactive refactoring.
 
 ## What pi-lens Does
 
