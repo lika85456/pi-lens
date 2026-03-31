@@ -9,8 +9,8 @@
  * Inspired by OpenCode's formatter.ts pattern
  */
 
-import * as path from "path";
-import * as fs from "fs/promises";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { safeSpawn } from "./safe-spawn.js";
 
 // --- Types ---
@@ -43,7 +43,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 async function findUp(
 	targets: string[],
 	startDir: string,
-	stopDir: string = path.parse(startDir).root
+	stopDir: string = path.parse(startDir).root,
 ): Promise<string[]> {
 	const found: string[] = [];
 	let currentDir = startDir;
@@ -76,7 +76,7 @@ async function which(command: string): Promise<string | null> {
 	const result = safeSpawn(
 		process.platform === "win32" ? "where" : "which",
 		[command],
-		{ timeout: 5000 }
+		{ timeout: 5000 },
 	);
 	if (result.error || result.status !== 0) return null;
 	return result.stdout?.trim().split("\n")[0] ?? null;
@@ -88,12 +88,23 @@ export const biomeFormatter: FormatterInfo = {
 	name: "biome",
 	command: ["npx", "@biomejs/biome", "format", "--write", "$FILE"],
 	extensions: [
-		".js", ".jsx", ".mjs", ".cjs",
-		".ts", ".tsx", ".mts", ".cts",
-		".json", ".jsonc",
-		".css", ".scss", ".sass",
-		".vue", ".svelte",
-		".html", ".htm"
+		".js",
+		".jsx",
+		".mjs",
+		".cjs",
+		".ts",
+		".tsx",
+		".mts",
+		".cts",
+		".json",
+		".jsonc",
+		".css",
+		".scss",
+		".sass",
+		".vue",
+		".svelte",
+		".html",
+		".htm",
 	],
 	async detect(cwd: string) {
 		const configs = ["biome.json", "biome.jsonc"];
@@ -103,7 +114,9 @@ export const biomeFormatter: FormatterInfo = {
 		// Also check if biome is in package.json devDependencies
 		const pkgPath = path.join(cwd, "package.json");
 		if (await fileExists(pkgPath)) {
-			const pkg = await readJson(pkgPath) as { devDependencies?: Record<string, string> };
+			const pkg = (await readJson(pkgPath)) as {
+				devDependencies?: Record<string, string>;
+			};
 			if (pkg.devDependencies?.["@biomejs/biome"]) return true;
 		}
 
@@ -115,22 +128,42 @@ export const prettierFormatter: FormatterInfo = {
 	name: "prettier",
 	command: ["npx", "prettier", "--write", "$FILE"],
 	extensions: [
-		".js", ".jsx", ".mjs", ".cjs",
-		".ts", ".tsx", ".mts", ".cts",
-		".json", ".jsonc",
-		".css", ".scss", ".sass", ".less",
-		".vue", ".svelte",
-		".html", ".htm",
-		".md", ".mdx",
-		".yaml", ".yml",
-		".graphql", ".gql"
+		".js",
+		".jsx",
+		".mjs",
+		".cjs",
+		".ts",
+		".tsx",
+		".mts",
+		".cts",
+		".json",
+		".jsonc",
+		".css",
+		".scss",
+		".sass",
+		".less",
+		".vue",
+		".svelte",
+		".html",
+		".htm",
+		".md",
+		".mdx",
+		".yaml",
+		".yml",
+		".graphql",
+		".gql",
 	],
 	async detect(cwd: string) {
 		// Check for prettier config files
 		const configs = [
-			".prettierrc", ".prettierrc.json", ".prettierrc.yml",
-			".prettierrc.yaml", ".prettierrc.js", ".prettierrc.cjs",
-			"prettier.config.js", "prettier.config.cjs"
+			".prettierrc",
+			".prettierrc.json",
+			".prettierrc.yml",
+			".prettierrc.yaml",
+			".prettierrc.js",
+			".prettierrc.cjs",
+			"prettier.config.js",
+			"prettier.config.cjs",
 		];
 		const found = await findUp(configs, cwd);
 		if (found.length > 0) return true;
@@ -138,12 +171,12 @@ export const prettierFormatter: FormatterInfo = {
 		// Check package.json
 		const pkgPath = path.join(cwd, "package.json");
 		if (await fileExists(pkgPath)) {
-			const pkg = await readJson(pkgPath) as {
-				devDependencies?: Record<string, string>,
-				dependencies?: Record<string, string>,
-				prettier?: unknown
+			const pkg = (await readJson(pkgPath)) as {
+				devDependencies?: Record<string, string>;
+				dependencies?: Record<string, string>;
+				prettier?: unknown;
 			};
-			if (pkg.devDependencies?.["prettier"] || pkg.dependencies?.["prettier"]) {
+			if (pkg.devDependencies?.prettier || pkg.dependencies?.prettier) {
 				return true;
 			}
 			// Also check if "prettier" field exists in package.json
@@ -183,7 +216,7 @@ export const ruffFormatter: FormatterInfo = {
 		}
 
 		// Check if ruff binary available and no other Python formatter detected
-		const hasRuff = await which("ruff") !== null;
+		const hasRuff = (await which("ruff")) !== null;
 		if (hasRuff) {
 			// Prefer ruff if no black config found
 			const blackFound = await findUp(["pyproject.toml"], cwd);
@@ -229,7 +262,7 @@ export const gofmtFormatter: FormatterInfo = {
 	name: "gofmt",
 	command: ["gofmt", "-w", "$FILE"],
 	extensions: [".go"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("gofmt")) !== null;
 	},
 };
@@ -238,7 +271,7 @@ export const rustfmtFormatter: FormatterInfo = {
 	name: "rustfmt",
 	command: ["rustfmt", "$FILE"],
 	extensions: [".rs"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("rustfmt")) !== null;
 	},
 };
@@ -247,7 +280,7 @@ export const zigFormatter: FormatterInfo = {
 	name: "zig",
 	command: ["zig", "fmt", "$FILE"],
 	extensions: [".zig", ".zon"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("zig")) !== null;
 	},
 };
@@ -256,7 +289,7 @@ export const dartFormatter: FormatterInfo = {
 	name: "dart",
 	command: ["dart", "format", "$FILE"],
 	extensions: [".dart"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("dart")) !== null;
 	},
 };
@@ -265,7 +298,7 @@ export const shfmtFormatter: FormatterInfo = {
 	name: "shfmt",
 	command: ["shfmt", "-w", "$FILE"],
 	extensions: [".sh", ".bash"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("shfmt")) !== null;
 	},
 };
@@ -274,7 +307,7 @@ export const nixfmtFormatter: FormatterInfo = {
 	name: "nixfmt",
 	command: ["nixfmt", "$FILE"],
 	extensions: [".nix"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("nixfmt")) !== null;
 	},
 };
@@ -283,7 +316,7 @@ export const mixFormatter: FormatterInfo = {
 	name: "mix",
 	command: ["mix", "format", "$FILE"],
 	extensions: [".ex", ".exs", ".eex", ".heex", ".leex"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("mix")) !== null;
 	},
 };
@@ -318,7 +351,7 @@ export const ktlintFormatter: FormatterInfo = {
 	name: "ktlint",
 	command: ["ktlint", "-F", "$FILE"],
 	extensions: [".kt", ".kts"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("ktlint")) !== null;
 	},
 };
@@ -327,7 +360,7 @@ export const terraformFormatter: FormatterInfo = {
 	name: "terraform",
 	command: ["terraform", "fmt", "$FILE"],
 	extensions: [".tf", ".tfvars"],
-	async detect(cwd: string) {
+	async detect(_cwd: string) {
 		return (await which("terraform")) !== null;
 	},
 };
@@ -352,14 +385,14 @@ const ALL_FORMATTERS: FormatterInfo[] = [
 	terraformFormatter,
 ];
 
-// Cache for detection results
-const detectionCache = new Map<string, Map<string, boolean>>();
+// Cache for detection results - stores array of enabled formatter names per cwd+ext
+const detectionCache = new Map<string, Map<string, string[]>>();
 
 // --- Public API ---
 
 export async function getFormattersForFile(
 	filePath: string,
-	cwd: string
+	cwd: string,
 ): Promise<FormatterInfo[]> {
 	const ext = path.extname(filePath).toLowerCase();
 	const cacheKey = `${cwd}:${ext}`;
@@ -372,17 +405,44 @@ export async function getFormattersForFile(
 	}
 
 	if (cached.has(cacheKey)) {
-		const enabled = cached.get(cacheKey);
-		if (!enabled) return [];
-		// Return cached formatters
-		return ALL_FORMATTERS.filter(f => f.extensions.includes(ext));
+		const enabledNames = cached.get(cacheKey);
+		if (!enabledNames || enabledNames.length === 0) return [];
+		// Return cached formatters by name (preserves priority order)
+		return ALL_FORMATTERS.filter((f) => enabledNames.includes(f.name));
 	}
 
 	// Detect formatters for this extension
-	const matching = ALL_FORMATTERS.filter(f => f.extensions.includes(ext));
+	const matching = ALL_FORMATTERS.filter((f) => f.extensions.includes(ext));
 	const enabled: FormatterInfo[] = [];
 
+	// Check for Biome first (preferred default)
+	const biomeFormatter = matching.find((f) => f.name === "biome");
+	let biomeEnabled = false;
+	if (biomeFormatter) {
+		try {
+			biomeEnabled = await biomeFormatter.detect(cwd);
+			if (biomeEnabled) {
+				enabled.push(biomeFormatter);
+			}
+		} catch (err) {
+			console.error(
+				`[format] Detection failed for ${biomeFormatter.name}:`,
+				err,
+			);
+		}
+	}
+
+	// If Biome is enabled, skip Prettier for overlapping extensions
+	// (Biome is the preferred default, Prettier is fallback)
+	const skipPrettier = biomeEnabled;
+
 	for (const formatter of matching) {
+		// Skip Biome (already checked above)
+		if (formatter.name === "biome") continue;
+
+		// Skip Prettier if Biome is enabled (prevents race condition)
+		if (skipPrettier && formatter.name === "prettier") continue;
+
 		try {
 			const isEnabled = await formatter.detect(cwd);
 			if (isEnabled) {
@@ -394,7 +454,9 @@ export async function getFormattersForFile(
 		}
 	}
 
-	cached.set(cacheKey, enabled.length > 0);
+	// Store the list of enabled formatter names in cache
+	const enabledNames = enabled.map((f) => f.name);
+	cached.set(cacheKey, enabledNames);
 	return enabled;
 }
 
@@ -404,14 +466,14 @@ export function clearFormatterCache(): void {
 
 export async function formatFile(
 	filePath: string,
-	formatter: FormatterInfo
+	formatter: FormatterInfo,
 ): Promise<FormatterResult> {
 	try {
 		const absolutePath = path.resolve(filePath);
 		const contentBefore = await fs.readFile(absolutePath, "utf-8");
 
 		// Replace $FILE placeholder
-		const cmd = formatter.command.map(c => c.replace("$FILE", absolutePath));
+		const cmd = formatter.command.map((c) => c.replace("$FILE", absolutePath));
 
 		// Run formatter
 		const result = safeSpawn(cmd[0], cmd.slice(1), { timeout: 15000 });
@@ -442,5 +504,5 @@ export async function formatFile(
 }
 
 export function listAllFormatters(): string[] {
-	return ALL_FORMATTERS.map(f => f.name);
+	return ALL_FORMATTERS.map((f) => f.name);
 }
