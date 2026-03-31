@@ -5,16 +5,16 @@
  * Supports venv-local installations.
  */
 
+import { ensureTool } from "../../installer/index.js";
 import { safeSpawn } from "../../safe-spawn.js";
 import { stripAnsi } from "../../sanitize.js";
-import { createAvailabilityChecker } from "./utils/runner-helpers.js";
-import { parseRuffOutput } from "./utils/diagnostic-parsers.js";
 import type {
-	Diagnostic,
 	DispatchContext,
 	RunnerDefinition,
 	RunnerResult,
 } from "../types.js";
+import { parseRuffOutput } from "./utils/diagnostic-parsers.js";
+import { createAvailabilityChecker } from "./utils/runner-helpers.js";
 
 const ruff = createAvailabilityChecker("ruff", ".exe");
 
@@ -25,9 +25,14 @@ const ruffRunner: RunnerDefinition = {
 	enabledByDefault: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		// Skip if ruff is not installed
-		if (!ruff.isAvailable(ctx.cwd || process.cwd())) {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
+		const cwd = ctx.cwd || process.cwd();
+
+		// Auto-install ruff if not available (it's one of the 4 auto-install tools)
+		if (!ruff.isAvailable(cwd)) {
+			const installed = await ensureTool("ruff");
+			if (!installed) {
+				return { status: "skipped", diagnostics: [], semantic: "none" };
+			}
 		}
 
 		// IMPORTANT: Never use --fix in dispatch runner to prevent infinite loops.

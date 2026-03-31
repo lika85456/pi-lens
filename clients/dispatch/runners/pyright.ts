@@ -7,14 +7,15 @@
  * Requires: pyright (pip install pyright or npm install -g pyright)
  */
 
+import { ensureTool } from "../../installer/index.js";
 import { safeSpawn } from "../../safe-spawn.js";
-import { createAvailabilityChecker } from "./utils/runner-helpers.js";
 import type {
 	Diagnostic,
 	DispatchContext,
 	RunnerDefinition,
 	RunnerResult,
 } from "../types.js";
+import { createAvailabilityChecker } from "./utils/runner-helpers.js";
 
 const pyright = createAvailabilityChecker("pyright", ".exe");
 
@@ -25,15 +26,24 @@ const pyrightRunner: RunnerDefinition = {
 	enabledByDefault: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		// Skip if pyright is not installed
-		if (!pyright.isAvailable(ctx.cwd || process.cwd())) {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
+		const cwd = ctx.cwd || process.cwd();
+
+		// Auto-install pyright if not available (it's one of the 4 auto-install tools)
+		if (!pyright.isAvailable(cwd)) {
+			const installed = await ensureTool("pyright");
+			if (!installed) {
+				return { status: "skipped", diagnostics: [], semantic: "none" };
+			}
 		}
 
 		// Run pyright with JSON output (use venv-local or global command)
-		const result = safeSpawn(pyright.getCommand()!, ["--outputjson", ctx.filePath], {
-			timeout: 60000,
-		});
+		const result = safeSpawn(
+			pyright.getCommand()!,
+			["--outputjson", ctx.filePath],
+			{
+				timeout: 60000,
+			},
+		);
 
 		// Pyright returns non-zero when errors found, that's OK
 		if (result.error) {
@@ -72,10 +82,7 @@ const pyrightRunner: RunnerDefinition = {
 	},
 };
 
-function parsePyrightOutput(
-	data: any,
-	_filePath: string,
-): Diagnostic[] {
+function parsePyrightOutput(data: any, _filePath: string): Diagnostic[] {
 	const diagnostics: Diagnostic[] = [];
 
 	// Pyright JSON output has generalDiagnostics array
