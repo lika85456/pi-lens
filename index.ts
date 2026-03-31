@@ -52,6 +52,7 @@ import {
 import { dispatchLintWithEffect } from "./clients/services/effect-integration.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { getFormatService, resetFormatService } from "./clients/format-service.js";
+import { ensureTool } from "./clients/installer/index.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
  * Handles pi's custom diff format:
@@ -677,6 +678,21 @@ export default function (pi: ExtensionAPI) {
 
 		log(`Active tools: ${tools.join(", ")}`);
 		dbg(`session_start tools: ${tools.join(", ")}`);
+
+		// Pre-install TypeScript LSP if --lens-lsp flag is set (avoid delay on first use)
+		if (pi.getFlag("lens-lsp")) {
+			dbg("session_start: pre-installing TypeScript LSP...");
+			// Fire-and-forget: don't block session start, just warm up the cache
+			ensureTool("typescript-language-server").then((path) => {
+				if (path) {
+					dbg(`session_start: TypeScript LSP ready at ${path}`);
+				} else {
+					console.error("[lens] TypeScript LSP installation failed");
+				}
+			}).catch((err) => {
+				console.error("[lens] TypeScript LSP pre-install error:", err);
+			});
+		}
 
 		const cwd = ctx.cwd ?? process.cwd();
 		projectRoot = cwd; // Module-level for architect client
