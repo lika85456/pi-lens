@@ -173,16 +173,7 @@ Every file write/edit triggers the **dispatcher-runner system**:
 2. **LSP integration** (Phase 3, with `--lens-lsp`) — Real-time type errors from language servers
 3. **Dispatch system** — Routes file to appropriate runners by `FileKind`
 4. **Structural patterns** (tree-sitter) — Fast AST-based checks (50ms)
-5. **Runners execute** by priority (5 → 50):
-   - TypeScript type-checking (`ts-lsp` — built-in or LSP)
-   - Python type-checking (`pyright`)
-   - Linting (`biome`, `ruff`, `oxlint`, `shellcheck`)
-   - Spellcheck (`spellcheck` for Markdown)
-   - Structural analysis (`ast-grep-napi`, `ast-grep`)
-   - Type safety (`type-safety`)
-   - AI slop detection (`python-slop`)
-   - Architecture rules (`architect`)
-   - Go/Rust analysis (`go-vet`, `rust-clippy`)
+5. **Runners execute** by priority (lower = earlier). See [Runners](#runners) section for full list.
 
 **With `--lens-effect`:** All independent runners execute concurrently via Effect-TS.
 
@@ -198,6 +189,44 @@ Every file write/edit triggers the **dispatcher-runner system**:
 ```
 
 > **Note:** Only **blocking** issues (`ts-lsp`, `pyright` errors, `type-safety` switch errors, secrets) appear inline. Warnings are tracked but not shown inline (noise reduction) — run `/lens-booboo` to see all warnings.
+
+---
+
+### Runners
+
+pi-lens uses a **dispatcher-runner architecture** for extensible multi-language support. Runners are executed by priority (lower = earlier).
+
+| Runner | Language | Priority | Output | Description |
+|--------|----------|----------|--------|-------------|
+| **ts-lsp** | TypeScript | 5 | Blocking | TypeScript errors (hard stops) |
+| **pyright** | Python | 5 | Blocking | Python type errors (hard stops) |
+| **biome** | TS/JS | 10 | Warning | Linting issues (delta-tracked) |
+| **ruff** | Python | 10 | Warning | Python linting (delta-tracked) |
+| **oxlint** | TS/JS | 12 | Warning | Fast Rust-based JS/TS linter |
+| **ast-grep-napi** | TS/JS | 15 | Warning | **100x faster** structural analysis |
+| **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
+| **shellcheck** | Shell | 20 | Warning | Bash/sh/zsh/fish linting |
+| **python-slop** | Python | 25 | Warning | AI slop detection (~40 patterns) |
+| **spellcheck** | Markdown | 30 | Warning | Typo detection in docs |
+| **ast-grep** | Go, Rust, Python, etc. | 30 | Warning | Structural analysis via CLI (fallback for non-TS/JS) |
+| **similarity** | TS | 35 | Silent | Semantic duplicate detection (metrics only) |
+| **architect** | All | 40 | Warning | Architectural rule violations |
+| **go-vet** | Go | 50 | Warning | Go static analysis |
+| **rust-clippy** | Rust | 50 | Warning | Rust linting |
+
+**Priority legend:**
+- **5** — Type checkers (blocking errors)
+- **10-15** — Linters and structural analysis
+- **20-30** — Specialized checks (safety, slop, spellcheck)
+- **35** — Metrics only (silent)
+- **40-50** — Language-specific and architectural
+
+**Output semantics:**
+- **Blocking** — Hard stop, must fix (type errors, secrets)
+- **Warning** — Shown in `/lens-booboo`, not inline (noise reduction)
+- **Silent** — Tracked in metrics only, never shown
+
+**Disabled runners:** `ts-slop` (merged into `ast-grep-napi`)
 
 ---
 
@@ -529,31 +558,6 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 │ Go vet   │           │ Rust lint│           │          │
 └──────────┘           └──────────┘           └──────────┘
 ```
-
-### Available Runners
-
-| Runner | Language | Priority | Output | Description |
-|--------|----------|----------|--------|-------------|
-| **ts-lsp** | TypeScript | 5 | Blocking | TypeScript errors (hard stops) |
-| **pyright** | Python | 5 | Blocking | Python type errors (hard stops) |
-| **biome** | TS/JS | 10 | Warning | Linting issues (delta-tracked) |
-| **ruff** | Python | 10 | Warning | Python linting (delta-tracked) |
-| **oxlint** | TS/JS | 12 | Warning | Fast Rust-based JS/TS linter |
-| **ast-grep-napi** | TS/JS | 15 | Warning | **100x faster** structural analysis |
-| **type-safety** | TS | 20 | Mixed | Switch exhaustiveness (blocking), other (warning) |
-| **shellcheck** | Shell | 20 | Warning | Bash/sh/zsh/fish linting |
-| **python-slop** | Python | 25 | Warning | AI slop detection (~40 patterns) |
-| **spellcheck** | Markdown | 30 | Warning | Typo detection in docs |
-| **ast-grep** | Go, Rust, Python, etc. | 30 | Warning | Structural analysis via CLI (fallback for non-TS/JS) |
-| **similarity** | TS | 35 | Silent | Semantic duplicate detection (metrics only) |
-| **architect** | All | 40 | Warning | Architectural rule violations |
-| **go-vet** | Go | 50 | Warning | Go static analysis |
-| **rust-clippy** | Rust | 50 | Warning | Rust linting |
-
-**Disabled runners:** `ts-slop` (merged into `ast-grep-napi`)
-
-**Non-runner checks** (handled separately in `tool_result` hook):
-- **Secrets scanning** — Blocks on hardcoded secrets in ANY file type
 
 ### Runner Output Semantics
 
