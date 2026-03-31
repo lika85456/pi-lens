@@ -76,3 +76,4 @@ test-*.md
 test-*.sh
 test-filetime/
 
+TEST_COVERAGE_COMPLETE.md
