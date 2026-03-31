@@ -5,11 +5,12 @@ Real-time code quality feedback for [pi](https://github.com/mariozechner/pi-codi
 ## What pi-lens Does
 
 **For every file you edit:**
-1. **Type-checks** TypeScript, Python, Go, Rust (and 27 more languages with `--lens-lsp`)
-2. **Scans for secrets** — blocks on hardcoded API keys, tokens, passwords
-3. **Runs linters** — Biome (TS/JS), Ruff (Python), plus structural analysis
-4. **Detects code smells** — empty catch blocks, debuggers, nested ternaries, etc.
-5. **Only shows NEW issues** — delta-mode tracks baselines and filters pre-existing problems (reduces noise)
+1. **Auto-formats** — Detects and runs formatters (Biome, Prettier, Ruff, gofmt, rustfmt, etc.)
+2. **Type-checks** TypeScript, Python, Go, Rust (and 27 more languages with `--lens-lsp`)
+3. **Scans for secrets** — blocks on hardcoded API keys, tokens, passwords
+4. **Runs linters** — Biome (TS/JS), Ruff (Python), plus structural analysis
+5. **Detects code smells** — empty catch blocks, debuggers, nested ternaries, etc.
+6. **Only shows NEW issues** — delta-mode tracks baselines and filters pre-existing problems (reduces noise)
 
 **Blocking issues** (type errors, secrets) appear inline and stop the agent until fixed. **Warnings** are tracked but hidden inline — run `/lens-booboo` to see them all.
 
@@ -19,7 +20,11 @@ Real-time code quality feedback for [pi](https://github.com/mariozechner/pi-codi
 # Install
 pi install npm:pi-lens
 
-# Standard mode (built-in TypeScript type-checking, Python via pyright CLI)
+# Standard mode (auto-formatting, type-checking, linting enabled by default)
+pi
+
+# Disable auto-formatting if needed
+pi --no-autoformat
 
 # Full LSP mode (31 language servers)
 pi --lens-lsp
@@ -43,6 +48,38 @@ pi install git:github.com/apmantza/pi-lens
 ---
 
 ## Features
+
+### Auto-Formatting (Default Enabled)
+
+pi-lens **automatically formats** every file you write or edit. Formatters are auto-detected based on your project configuration:
+
+| Formatter | Languages | Detection |
+|-----------|-----------|-----------|
+| **Biome** | TS/JS/JSON/CSS | `biome.json` or `@biomejs/biome` in devDependencies |
+| **Prettier** | TS/JS/JSON/CSS/Markdown | `.prettierrc` or `prettier` in devDependencies |
+| **Ruff** | Python | `[tool.ruff]` in `pyproject.toml` |
+| **Black** | Python | `[tool.black]` in `pyproject.toml` |
+| **gofmt** | Go | `go` binary available |
+| **rustfmt** | Rust | `rustfmt` binary available |
+| **zig fmt** | Zig | `zig` binary available |
+| **dart format** | Dart | `dart` binary available |
+| **shfmt** | Shell | `shfmt` binary available |
+| **mix format** | Elixir | `mix` binary available |
+
+**How it works:**
+1. Agent writes a file
+2. pi-lens detects formatters based on config files/dependencies
+3. All matching formatters run **concurrently** via Effect-TS
+4. FileTime tracking ensures safety (agents re-read if file changes externally)
+
+**Safety:** If a formatter changes the file, the agent is notified and must re-read before next edit — preventing stale content overwrites.
+
+**Disable:**
+```bash
+pi --no-autoformat    # Skip automatic formatting
+```
+
+---
 
 ### LSP Support (NEW) — 31 Language Servers
 
@@ -583,7 +620,7 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 
 | Mode | Command | What happens |
 |------|---------|--------------|
-| **Standard** (default) | `pi` | Built-in TS/Python type-checking, sequential execution |
+| **Standard** (default) | `pi` | Auto-formatting, TS/Python type-checking, sequential execution |
 | **Full LSP** | `pi --lens-lsp` | Real LSP servers (31 languages), sequential execution |
 | **Fastest** | `pi --lens-lsp --lens-effect` | Real LSP + concurrent execution (all runners in parallel) |
 | **Debug** | `pi --lens-lsp --lens-bus` | Real LSP + event bus tracking (for troubleshooting) |
@@ -596,6 +633,7 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 | `--lens-effect` | Run all runners **concurrently** (faster) instead of sequentially |
 | `--lens-bus` | Enable event bus for diagnostic aggregation (development/debugging) |
 | `--lens-verbose` | Enable detailed console logging |
+| `--no-autoformat` | Disable automatic formatting (formatting is **enabled by default**) |
 | `--autofix-biome` | Auto-fix lint issues with Biome |
 | `--autofix-ruff` | Auto-fix lint issues with Ruff (Python) |
 | `--no-tests` | Disable automatic test running on file write |
