@@ -53,9 +53,15 @@ jscpd-report.json
 !README.md
 !CHANGELOG.md
 !AST_GREP_RULES.md
-!featurestoadd.md
-!OPENCODE_GAP_ANALYSIS.md
 !skills/**/*.md
+
+# Local development tracking files
+featurestoadd.md
+OPENCODE_GAP_ANALYSIS.md
+refactoring.md
+newfeatures.md
+plan-reuse.md
+opencodeplan.md
 
 # docs folder entirely
 docs/
