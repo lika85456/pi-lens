@@ -209,14 +209,23 @@ export class FormatService {
 // --- Singleton Instance ---
 
 let globalFormatService: FormatService | null = null;
+let currentSessionID: string | null = null;
 
 export function getFormatService(sessionID?: string, enabled: boolean = true): FormatService {
-	if (!globalFormatService || sessionID) {
+	// Create new instance if:
+	// 1. No service exists yet
+	// 2. Session ID changed (different session)
+	const shouldCreateNew = !globalFormatService || 
+		(sessionID && sessionID !== currentSessionID);
+	
+	if (shouldCreateNew) {
 		globalFormatService = new FormatService(sessionID ?? "default", enabled);
+		currentSessionID = sessionID ?? "default";
 	}
-	return globalFormatService;
+	return globalFormatService!;
 }
 
 export function resetFormatService(): void {
 	globalFormatService = null;
+	currentSessionID = null;
 }

@@ -25,8 +25,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 		groups: [
 			// TypeScript LSP always runs first - blocks on errors
 			{ mode: "all", runnerIds: ["ts-lsp"], filterKinds: ["jsts"] },
-			// Then biome for fast linting
-			{ mode: "fallback", runnerIds: ["biome-lint"] },
+			// Then biome or oxlint for fast linting (user preference)
+			{ mode: "fallback", runnerIds: ["biome-lint", "oxlint"] },
 			// Type safety checks
 			{ mode: "fallback", runnerIds: ["type-safety"] },
 			// Structural analysis
@@ -103,7 +103,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 	markdown: {
 		name: "Markdown Processing",
 		groups: [
-			// No specific linting for markdown yet
+			// Spellcheck for typos
+			{ mode: "fallback", runnerIds: ["spellcheck"] },
 		],
 	},
 
@@ -113,6 +114,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 	shell: {
 		name: "Shell Script Linting",
 		groups: [
+			// Shellcheck for bash/sh/zsh linting
+			{ mode: "fallback", runnerIds: ["shellcheck"] },
 			// Architectural rules
 			{ mode: "fallback", runnerIds: ["architect"] },
 		],

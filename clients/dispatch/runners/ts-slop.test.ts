@@ -18,6 +18,17 @@ function createMockContext(filePath: string): DispatchContext {
 	};
 }
 
+// Helper for safe file cleanup
+function safeUnlink(filePath: string): void {
+	try {
+		if (fs.existsSync(filePath)) {
+			fs.unlinkSync(filePath);
+		}
+	} catch {
+		// Ignore cleanup errors on Windows
+	}
+}
+
 describe("ts-slop runner", () => {
 	const require = createRequire(import.meta.url);
 
@@ -72,7 +83,7 @@ function processItems(items: string[]) {
 			// (specific patterns may vary based on ast-grep rule accuracy)
 			expect(result.status).not.toBe("skipped");
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -104,7 +115,7 @@ function getMax(a: number, b: number): number {
 			// (specific patterns may vary based on ast-grep rule accuracy)
 			expect(result.status).not.toBe("skipped");
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -134,7 +145,7 @@ function hasItem(arr: string[], item: string): boolean {
 			// (specific patterns may vary based on ast-grep rule accuracy)
 			expect(result.status).not.toBe("skipped");
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -163,7 +174,7 @@ function processItems(arr: string[]): void {
 			// Just verify the scan ran without errors
 			expect(result.status).toBe("succeeded");
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -209,7 +220,7 @@ function hasItems(arr: string[]): boolean {
 		} finally {
 			try {
 				if (fs.existsSync(tmpFile)) {
-					fs.unlinkSync(tmpFile);
+					safeUnlink(tmpFile);
 				}
 			} catch {
 				// Ignore cleanup errors

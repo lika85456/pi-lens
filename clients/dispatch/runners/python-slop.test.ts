@@ -18,6 +18,17 @@ function createMockContext(filePath: string): DispatchContext {
 	};
 }
 
+// Helper for safe file cleanup
+function safeUnlink(filePath: string): void {
+	try {
+		if (fs.existsSync(filePath)) {
+			fs.unlinkSync(filePath);
+		}
+	} catch {
+		// Ignore cleanup errors on Windows
+	}
+}
+
 describe("python-slop runner", () => {
 	const require = createRequire(import.meta.url);
 
@@ -74,7 +85,7 @@ def process_items(items):
 				),
 			).toBe(true);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -109,7 +120,7 @@ def find_max(a, b):
 				),
 			).toBe(true);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -143,7 +154,7 @@ def process(data):
 				),
 			).toBe(true);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -175,7 +186,7 @@ def convert(items):
 				),
 			).toBe(true);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -206,7 +217,7 @@ def check_range(x, a, b):
 				),
 			).toBe(true);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -245,7 +256,7 @@ def convert(items):
 			);
 			expect(slopIssues.length).toBe(0);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 
@@ -281,7 +292,7 @@ def bad_code(items):
 			);
 			expect(warnings.length).toBeGreaterThanOrEqual(1);
 		} finally {
-			fs.unlinkSync(tmpFile);
+			safeUnlink(tmpFile);
 		}
 	});
 });

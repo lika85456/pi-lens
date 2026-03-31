@@ -162,6 +162,12 @@ export default function (pi: ExtensionAPI) {
 		default: false,
 	});
 
+	pi.registerFlag("no-oxlint", {
+		description: "Disable Oxlint fast JS/TS linter",
+		type: "boolean",
+		default: false,
+	});
+
 	pi.registerFlag("no-ast-grep", {
 		description: "Disable ast-grep structural analysis",
 		type: "boolean",
@@ -170,6 +176,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerFlag("no-ruff", {
 		description: "Disable Ruff Python linting",
+		type: "boolean",
+		default: false,
+	});
+
+	pi.registerFlag("no-shellcheck", {
+		description: "Disable shellcheck for shell scripts",
 		type: "boolean",
 		default: false,
 	});
