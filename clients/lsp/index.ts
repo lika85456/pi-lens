@@ -55,7 +55,9 @@ export class LSPService {
 			const root = await server.root(filePath);
 			if (!root) continue;
 
-			const key = `${server.id}:${root}`;
+			// Normalize root path for consistent cache key on Windows
+			const normalizedRoot = process.platform === "win32" ? root.toLowerCase() : root;
+			const key = `${server.id}:${normalizedRoot}`;
 
 			// Check cache
 			const existing = this.state.clients.get(key);

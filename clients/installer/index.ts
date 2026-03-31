@@ -284,6 +284,7 @@ async function installNpmTool(
 		const proc = spawn(pm, ["install", packageName], {
 			cwd: TOOLS_DIR,
 			stdio: ["ignore", "pipe", "pipe"],
+			shell: isWindows, // Required for .cmd files on Windows
 		});
 
 		return new Promise((resolve, reject) => {
@@ -319,8 +320,10 @@ async function installNpmTool(
 async function installPipTool(packageName: string): Promise<string | undefined> {
 	try {
 		const pipCmd = process.platform === "win32" ? "pip" : "pip3";
+		const isWindows = process.platform === "win32";
 		const proc = spawn(pipCmd, ["install", "--user", packageName], {
 			stdio: ["ignore", "pipe", "pipe"],
+			shell: isWindows, // Required for .cmd files on Windows
 		});
 
 		return new Promise((resolve, reject) => {

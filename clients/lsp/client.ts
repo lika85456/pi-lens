@@ -12,12 +12,13 @@ import {
 	createMessageConnection,
 	StreamMessageReader,
 	StreamMessageWriter,
-} from "vscode-jsonrpc/node";
+} from "vscode-jsonrpc/node.js";
 import type { MessageConnection } from "vscode-jsonrpc";
 import path from "path";
-import { pathToFileURL, fileURLToPath } from "url";
+import { pathToFileURL } from "url";
 import type { LSPProcess } from "./launch.js";
 import { DiagnosticFound } from "../bus/events.js";
+import { uriToPath, normalizeMapKey } from "./path-utils.js";
 
 // --- Types ---
 
@@ -58,12 +59,12 @@ export async function createLSPClient(options: {
 	root: string;
 	initialization?: Record<string, unknown>;
 }): Promise<LSPClientInfo> {
-	const { serverId, process, root, initialization } = options;
+	const { serverId, process: lspProcess, root, initialization } = options;
 
 	// Create JSON-RPC connection
 	const connection = createMessageConnection(
-		new StreamMessageReader(process.stdout),
-		new StreamMessageWriter(process.stdin)
+		new StreamMessageReader(lspProcess.stdout),
+		new StreamMessageWriter(lspProcess.stdin)
 	);
 
 	// Track diagnostics per file
@@ -72,7 +73,7 @@ export async function createLSPClient(options: {
 
 	// Handle incoming diagnostics with debouncing
 	connection.onNotification("textDocument/publishDiagnostics", (params: { uri: string; diagnostics?: LSPDiagnostic[] }) => {
-		const filePath = normalizeFilePath(params.uri);
+		const filePath = uriToPath(params.uri);
 		const newDiags: LSPDiagnostic[] = params.diagnostics || [];
 
 		// Debounce: clear existing timer and set new one
@@ -115,6 +116,7 @@ export async function createLSPClient(options: {
 	connection.onRequest("client/registerCapability", async () => {});
 	connection.onRequest("client/unregisterCapability", async () => {});
 	connection.onRequest("workspace/configuration", async () => [initialization ?? {}]);
+	connection.onRequest("window/workDoneProgress/create", async () => {});
 
 	// Start listening
 	connection.listen();
@@ -131,19 +133,8 @@ export async function createLSPClient(options: {
 				},
 			],
 			capabilities: {
-				textDocument: {
-					synchronization: {
-						dynamicRegistration: false,
-						willSave: false,
-						willSaveWaitUntil: false,
-						didSave: false,
-					},
-					publishDiagnostics: {
-						dynamicRegistration: false,
-						versionSupport: true,
-						tagSupport: { valueSet: [1, 2] },
-						relatedInformation: true,
-					},
+				window: {
+					workDoneProgress: true,
 				},
 				workspace: {
 					workspaceFolders: {
@@ -151,6 +142,18 @@ export async function createLSPClient(options: {
 						changeNotifications: true,
 					},
 					configuration: true,
+					didChangeWatchedFiles: {
+						dynamicRegistration: true,
+					},
+				},
+				textDocument: {
+					synchronization: {
+						didOpen: true,
+						didChange: true,
+					},
+					publishDiagnostics: {
+						versionSupport: true,
+					},
 				},
 			},
 			initializationOptions: initialization,
@@ -160,6 +163,13 @@ export async function createLSPClient(options: {
 
 	// Send initialized notification
 	await connection.sendNotification("initialized", {});
+
+	// Send configuration if provided (helps pyright and other servers)
+	if (initialization) {
+		await connection.sendNotification("workspace/didChangeConfiguration", {
+			settings: initialization,
+		});
+	}
 
 	// Track open documents with version numbers
 	const documentVersions = new Map<string, number>();
@@ -172,8 +182,20 @@ export async function createLSPClient(options: {
 		notify: {
 			async open(filePath, content, languageId) {
 				const uri = pathToFileURL(filePath).href;
-				documentVersions.set(filePath, 0);
-				diagnostics.delete(filePath); // Clear stale diagnostics
+				// Normalize path for Windows case-insensitive lookup
+				const normalizedPath = normalizeMapKey(filePath);
+				documentVersions.set(normalizedPath, 0);
+				diagnostics.delete(normalizedPath); // Clear stale diagnostics
+
+				// Send workspace notification first (like opencode does)
+				await connection.sendNotification("workspace/didChangeWatchedFiles", {
+					changes: [
+						{
+							uri,
+							type: 1, // Created
+						},
+					],
+				});
 
 				await connection.sendNotification("textDocument/didOpen", {
 					textDocument: {
@@ -198,23 +220,35 @@ export async function createLSPClient(options: {
 		},
 
 		getDiagnostics(filePath) {
-			return diagnostics.get(filePath) ?? [];
+			// Normalize path for Windows case-insensitive lookup
+			const normalizedPath = normalizeMapKey(filePath);
+			return diagnostics.get(normalizedPath) ?? [];
 		},
 
-		async waitForDiagnostics(filePath, timeoutMs = 3000) {
-			if (diagnostics.has(filePath)) return;
+		async waitForDiagnostics(filePath, timeoutMs = 10000) {
+			const normalizedPath = normalizeMapKey(filePath);
+			if (diagnostics.has(normalizedPath)) return;
 
+			// Use bus subscription like OpenCode - more reliable than polling
 			return new Promise((resolve) => {
-				const checkInterval = setInterval(() => {
-					if (diagnostics.has(filePath)) {
-						clearInterval(checkInterval);
-						clearTimeout(timeout);
-						resolve();
+				let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+				
+				// Subscribe to diagnostic events from this server
+				const unsub = DiagnosticFound.subscribe((event) => {
+					if (event.properties.filePath === normalizedPath && event.properties.runnerId === serverId) {
+						// Debounce to allow LSP to send follow-up diagnostics (e.g., semantic after syntax)
+						if (debounceTimer) clearTimeout(debounceTimer);
+						debounceTimer = setTimeout(() => {
+							unsub();
+							clearTimeout(timeout);
+							resolve();
+						}, DIAGNOSTICS_DEBOUNCE_MS);
 					}
-				}, 50);
+				});
 
 				const timeout = setTimeout(() => {
-					clearInterval(checkInterval);
+					if (debounceTimer) clearTimeout(debounceTimer);
+					unsub();
 					resolve();
 				}, timeoutMs);
 			});
@@ -234,20 +268,14 @@ export async function createLSPClient(options: {
 			} catch { /* ignore */ }
 
 			connection.dispose();
-			process.process.kill();
+			lspProcess.process.kill();
 		},
 	};
 }
 
 // --- Utilities ---
 
-function normalizeFilePath(uri: string): string {
-	try {
-		return fileURLToPath(uri);
-	} catch {
-		return uri;
-	}
-}
+// Using shared path utilities from path-utils.ts
 
 function severityFromNumber(sev: number): "error" | "warning" | "info" | "hint" {
 	switch (sev) {

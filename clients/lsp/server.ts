@@ -86,17 +86,66 @@ export const TypeScriptServer: LSPServerInfo = {
 		"package.json",
 	]),
 	async spawn(root) {
-		// Ensure typescript-language-server is installed
-		const toolPath = await ensureTool("typescript-language-server");
-		if (!toolPath) {
-			console.error("[lsp] typescript-language-server not found and could not be installed");
-			return undefined;
+		const path = await import("path");
+		const fs = await import("fs/promises");
+		
+		// Find typescript-language-server - prefer local project version
+		let lspPath: string | undefined;
+		const localLsp = path.join(root, "node_modules", ".bin", "typescript-language-server");
+		const localLspCmd = path.join(root, "node_modules", ".bin", "typescript-language-server.cmd");
+		
+		// Check for local version first (Windows .cmd first, then Unix)
+		for (const checkPath of [localLspCmd, localLsp]) {
+			try {
+				await fs.access(checkPath);
+				lspPath = checkPath;
+				break;
+			} catch { /* not found */ }
+		}
+		
+		// Fall back to auto-installed version
+		if (!lspPath) {
+			lspPath = await ensureTool("typescript-language-server");
+			if (!lspPath) {
+				console.error("[lsp] typescript-language-server not found");
+				return undefined;
+			}
 		}
 
-		// Use the installed tool
+		// Find tsserver.js path (needed for TypeScript LSP initialization)
+		// Check relative to the LSP path first, then project root
+		let tsserverPath: string | undefined;
+		const tsserverCandidates = [
+			// Relative to LSP binary (for locally installed)
+			path.join(path.dirname(lspPath), "..", "typescript", "lib", "tsserver.js"),
+			// Project root
+			path.join(root, "node_modules", "typescript", "lib", "tsserver.js"),
+			// Current working directory
+			path.join(process.cwd(), "node_modules", "typescript", "lib", "tsserver.js"),
+		];
+		
+		for (const checkPath of tsserverCandidates) {
+			try {
+				await fs.access(checkPath);
+				tsserverPath = checkPath;
+				break;
+			} catch { /* not found */ }
+		}
+
+		// Use absolute path and proper environment
 		const env = await getToolEnvironment();
-		const proc = launchLSP("typescript-language-server", ["--stdio"], { cwd: root, env });
-		return { process: proc };
+		const proc = launchLSP(lspPath, ["--stdio"], { 
+			cwd: root, 
+			env: {
+				...env,
+				TSSERVER_PATH: tsserverPath,
+			}
+		});
+		
+		return { 
+			process: proc,
+			initialization: tsserverPath ? { tsserver: { path: tsserverPath } } : undefined
+		};
 	},
 };
 
@@ -113,15 +162,8 @@ export const PythonServer: LSPServerInfo = {
 		"poetry.lock",
 	]),
 	async spawn(root) {
-		// Ensure pyright is installed
-		const toolPath = await ensureTool("pyright");
-		if (!toolPath) {
-			console.error("[lsp] pyright not found and could not be installed");
-			return undefined;
-		}
-
 		const env = await getToolEnvironment();
-		const proc = launchLSP("pyright-langserver", ["--stdio"], { cwd: root, env });
+		const proc = launchViaPackageManager("pyright-langserver", ["--stdio"], { cwd: root, env });
 		
 		// Detect virtual environment
 		const initialization: Record<string, unknown> = {};
@@ -139,7 +181,8 @@ export const PythonServer: LSPServerInfo = {
 					: path.join(venv, "bin", "python");
 				
 				await import("fs/promises").then(fs => fs.access(pythonPath));
-				initialization.python = { pythonPath };
+				// Pyright expects pythonPath at top level, not nested
+				initialization.pythonPath = pythonPath;
 				break;
 			} catch { /* not found */ }
 		}
