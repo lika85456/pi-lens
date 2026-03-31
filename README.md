@@ -131,8 +131,6 @@ See [docs/LSP_CONFIG.md](docs/LSP_CONFIG.md) for configuration options.
 | **Sequential** | (default) | Runners execute one at a time |
 | **Concurrent** | `--lens-effect` | All runners in parallel via Effect-TS (Experimental) |
 
-**Recommended:** `pi --lens-lsp --lens-effect` for best performance.
-
 ---
 
 ### On every write / edit
