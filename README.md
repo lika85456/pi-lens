@@ -166,16 +166,17 @@ See [docs/LSP_CONFIG.md](docs/LSP_CONFIG.md) for configuration options.
 
 ### On every write / edit
 
-Every file write/edit triggers the **dispatcher-runner system**:
+Every file write/edit triggers multiple analysis phases:
 
 **Execution flow:**
-1. **Secrets scan** (pre-flight) — Hardcoded secrets block immediately
+1. **Secrets scan** (pre-flight) — Hardcoded secrets block immediately (non-runner check)
 2. **LSP integration** (Phase 3, with `--lens-lsp`) — Real-time type errors from language servers
 3. **Dispatch system** — Routes file to appropriate runners by `FileKind`
-4. **Structural patterns** (tree-sitter) — Fast AST-based checks (50ms)
-5. **Runners execute** by priority (lower = earlier). See [Runners](#runners) section for full list.
+4. **Runners execute** by priority (lower = earlier). See [Runners](#runners) section for full list.
+5. **Tree-sitter structural patterns** (post-write) — Fast AST-based checks for patterns ast-grep misses
+6. **Test runner detection** (post-write) — Detects Jest/Vitest/Pytest and runs relevant tests
 
-**With `--lens-effect`:** All independent runners execute concurrently via Effect-TS.
+**With `--lens-effect`:** Dispatch runners execute concurrently via Effect-TS (steps 3-4). Tree-sitter and test runner remain sequential (steps 5-6).
 
 **Delta mode behavior:**
 - **First write:** All issues tracked and stored in baseline
@@ -232,24 +233,29 @@ pi-lens uses a **dispatcher-runner architecture** for extensible multi-language 
 
 ### Structural Patterns (Tree-sitter)
 
-Before the dispatch runners execute, pi-lens performs **fast structural analysis** using tree-sitter (50-100ms):
+Tree-sitter performs **fast AST-based analysis** in two phases:
 
-#### TypeScript/JavaScript Patterns
+**Phase 1 (Pre-dispatch):** Fast patterns checked before runners execute (50-100ms)
+**Phase 2 (Post-write):** Additional structural checks after runners complete
 
-| Pattern | Severity | What it finds |
-|---------|----------|---------------|
-| **Empty catch** | 🔴 Error | `catch (err) {}` — swallowing errors silently |
-| **Debugger** | 🟡 Warning | `debugger;` — debug leftover |
-| **Await in loop** | 🟡 Warning | `for (...) { await ... }` — sequential execution |
-| **Hardcoded secrets** | 🔴 Error | `const api_key = "..."` — security risk |
-| **DangerouslySetInnerHTML** | 🔴 Error | XSS risk in JSX |
-| **Nested ternary** | 🟡 Warning | `a ? b ? c : d : e` — unreadable code |
-| **Eval** | 🔴 Error | `eval(userInput)` — code injection |
-| **Deep promise chain** | 🟡 Warning | `.then().catch().then()` — 3+ levels |
-| **Console statement** | 🟡 Warning | `console.log` — debug leftover |
-| **Long parameter list** | 🟡 Warning | 6+ parameters — use object pattern |
+#### TypeScript/JavaScript Patterns (Phase 1 + 2)
 
-#### Python Patterns
+| Pattern | Severity | Phase | What it finds |
+|---------|----------|-------|---------------|
+| **Empty catch** | 🔴 Error | 1 | `catch (err) {}` — swallowing errors silently |
+| **Debugger** | 🟡 Warning | 1 | `debugger;` — debug leftover |
+| **Await in loop** | 🟡 Warning | 1 | `for (...) { await ... }` — sequential execution |
+| **Hardcoded secrets** | 🔴 Error | 1 | `const api_key = "..."` — security risk |
+| **DangerouslySetInnerHTML** | 🔴 Error | 1 | XSS risk in JSX |
+| **Nested ternary** | 🟡 Warning | 1 | `a ? b ? c : d : e` — unreadable code |
+| **Eval** | 🔴 Error | 1 | `eval(userInput)` — code injection |
+| **Console statement** | 🟡 Warning | 1 | `console.log` — debug leftover |
+| **Long parameter list** | 🟡 Warning | 1 | 6+ parameters — use object pattern |
+| **Deep promise chain** | 🟡 Warning | 2 | `.then().catch().then()` — 3+ levels, use async/await |
+| **Mixed async styles** | 🟡 Warning | 2 | `await` + `.then()` in same function — be consistent |
+| **Deep nesting** | 🟡 Warning | 2 | `if { if { if { } } }` — 3+ levels, extract functions |
+
+#### Python Patterns (Phase 1)
 
 | Pattern | Severity | What it finds |
 |---------|----------|---------------|
