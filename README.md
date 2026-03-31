@@ -1,18 +1,20 @@
 # pi-lens
 
-Real-time code feedback for [pi](https://github.com/mariozechner/pi-coding-agent) — LSP, linters, formatters, type-checking, structural analysis (ast-grep), TODO scanner, dead code detection, duplicate detection, type coverage, complexity metrics, and AI slop detection.
+**pi extension for real-time code quality.** 31 LSP servers, tree-sitter structural analysis, AST pattern matching, auto-install for TypeScript/Python tooling, duplicate detection, complexity metrics, and inline blockers with comprehensive `/lens-booboo` reports.
 
 ## What pi-lens Does
 
 **For every file you edit:**
 1. **Auto-formats** — Detects and runs formatters (Biome, Prettier, Ruff, gofmt, rustfmt, etc.)
-2. **Type-checks** TypeScript, Python, Go, Rust (and 27 more languages with `--lens-lsp`)
-3. **Scans for secrets** — blocks on hardcoded API keys, tokens, passwords
+2. **Type-checks** — TypeScript, Python, Go, Rust (31 languages with `--lens-lsp`)
+3. **Scans for secrets** — Blocks on hardcoded API keys, tokens, passwords
 4. **Runs linters** — Biome (TS/JS), Ruff (Python), plus structural analysis
-5. **Detects code smells** — empty catch blocks, debuggers, nested ternaries, etc.
-6. **Only shows NEW issues** — delta-mode tracks baselines and filters pre-existing problems (reduces noise)
+5. **Tree-sitter analysis** — Deep structural patterns (empty catch, eval, deep nesting, mixed async styles)
+6. **Auto-installs** — TypeScript, Python, Biome, Ruff tools install automatically on first use
+7. **Only shows NEW issues** — Delta-mode tracks baselines and filters pre-existing problems
 
-**Blocking issues** (type errors, secrets) appear inline and stop the agent until fixed. **Warnings** are tracked but hidden inline — run `/lens-booboo` to see them all.
+**🔴 Blockers** (type errors, secrets, empty catches) appear inline and stop the agent until fixed.  
+**🟡 Warnings** (complexity, code smells) go to `/lens-booboo` — run it to see them all.
 
 ## Quick Start
 
