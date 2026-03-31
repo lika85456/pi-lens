@@ -1,6 +1,6 @@
 # pi-lens
 
-Real-time code feedback for [pi](https://github.com/mariozechner/pi-coding-agent) — LSP, linters, formatters, TODO scanner, dead code detection, duplicate detection, type coverage, and complexity metrics.
+Real-time code feedback for [pi](https://github.com/mariozechner/pi-coding-agent) — LSP, linters, formatters, type-checking, structural analysis (ast-grep), TODO scanner, dead code detection, duplicate detection, type coverage, complexity metrics, and AI slop detection.
 
 ## What pi-lens Does
 
