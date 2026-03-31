@@ -8,22 +8,30 @@ import { AgentBehaviorClient } from "./clients/agent-behavior-client.js";
 import { ArchitectClient } from "./clients/architect-client.js";
 import { AstGrepClient } from "./clients/ast-grep-client.js";
 import { BiomeClient } from "./clients/biome-client.js";
+import {
+	enableDebug as enableBusDebug,
+	FileModified,
+	initBusIntegration,
+	SessionStarted,
+	TurnEnded,
+} from "./clients/bus/index.js";
 import { CacheManager } from "./clients/cache-manager.js";
 import { ComplexityClient } from "./clients/complexity-client.js";
 import { DependencyChecker } from "./clients/dependency-checker.js";
-import { dispatchLint } from "./clients/dispatch/integration.js";
 import { dispatchLintWithBus } from "./clients/dispatch/bus-dispatcher.js";
+import { dispatchLint } from "./clients/dispatch/integration.js";
+import {
+	getFormatService,
+	resetFormatService,
+} from "./clients/format-service.js";
 import { GoClient } from "./clients/go-client.js";
+import { ensureTool } from "./clients/installer/index.js";
 import { buildInterviewer } from "./clients/interviewer.js";
 import { JscpdClient } from "./clients/jscpd-client.js";
 import { KnipClient } from "./clients/knip-client.js";
+import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { MetricsClient } from "./clients/metrics-client.js";
-import {
-	captureSnapshot,
-	captureSnapshots,
-	formatTrendCell,
-	getTrendSummary,
-} from "./clients/metrics-history.js";
+import { captureSnapshot } from "./clients/metrics-history.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import {
 	formatRulesForPrompt,
@@ -33,26 +41,14 @@ import {
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
 import { formatSecrets, scanForSecrets } from "./clients/secrets-scanner.js";
+import { dispatchLintWithEffect } from "./clients/services/effect-integration.js";
 import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
+import { TreeSitterClient } from "./clients/tree-sitter-client.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
 import { TypeScriptClient } from "./clients/typescript-client.js";
-import { TreeSitterClient } from "./clients/tree-sitter-client.js";
 import { handleBooboo } from "./commands/booboo.js";
-import { handleRate } from "./commands/rate.js";
 import { initRefactorLoop } from "./commands/refactor.js";
-import {
-	initBusIntegration,
-	shutdownBusIntegration,
-	SessionStarted,
-	TurnEnded,
-	FileModified,
-	enableDebug as enableBusDebug,
-} from "./clients/bus/index.js";
-import { dispatchLintWithEffect } from "./clients/services/effect-integration.js";
-import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
-import { getFormatService, resetFormatService } from "./clients/format-service.js";
-import { ensureTool } from "./clients/installer/index.js";
 
 /** Parse a diff to extract modified line ranges in the new file.
  * Handles pi's custom diff format:
@@ -200,7 +196,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerFlag("no-autoformat", {
-		description: "Disable automatic formatting on file write (formatters run by default)",
+		description:
+			"Disable automatic formatting on file write (formatters run by default)",
 		type: "boolean",
 		default: false,
 	});
@@ -251,8 +248,9 @@ export default function (pi: ExtensionAPI) {
 		default: false,
 	});
 
+	// Internal flag for development/debugging (not surfaced to users)
 	pi.registerFlag("lens-bus", {
-		description: "Enable event bus system for diagnostic aggregation (Phase 1)",
+		description: "[Internal] Enable event bus system",
 		type: "boolean",
 		default: false,
 	});
@@ -270,13 +268,15 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerFlag("lens-lsp", {
-		description: "Enable LSP (Language Server Protocol) for semantic analysis (Phase 3)",
+		description:
+			"Enable LSP (Language Server Protocol) for semantic analysis (Phase 3)",
 		type: "boolean",
 		default: false,
 	});
 
 	pi.registerFlag("auto-install", {
-		description: "Auto-install missing LSP servers without prompting (for Go, Rust, YAML, JSON, Bash)",
+		description:
+			"Auto-install missing LSP servers without prompting (for Go, Rust, YAML, JSON, Bash)",
 		type: "boolean",
 		default: false,
 	});
@@ -306,8 +306,7 @@ export default function (pi: ExtensionAPI) {
 
 	// DISABLED: lens-booboo-fix command - disabled per user request
 	pi.registerCommand("lens-booboo-fix", {
-		description:
-			"[DISABLED] This command is currently disabled.",
+		description: "[DISABLED] This command is currently disabled.",
 		handler: async (_args, ctx) => {
 			ctx.ui.notify(
 				"⚠️ /lens-booboo-fix is currently disabled. Use /lens-booboo to see code quality analysis.",
@@ -318,8 +317,7 @@ export default function (pi: ExtensionAPI) {
 
 	// DISABLED: lens-booboo-delta command - disabled per user request
 	pi.registerCommand("lens-booboo-delta", {
-		description:
-			"[DISABLED] This command is currently disabled.",
+		description: "[DISABLED] This command is currently disabled.",
 		handler: async (_args, ctx) => {
 			ctx.ui.notify(
 				"⚠️ /lens-booboo-delta is currently disabled. Use /lens-booboo to see code quality analysis.",
@@ -330,8 +328,7 @@ export default function (pi: ExtensionAPI) {
 
 	// DISABLED: lens-booboo-refactor command - disabled per user request
 	pi.registerCommand("lens-booboo-refactor", {
-		description:
-			"[DISABLED] This command is currently disabled.",
+		description: "[DISABLED] This command is currently disabled.",
 		handler: async (_args, ctx) => {
 			ctx.ui.notify(
 				"⚠️ /lens-booboo-refactor is currently disabled. Use /lens-booboo to see code quality analysis.",
@@ -353,8 +350,7 @@ export default function (pi: ExtensionAPI) {
 
 	// DEPRECATED: lens-rate command - needs re-structuring
 	pi.registerCommand("lens-rate", {
-		description:
-			"[DEPRECATED] Needs re-structuring. Use /lens-booboo instead.",
+		description: "[DEPRECATED] Needs re-structuring. Use /lens-booboo instead.",
 		handler: async (_args, ctx) => {
 			ctx.ui.notify(
 				"⚠️ /lens-rate is deprecated and needs re-structuring. Use /lens-booboo for code quality analysis instead.",
@@ -697,15 +693,17 @@ export default function (pi: ExtensionAPI) {
 		if (pi.getFlag("lens-lsp")) {
 			dbg("session_start: pre-installing TypeScript LSP...");
 			// Fire-and-forget: don't block session start, just warm up the cache
-			ensureTool("typescript-language-server").then((path) => {
-				if (path) {
-					dbg(`session_start: TypeScript LSP ready at ${path}`);
-				} else {
-					console.error("[lens] TypeScript LSP installation failed");
-				}
-			}).catch((err) => {
-				console.error("[lens] TypeScript LSP pre-install error:", err);
-			});
+			ensureTool("typescript-language-server")
+				.then((path) => {
+					if (path) {
+						dbg(`session_start: TypeScript LSP ready at ${path}`);
+					} else {
+						console.error("[lens] TypeScript LSP installation failed");
+					}
+				})
+				.catch((err) => {
+					console.error("[lens] TypeScript LSP pre-install error:", err);
+				});
 		}
 
 		const cwd = ctx.cwd ?? process.cwd();
@@ -1081,7 +1079,9 @@ export default function (pi: ExtensionAPI) {
 				const result = await formatService.formatFile(filePath);
 				if (result.anyChanged) {
 					formatChanged = true;
-					dbg(`autoformat: ${result.formatters.map(f => `${f.name}(${f.changed ? "changed" : "unchanged"})`).join(", ")}`);
+					dbg(
+						`autoformat: ${result.formatters.map((f) => `${f.name}(${f.changed ? "changed" : "unchanged"})`).join(", ")}`,
+					);
 					// Re-read content after formatting for downstream processing
 					fileContent = nodeFs.readFileSync(filePath, "utf-8");
 				}
@@ -1102,18 +1102,21 @@ export default function (pi: ExtensionAPI) {
 		// --- LSP integration (Phase 3) ---
 		if (pi.getFlag("lens-lsp") && fileContent) {
 			const lspService = getLSPService();
-			lspService.hasLSP(filePath).then(async (hasLSP) => {
-				if (hasLSP) {
-					// Open or update file in LSP
-					if (event.toolName === "write") {
-						await lspService.openFile(filePath, fileContent);
-					} else {
-						await lspService.updateFile(filePath, fileContent);
+			lspService
+				.hasLSP(filePath)
+				.then(async (hasLSP) => {
+					if (hasLSP) {
+						// Open or update file in LSP
+						if (event.toolName === "write") {
+							await lspService.openFile(filePath, fileContent);
+						} else {
+							await lspService.updateFile(filePath, fileContent);
+						}
 					}
-				}
-			}).catch((err) => {
-				dbg(`LSP error: ${err}`);
-			});
+				})
+				.catch((err) => {
+					dbg(`LSP error: ${err}`);
+				});
 		}
 
 		// --- Secrets scan (blocking - must check before other linting) ---
@@ -1174,7 +1177,7 @@ export default function (pi: ExtensionAPI) {
 		// --- Declarative dispatch: run all applicable lint tools ---
 		// Phase 2: Replaced ~400 lines of if/else with unified dispatch system
 		dbg(`dispatch: running lint tools for ${filePath}`);
-		
+
 		// Select dispatcher based on flags:
 		// - lens-effect: Effect-TS concurrent execution (Phase 2)
 		// - lens-bus: Bus-enabled dispatcher (Phase 1)
@@ -1187,7 +1190,7 @@ export default function (pi: ExtensionAPI) {
 		} else {
 			dispatchOutput = await dispatchLint(filePath, projectRoot, pi);
 		}
-		
+
 		if (dispatchOutput) {
 			lspOutput += `\n\n${dispatchOutput}`;
 		}
@@ -1207,7 +1210,9 @@ export default function (pi: ExtensionAPI) {
 		if (!pi.getFlag("no-tests")) {
 			const testInfo = testRunnerClient.findTestFile(filePath, cwd);
 			if (testInfo) {
-				dbg(`test-runner: found test file ${testInfo.testFile} for ${filePath}`);
+				dbg(
+					`test-runner: found test file ${testInfo.testFile} for ${filePath}`,
+				);
 				const detectedRunner = testRunnerClient.detectRunner(cwd);
 				if (detectedRunner) {
 					const testResult = testRunnerClient.runTestFile(
@@ -1228,13 +1233,21 @@ export default function (pi: ExtensionAPI) {
 
 		// --- Tree-sitter structural patterns (post-write check) ---
 		// Lightweight check for complex patterns ast-grep struggles with
-		if (fileContent && (filePath.endsWith(".ts") || filePath.endsWith(".tsx") || filePath.endsWith(".js"))) {
+		if (
+			fileContent &&
+			(filePath.endsWith(".ts") ||
+				filePath.endsWith(".tsx") ||
+				filePath.endsWith(".js"))
+		) {
 			const treeSitterClient = new TreeSitterClient();
 			if (treeSitterClient.isAvailable()) {
 				await treeSitterClient.init();
-				const languageId = filePath.endsWith(".tsx") ? "tsx" : 
-				                   filePath.endsWith(".ts") ? "typescript" : "javascript";
-				
+				const languageId = filePath.endsWith(".tsx")
+					? "tsx"
+					: filePath.endsWith(".ts")
+						? "typescript"
+						: "javascript";
+
 				const structuralIssues: string[] = [];
 
 				// Quick check 1: Promise chain depth (more than 2 levels)
@@ -1242,10 +1255,12 @@ export default function (pi: ExtensionAPI) {
 					"$PROMISE.then($$$H1).catch($$$H2).then($$$H3)",
 					languageId,
 					path.dirname(filePath),
-					{ maxResults: 5, fileFilter: (f) => f === filePath }
+					{ maxResults: 5, fileFilter: (f) => f === filePath },
 				);
 				if (promiseMatches.length > 0) {
-					structuralIssues.push(`Deep promise chain (3+ levels) - consider async/await`);
+					structuralIssues.push(
+						`Deep promise chain (3+ levels) - consider async/await`,
+					);
 				}
 
 				// Quick check 2: Mixed async/await + .then()
@@ -1253,12 +1268,14 @@ export default function (pi: ExtensionAPI) {
 					"async function $NAME($$$PARAMS) { $BODY }",
 					languageId,
 					path.dirname(filePath),
-					{ maxResults: 10, fileFilter: (f) => f === filePath }
+					{ maxResults: 10, fileFilter: (f) => f === filePath },
 				);
 				for (const match of asyncMatches) {
 					const body = match.captures.BODY || "";
 					if (body.includes("await") && body.match(/\.\s*then\s*\(/)) {
-						structuralIssues.push(`Mixed async/await + promise chains - use consistent async style`);
+						structuralIssues.push(
+							`Mixed async/await + promise chains - use consistent async style`,
+						);
 						break; // Only report once per file
 					}
 				}
@@ -1268,14 +1285,16 @@ export default function (pi: ExtensionAPI) {
 					"if ($C1) { if ($C2) { if ($C3) { $$$BODY } } }",
 					languageId,
 					path.dirname(filePath),
-					{ maxResults: 3, fileFilter: (f) => f === filePath }
+					{ maxResults: 3, fileFilter: (f) => f === filePath },
 				);
 				if (nestingMatches.length > 0) {
-					structuralIssues.push(`Deep nesting (3+ levels) - consider early returns`);
+					structuralIssues.push(
+						`Deep nesting (3+ levels) - consider early returns`,
+					);
 				}
 
 				if (structuralIssues.length > 0) {
-					lspOutput += `\n\n🔍 Structural Patterns:\n${structuralIssues.map(i => `  ⚠️ ${i}`).join("\n")}`;
+					lspOutput += `\n\n🔍 Structural Patterns:\n${structuralIssues.map((i) => `  ⚠️ ${i}`).join("\n")}`;
 				}
 			}
 		}
@@ -1285,16 +1304,16 @@ export default function (pi: ExtensionAPI) {
 		if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
 			try {
 				const tsClient = new TypeScriptClient();
-				
+
 				// Track the file in the language service
 				tsClient.addFile(filePath, fileContent || "");
-				
+
 				// Get diagnostics (syntactic + semantic)
 				const diagnostics = tsClient.getDiagnostics(filePath);
-				
+
 				if (diagnostics.length > 0) {
 					// Filter to most important diagnostics
-					const importantDiags = diagnostics.filter(d => {
+					const importantDiags = diagnostics.filter((d) => {
 						// Focus on errors and important warnings
 						// Skip noisy ones like "cannot find name" from missing imports
 						const code = (d as any).code;
@@ -1303,13 +1322,16 @@ export default function (pi: ExtensionAPI) {
 						// DiagnosticSeverity.Error = 1, Warning = 2
 						return d.severity === 1 || (d.severity === 2 && !code);
 					});
-					
+
 					if (importantDiags.length > 0) {
-						const tsOutput = importantDiags.slice(0, 5).map(d => {
-							// DiagnosticSeverity.Error = 1
-							const severity = d.severity === 1 ? "🔴" : "🟡";
-							return `  ${severity} [TS${(d as any).code}] ${d.message.split("\n")[0]}`;
-						}).join("\n");
+						const tsOutput = importantDiags
+							.slice(0, 5)
+							.map((d) => {
+								// DiagnosticSeverity.Error = 1
+								const severity = d.severity === 1 ? "🔴" : "🟡";
+								return `  ${severity} [TS${(d as any).code}] ${d.message.split("\n")[0]}`;
+							})
+							.join("\n");
 						lspOutput += `\n\n📐 TypeScript Diagnostics:\n${tsOutput}`;
 					}
 				}

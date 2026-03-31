@@ -100,22 +100,32 @@ Enable full Language Server Protocol support with `--lens-lsp`:
 ```bash
 pi --lens-lsp                    # Enable LSP
 pi --lens-lsp --lens-effect      # LSP + concurrent execution
-pi --lens-lsp --lens-bus         # LSP + event bus diagnostics
 ```
+
+### `pi` vs `pi --lens-lsp`
+
+| Feature | `pi` (Default) | `pi --lens-lsp` |
+|---------|----------------|-----------------|
+| **Type Checking** | Built-in TypeScriptClient | Full LSP (31 language servers) |
+| **Auto-format** | ✅ Biome, Prettier, Ruff, etc. | ✅ Same |
+| **Auto-fix** | ✅ Enabled by default | ✅ Same |
+| **Secrets scan** | ✅ Blocks on hardcoded secrets | ✅ Same |
+| **Languages** | TypeScript, Python (built-in) | 31 languages via LSP |
+| **Python** | Ruff/pyright (built-in) | Pyright LSP |
+| **Go, Rust, etc.** | Basic linting | Full LSP support |
+
+**Recommendation:** Use `pi` for TypeScript/Python projects. Use `pi --lens-lsp` for multi-language projects or when you need full language server features.
 
 See [docs/LSP_CONFIG.md](docs/LSP_CONFIG.md) for configuration options.
 
 ---
 
-### Architecture (Phases)
+### Execution Modes
 
-pi-lens uses a modern event-driven architecture with three optional phases:
-
-| Phase | Flag | Description |
-|-------|------|-------------|
-| **Phase 1: Bus** | `--lens-bus` | Event-driven pub/sub for diagnostics |
-| **Phase 2: Effect** | `--lens-effect` | Concurrent runner execution with structured concurrency |
-| **Phase 3: LSP** | `--lens-lsp` | 31 Language Server Protocol clients |
+| Mode | Flag | Description |
+|------|------|-------------|
+| **Sequential** | (default) | Runners execute one at a time |
+| **Concurrent** | `--lens-effect` | All runners in parallel via Effect-TS |
 
 **Recommended:** `pi --lens-lsp --lens-effect` for best performance.
 
@@ -142,8 +152,6 @@ Every file write/edit triggers the **dispatcher-runner system**:
    - Go/Rust analysis (`go-vet`, `rust-clippy`)
 
 **With `--lens-effect`:** All independent runners execute concurrently via Effect-TS.
-
-**With `--lens-bus`:** Runners publish diagnostic events; aggregators build real-time reports.
 
 **Delta mode behavior:**
 - **First write:** All issues tracked and stored in baseline
@@ -207,7 +215,7 @@ When pi starts a new session, pi-lens performs initialization scans to establish
 **Initialization sequence:**
 1. **Reset session state** — Clear metrics and complexity baselines
 2. **Initialize LSP** (with `--lens-lsp`) — Detect and auto-install language servers
-3. **Initialize Bus** (with `--lens-bus`) — Start event aggregation
+3. **Pre-install TypeScript LSP** (with `--lens-lsp`) — Warm up cache for instant response
 4. **Detect available tools** — Biome, ast-grep, Ruff, Knip, jscpd, Madge, type-coverage, Go, Rust
 5. **Load architect rules** — If `architect.yml` or `.architect.yml` present
 6. **Detect test runner** — Jest, Vitest, Pytest, etc.
@@ -329,31 +337,27 @@ All runners operate in **delta mode**:
 
 ## Architecture
 
-### Three-Phase System
+### Two-Phase System
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     PHASE 1: EVENT BUS                       │
-│  • Runners publish DiagnosticFound events                   │
-│  • Aggregators subscribe and build reports                  │
-│  • Real-time progress tracking                               │
-│  Flag: --lens-bus                                            │
+│                     PHASE 1: EXECUTION                       │
+│                                                              │
+│  Sequential (default):                                        │
+│    • Runners execute one at a time                          │
+│                                                              │
+│  Concurrent (--lens-effect):                                │
+│    • All runners via Effect.all                             │
+│    • 30s timeout per runner                                 │
+│    • Graceful error recovery                                │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     PHASE 2: EFFECT-TS                     │
-│  • Concurrent runner execution with Effect.all             │
-│  • Per-runner timeout handling (30s default)               │
-│  • Graceful error recovery                                   │
-│  Flag: --lens-effect                                         │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                     PHASE 3: LSP                           │
+│                     PHASE 2: LSP                           │
 │  • 31 Language Server Protocol clients                       │
-│  • Auto-installation on first use                            │
+│  • Auto-installation on first use (TypeScript/Python)         │
+│  • Interactive install prompt for Go/Rust/YAML/JSON/Bash      │
 │  • Debounced diagnostics (150ms)                           │
 │  Flag: --lens-lsp                                            │
 └─────────────────────────────────────────────────────────────┘
@@ -642,7 +646,7 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 | **Standard** (default) | `pi` | Auto-formatting, TS/Python type-checking, sequential execution |
 | **Full LSP** | `pi --lens-lsp` | Real LSP servers (31 languages), sequential execution |
 | **Fastest** | `pi --lens-lsp --lens-effect` | Real LSP + concurrent execution (all runners in parallel) |
-| **Debug** | `pi --lens-lsp --lens-bus` | Real LSP + event bus tracking (for troubleshooting) |
+
 
 ### Flag Reference
 
@@ -650,11 +654,11 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 |------|-------------|
 | `--lens-lsp` | Use real Language Server Protocol servers instead of built-in type-checking |
 | `--lens-effect` | Run all runners **concurrently** (faster) instead of sequentially |
-| `--lens-bus` | Enable event bus for diagnostic aggregation (development/debugging) |
 | `--lens-verbose` | Enable detailed console logging |
 | `--no-autoformat` | Disable automatic formatting (formatting is **enabled by default**) |
-| `--autofix-biome` | Auto-fix lint issues with Biome |
-| `--autofix-ruff` | Auto-fix lint issues with Ruff (Python) |
+| `--no-autofix` | Disable all auto-fixing (Biome + Ruff autofix is **enabled by default**) |
+| `--no-autofix-biome` | Disable Biome auto-fix only |
+| `--no-autofix-ruff` | Disable Ruff auto-fix only |
 | `--no-oxlint` | Skip Oxlint linting |
 | `--no-shellcheck` | Skip shellcheck for shell scripts |
 | `--no-tests` | Disable automatic test running on file write |
@@ -666,10 +670,9 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 
 **Recommended combinations:**
 ```bash
-pi --lens-lsp                    # LSP only
-pi --lens-lsp --lens-effect      # LSP + concurrent execution
-pi --lens-lsp --lens-bus         # LSP + event tracking
-pi --lens-lsp --lens-effect --lens-bus  # Full stack
+pi                               # Default: auto-format, auto-fix, built-in type-checking
+pi --lens-lsp                    # LSP type-checking (31 languages)
+pi --lens-lsp --lens-effect      # LSP + concurrent execution (fastest)
 ```
 
 ---
