@@ -60,11 +60,9 @@ async function runWithLSPClient(ctx: DispatchContext): Promise<RunnerResult> {
 
 	// Open file in LSP and get diagnostics
 	await lspService.openFile(ctx.filePath, content);
+	// Small delay to let diagnostics propagate
+	await new Promise(r => setTimeout(r, 500));
 	const lspDiags = await lspService.getDiagnostics(ctx.filePath);
-
-	if (lspDiags.length === 0) {
-		return { status: "succeeded", diagnostics: [], semantic: "none" };
-	}
 
 	// Convert LSP diagnostics to our format
 	// Defensive: filter out malformed diagnostics that may lack range
