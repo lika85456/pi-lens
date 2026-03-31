@@ -36,6 +36,7 @@
 		"clients/",
 		"commands/",
 		"rules/",
+		"skills/",
 		"default-architect.yaml",
 		"tsconfig.json",
 		"README.md",
@@ -64,6 +65,9 @@
 	"pi": {
 		"extensions": [
 			"./index.ts"
+		],
+		"skills": [
+			"./skills"
 		]
 	},
 	"knip": {
