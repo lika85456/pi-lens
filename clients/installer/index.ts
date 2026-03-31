@@ -1,15 +1,15 @@
 /**
  * Auto-Installation System for pi-lens
- * 
+ *
  * Minimal auto-install: Only TypeScript and Python ecosystems.
  * Other tools require manual installation with clear instructions.
- * 
+ *
  * Auto-install (4 tools):
  * - typescript-language-server (TypeScript LSP)
  * - pyright (Python LSP)
  * - ruff (Python linting)
  * - @biomejs/biome (JS/TS/JSON linting/formatting)
- * 
+ *
  * Manual install required (25+ tools):
  * - yaml-language-server: npm install -g yaml-language-server
  * - vscode-json-languageserver: npm install -g vscode-langservers-extracted
@@ -22,18 +22,16 @@
  * - dockerfile-language-server: npm install -g dockerfile-language-server-nodejs
  * - @vue/language-server: npm install -g @vue/language-server
  * - And all language-specific servers (gopls, rust-analyzer, etc.)
- * 
+ *
  * Strategies:
  * - npm packages via npx/bun
  * - pip packages
  * - GitHub releases (for platform-specific binaries - not yet implemented)
  */
 
-import { spawn } from "child_process";
-import fs from "fs/promises";
-import path from "path";
-import { fileURLToPath } from "url";
-import { findCommand } from "../safe-spawn.js";
+import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 // Global installation directory for pi-lens tools
 const TOOLS_DIR = path.join(process.cwd(), ".pi-lens", "tools");
@@ -98,13 +96,16 @@ const TOOLS: ToolDefinition[] = [
  */
 async function isCommandAvailable(
 	command: string,
-	args: string[] = ["--version"]
+	args: string[] = ["--version"],
 ): Promise<boolean> {
 	return new Promise((resolve) => {
 		// On Windows, use shell: true to handle .cmd files
 		const isWindows = process.platform === "win32";
 		const proc = isWindows
-			? spawn(`${command} ${args.join(" ")}`, [], { stdio: "ignore", shell: true })
+			? spawn(`${command} ${args.join(" ")}`, [], {
+					stdio: "ignore",
+					shell: true,
+				})
 			: spawn(command, args, { stdio: "ignore" });
 		proc.on("exit", (code) => resolve(code === 0));
 		proc.on("error", () => resolve(false));
@@ -124,7 +125,12 @@ export async function isToolInstalled(toolId: string): Promise<boolean> {
 	}
 
 	// Check local tools directory
-	const localPath = path.join(TOOLS_DIR, "node_modules", ".bin", tool.binaryName || tool.id);
+	const localPath = path.join(
+		TOOLS_DIR,
+		"node_modules",
+		".bin",
+		tool.binaryName || tool.id,
+	);
 	try {
 		await fs.access(localPath);
 		return true;
@@ -146,7 +152,12 @@ export async function getToolPath(toolId: string): Promise<string | undefined> {
 	}
 
 	// Check local
-	const localPath = path.join(TOOLS_DIR, "node_modules", ".bin", tool.binaryName || tool.id);
+	const localPath = path.join(
+		TOOLS_DIR,
+		"node_modules",
+		".bin",
+		tool.binaryName || tool.id,
+	);
 	try {
 		await fs.access(localPath);
 		return localPath;
@@ -155,7 +166,50 @@ export async function getToolPath(toolId: string): Promise<string | undefined> {
 	}
 }
 
-// --- Installation Functions ---
+// --- Verification Functions
+
+/**
+ * Verify a tool binary actually works by running --version
+ * This catches broken symlinks, partial installs, and corrupted binaries
+ */
+async function verifyToolBinary(binPath: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		// Add .cmd extension on Windows for the actual binary
+		const isWindows = process.platform === "win32";
+		const execPath = isWindows && !binPath.endsWith(".cmd") 
+			? `${binPath}.cmd` 
+			: binPath;
+		
+		const proc = spawn(execPath, ["--version"], {
+			timeout: 10000, // 10 second timeout for verification
+			stdio: ["ignore", "pipe", "pipe"],
+			shell: isWindows, // Required for .cmd wrappers on Windows
+		});
+
+		let stdout = "";
+		let stderr = "";
+		
+		proc.stdout?.on("data", (data) => (stdout += data));
+		proc.stderr?.on("data", (data) => (stderr += data));
+
+		proc.on("exit", (code) => {
+			if (code === 0) {
+				console.error(`[auto-install] Verified: ${binPath} (version: ${stdout.trim()})`);
+				resolve(true);
+			} else {
+				console.error(`[auto-install] Verification failed for ${binPath}: exit code ${code}, stderr: ${stderr}`);
+				resolve(false);
+			}
+		});
+
+		proc.on("error", (err) => {
+			console.error(`[auto-install] Verification failed for ${binPath}: ${err.message}`);
+			resolve(false);
+		});
+	});
+}
+
+// --- Installation Functions
 
 /**
  * Install an npm package tool
@@ -179,6 +233,8 @@ async function installNpmTool(
 			);
 		}
 
+		console.error(`[auto-install] Installing ${packageName}...`);
+
 		// Install via npm or bun (use .cmd on Windows)
 		const isWindows = process.platform === "win32";
 		const pm = process.env.BUN_INSTALL
@@ -197,12 +253,33 @@ async function installNpmTool(
 			proc.on("exit", async (code) => {
 				if (code === 0) {
 					const binPath = path.join(TOOLS_DIR, "node_modules", ".bin", binaryName);
+					
 					// Make executable on Unix
 					if (process.platform !== "win32") {
 						try {
 							await fs.chmod(binPath, 0o755);
 						} catch { /* ignore */ }
 					}
+					
+					// NEW: Verify the binary actually works before returning
+					console.error(`[auto-install] Verifying ${binaryName}...`);
+					const isValid = await verifyToolBinary(binPath);
+					if (!isValid) {
+						console.error(`[auto-install] ${packageName} installed but verification failed. The binary may be corrupted.`);
+						// Clean up the broken installation
+						try {
+							const packagePath = path.join(TOOLS_DIR, "node_modules", packageName);
+							await fs.rm(packagePath, { recursive: true, force: true });
+							await fs.rm(binPath, { force: true });
+							if (isWindows) {
+								await fs.rm(`${binPath}.cmd`, { force: true });
+								await fs.rm(`${binPath}.ps1`, { force: true });
+							}
+						} catch { /* ignore cleanup errors */ }
+						resolve(undefined);
+						return;
+					}
+					
 					resolve(binPath);
 				} else {
 					reject(new Error(`Failed to install ${packageName}: ${stderr}`));
@@ -216,11 +293,12 @@ async function installNpmTool(
 		return undefined;
 	}
 }
-
 /**
  * Install a pip package tool
  */
-async function installPipTool(packageName: string): Promise<string | undefined> {
+async function installPipTool(
+	packageName: string,
+): Promise<string | undefined> {
 	try {
 		const pipCmd = process.platform === "win32" ? "pip" : "pip3";
 		const isWindows = process.platform === "win32";
@@ -244,7 +322,10 @@ async function installPipTool(packageName: string): Promise<string | undefined> 
 			proc.on("error", (err) => reject(err));
 		});
 	} catch (err) {
-		console.error(`[auto-install] Failed to install pip tool ${packageName}:`, err);
+		console.error(
+			`[auto-install] Failed to install pip tool ${packageName}:`,
+			err,
+		);
 		return undefined;
 	}
 }
@@ -263,18 +344,22 @@ export async function installTool(toolId: string): Promise<boolean> {
 
 	try {
 		switch (tool.installStrategy) {
-			case "npm":
+			case "npm": {
 				if (!tool.packageName || !tool.binaryName) return false;
 				const npmPath = await installNpmTool(tool.packageName, tool.binaryName);
 				return npmPath !== undefined;
+			}
 
-			case "pip":
+			case "pip": {
 				if (!tool.packageName) return false;
 				const pipPath = await installPipTool(tool.packageName);
 				return pipPath !== undefined;
+			}
 
 			default:
-				console.error(`[auto-install] Unsupported strategy: ${tool.installStrategy}`);
+				console.error(
+					`[auto-install] Unsupported strategy: ${tool.installStrategy}`,
+				);
 				return false;
 		}
 	} catch (err) {
