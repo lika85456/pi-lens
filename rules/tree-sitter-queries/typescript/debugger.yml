@@ -2,7 +2,7 @@
 # Detects debugger statements left in code
 id: debugger-statement
 name: Debugger Statement
-severity: warning
+severity: error
 category: debugging
 language: typescript
 

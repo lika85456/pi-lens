@@ -593,11 +593,11 @@ export default function (pi: ExtensionAPI) {
 	> = new Map();
 
 	// Delta baselines: store pre-write diagnostics to diff against post-write
-	const astGrepBaselines = new Map<
+	const _astGrepBaselines = new Map<
 		string,
 		import("./clients/ast-grep-types.js").AstGrepDiagnostic[]
 	>();
-	const biomeBaselines = new Map<
+	const _biomeBaselines = new Map<
 		string,
 		import("./clients/biome-client.js").BiomeDiagnostic[]
 	>();
@@ -846,12 +846,14 @@ export default function (pi: ExtensionAPI) {
 
 		if (!filePath) return;
 
+		const _toolCallStart = Date.now();
 		dbg(
 			`tool_call fired for: ${filePath} (exists: ${nodeFs.existsSync(filePath)})`,
 		);
 		if (!nodeFs.existsSync(filePath)) return;
 
 		// Record complexity baseline for TS/JS files + capture history snapshot
+		const complexityBaselineStart = Date.now();
 		if (
 			complexityClient.isSupportedFile(filePath) &&
 			!complexityBaselines.has(filePath)
@@ -867,64 +869,107 @@ export default function (pi: ExtensionAPI) {
 					linesOfCode: baseline.linesOfCode,
 				});
 			}
+			logLatency({
+				type: "phase",
+				toolName: event.toolName,
+				filePath,
+				phase: "complexity_baseline",
+				durationMs: Date.now() - complexityBaselineStart,
+				metadata: { hasBaseline: complexityBaselines.has(filePath) },
+			});
 		}
 
 		const hints: string[] = [];
+		let _preCheckDuration = 0;
 
 		if (/\.(ts|tsx|js|jsx)$/.test(filePath) && !pi.getFlag("no-lsp")) {
+			const tsPreCheckStart = Date.now();
 			tsClient.updateFile(filePath, nodeFs.readFileSync(filePath, "utf-8"));
 			const diags = tsClient.getDiagnostics(filePath);
 			const fixes = tsClient.getAllCodeFixes(filePath);
-			if (diags.length > 0) {
-				const errorDiags = diags.filter((d) => d.severity === 1);
-				if (errorDiags.length > 0) {
+			const errorDiags = diags.filter((d) => d.severity === 1);
+			if (errorDiags.length > 0) {
+				hints.push(
+					`⚠ Pre-write: file has ${errorDiags.length} TypeScript error(s):`,
+				);
+				// Show first 3 errors with quick fixes
+				for (const d of errorDiags.slice(0, 3)) {
+					const lineFixes = fixes.get(d.range.start.line);
+					const fixHint = lineFixes?.[0]?.description
+						? ` 💡 ${lineFixes[0].description}`
+						: "";
 					hints.push(
-						`⚠ Pre-write: file has ${errorDiags.length} TypeScript error(s):`,
+						`  L${d.range.start.line + 1}: ${d.message.split("\n")[0].substring(0, 80)}${fixHint}`,
 					);
-					// Show first 3 errors with quick fixes
-					for (const d of errorDiags.slice(0, 3)) {
-						const lineFixes = fixes.get(d.range.start.line);
-						const fixHint = lineFixes?.[0]?.description
-							? ` 💡 ${lineFixes[0].description}`
-							: "";
-						hints.push(
-							`  L${d.range.start.line + 1}: ${d.message.split("\n")[0].substring(0, 80)}${fixHint}`,
-						);
-					}
-					if (errorDiags.length > 3) {
-						hints.push(`  ... and ${errorDiags.length - 3} more errors`);
-					}
+				}
+				if (errorDiags.length > 3) {
+					hints.push(`  ... and ${errorDiags.length - 3} more errors`);
 				}
 			}
-		}
-
-		// Snapshot baselines for delta mode (no pre-write hints — delta handles it)
-		if (!pi.getFlag("no-ast-grep") && astGrepClient.isAvailable()) {
-			const baselineDiags = astGrepClient.scanFile(filePath);
-			astGrepBaselines.set(filePath, baselineDiags);
-
-			// Add to TDR baseline
-			const initialTdr = baselineDiags
-				.filter((d) => d.ruleDescription?.grade !== undefined)
-				.reduce((acc, d) => acc + (d.ruleDescription?.grade ?? 0), 0);
-
-			metricsClient.recordBaseline(filePath, initialTdr);
-		} else {
-			metricsClient.recordBaseline(filePath);
-		}
-
-		if (
-			!pi.getFlag("no-biome") &&
-			biomeClient.isAvailable() &&
-			biomeClient.isSupportedFile(filePath)
-		) {
-			biomeBaselines.set(
+			_preCheckDuration += Date.now() - tsPreCheckStart;
+			logLatency({
+				type: "phase",
+				toolName: event.toolName,
 				filePath,
-				biomeClient
-					.checkFile(filePath)
-					.filter((d) => d.category === "lint" || d.severity === "error"),
-			);
+				phase: "ts_pre_check",
+				durationMs: Date.now() - tsPreCheckStart,
+				metadata: { errorCount: errorDiags.length, hintCount: hints.length },
+			});
 		}
+
+		// Unified LSP pre-write check (when --lens-lsp enabled)
+		// This provides pre-write hints for all LSP languages (TypeScript, Python, Go, Rust, etc.)
+		if (pi.getFlag("lens-lsp") && !pi.getFlag("no-lsp")) {
+			const lspPreCheckStart = Date.now();
+			const lspService = getLSPService();
+			lspService
+				.hasLSP(filePath)
+				.then(async (hasLSP) => {
+					if (hasLSP) {
+						const content = nodeFs.readFileSync(filePath, "utf-8");
+						await lspService.openFile(filePath, content);
+						await new Promise((r) => setTimeout(r, 300));
+						const diags = await lspService.getDiagnostics(filePath);
+						const errorDiags = diags.filter((d) => d.severity === 1);
+						if (errorDiags.length > 0) {
+							hints.push(
+								`⚠ Pre-write: ${errorDiags.length} LSP error(s) detected:`,
+							);
+							for (const d of errorDiags.slice(0, 3)) {
+								hints.push(
+									`  L${d.range?.start?.line ?? 0 + 1}: ${d.message.slice(0, 80)}`,
+								);
+							}
+							if (errorDiags.length > 3) {
+								hints.push(`  ... and ${errorDiags.length - 3} more`);
+							}
+						}
+						_preCheckDuration += Date.now() - lspPreCheckStart;
+						logLatency({
+							type: "phase",
+							toolName: event.toolName,
+							filePath,
+							phase: "lsp_pre_check",
+							durationMs: Date.now() - lspPreCheckStart,
+							metadata: { hasLSP, errorCount: errorDiags?.length ?? 0 },
+						});
+					}
+				})
+				.catch((err) => {
+					logLatency({
+						type: "phase",
+						toolName: event.toolName,
+						filePath,
+						phase: "lsp_pre_check",
+						durationMs: Date.now() - lspPreCheckStart,
+						status: "failed",
+						metadata: { error: String(err) },
+					});
+				});
+		}
+
+		// Note: ast-grep baseline removed - we use ast-grep-napi in dispatch instead
+		// Note: biome baseline removed - auto-fix handles this in post-write
 
 		// Architectural rules: Skip pre-write hints (too noisy)
 		// Post-write violations will be shown via architect runner in dispatch
@@ -1310,6 +1355,40 @@ export default function (pi: ExtensionAPI) {
 		phaseEnd("typescript_lsp", {
 			isTsFile: filePath.endsWith(".ts") || filePath.endsWith(".tsx"),
 		});
+
+		// --- Complexity tracking (post-write) ---
+		phaseStart("complexity_check");
+		if (complexityClient.isSupportedFile(filePath)) {
+			const oldBaseline = complexityBaselines.get(filePath);
+			const newComplexity = complexityClient.analyzeFile(filePath);
+			if (oldBaseline && newComplexity) {
+				const complexityDelta = {
+					cognitive:
+						newComplexity.cognitiveComplexity - oldBaseline.cognitiveComplexity,
+					maintainability:
+						newComplexity.maintainabilityIndex -
+						oldBaseline.maintainabilityIndex,
+					lines: newComplexity.linesOfCode - oldBaseline.linesOfCode,
+				};
+				// Warn if complexity significantly increased
+				if (
+					complexityDelta.cognitive > 3 ||
+					complexityDelta.maintainability < -5
+				) {
+					lspOutput += `\n\n⚠️ Complexity increased: +${complexityDelta.cognitive} cognitive, ${complexityDelta.maintainability.toFixed(1)} maintainability`;
+				}
+				phaseEnd("complexity_check", {
+					delta: complexityDelta,
+					warned:
+						complexityDelta.cognitive > 3 ||
+						complexityDelta.maintainability < -5,
+				});
+			} else {
+				phaseEnd("complexity_check", { delta: null, warned: false });
+			}
+		} else {
+			phaseEnd("complexity_check", { skipped: true });
+		}
 
 		// Agent behavior warnings (blind writes, thrashing)
 		if (behaviorWarnings.length > 0) {

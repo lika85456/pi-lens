@@ -111,13 +111,22 @@ export const biomeFormatter: FormatterInfo = {
 		const found = await findUp(configs, cwd);
 		if (found.length > 0) return true;
 
-		// Also check if biome is in package.json devDependencies
+		// Check if biome is in package.json devDependencies
 		const pkgPath = path.join(cwd, "package.json");
 		if (await fileExists(pkgPath)) {
 			const pkg = (await readJson(pkgPath)) as {
 				devDependencies?: Record<string, string>;
 			};
 			if (pkg.devDependencies?.["@biomejs/biome"]) return true;
+		}
+
+		// Fallback: check if Biome is available via npx (globally or through npm cache)
+		// This allows Biome to work even without explicit project configuration
+		const result = safeSpawn("npx", ["@biomejs/biome", "--version"], {
+			timeout: 10000,
+		});
+		if (!result.error && result.status === 0) {
+			return true;
 		}
 
 		return false;

@@ -28,22 +28,36 @@ const pyrightRunner: RunnerDefinition = {
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const cwd = ctx.cwd || process.cwd();
 
-		// Auto-install pyright if not available (it's one of the 4 auto-install tools)
-		if (!pyright.isAvailable(cwd)) {
-			const installed = await ensureTool("pyright");
-			if (!installed) {
-				return { status: "skipped", diagnostics: [], semantic: "none" };
-			}
+		// Get pyright command - try multiple strategies
+		let cmd: string | null = null;
+
+		// Strategy 1: Check cached availability (fast path)
+		if (pyright.isAvailable(cwd)) {
+			cmd = pyright.getCommand();
 		}
 
-		// Run pyright with JSON output (use venv-local or global command)
-		const result = await safeSpawnAsync(
-			pyright.getCommand()!,
-			["--outputjson", ctx.filePath],
-			{
-				timeout: 60000,
-			},
-		);
+		// Strategy 2: Try to find pyright via ensureTool (installs if needed)
+		if (!cmd) {
+			const installedPath = await ensureTool("pyright");
+			if (installedPath) cmd = installedPath;
+		}
+
+		// Strategy 3: Direct PATH check (handles module cache staleness)
+		if (!cmd) {
+			const { findCommandAsync } = await import("../../safe-spawn.js");
+			const foundCmd: string | null = await findCommandAsync("pyright");
+			if (foundCmd) cmd = foundCmd;
+		}
+
+		// If still no pyright, skip this runner
+		if (!cmd) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
+		// Run pyright with JSON output
+		const result = await safeSpawnAsync(cmd, ["--outputjson", ctx.filePath], {
+			timeout: 60000,
+		});
 
 		// Pyright returns non-zero when errors found, that's OK
 		if (result.error) {

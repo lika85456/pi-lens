@@ -26,54 +26,13 @@ featureideas.md
 SCA.md
 review.md
 
-# Scratch test files (moved to tests/)
+# Test directories and files
 tests/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-
-# Debug logs
-*.log
-
-# Temp scan outputs
-booboo_*.json
-jscpd-report.json
-
-# Linter caches
-.ruff_cache/
-
-# Documentation files - only keep specific docs in public repo
-*.md
-!AGENTS.md
-!README.md
-!CHANGELOG.md
-!AST_GREP_RULES.md
-!skills/**/*.md
-
-# Local development tracking files
-featurestoadd.md
-OPENCODE_GAP_ANALYSIS.md
-OPENCODE_GAP_ANALYSIS_CORRECTED.md
-STYLE_GUIDE_IDEAS.md
-TEST_COVERAGE_GAPS.md
-TEST_COVERAGE_SUMMARY.md
-refactoring.md
-newfeatures.md
-plan-reuse.md
-opencodeplan.md
-
-# docs folder entirely
-docs/
-# Test artifacts
+test-files/
+scripts/
 test-*.ts
 test-*.js
+test-*.py
 test-*.md
 test-*.sh
 test-filetime/
-
-TEST_COVERAGE_COMPLETE.md

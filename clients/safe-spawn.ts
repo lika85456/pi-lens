@@ -72,11 +72,13 @@ export async function safeSpawnAsync(
 		let killed = false;
 
 		// Spawn the process (non-blocking)
+		// On Windows, use shell mode for .cmd files (like pyright, biome)
+		const isWindows = process.platform === "win32";
 		const child = spawn(command, args, {
 			cwd: options?.cwd,
 			env: { ...process.env, ...options?.env },
 			windowsHide: true,
-			shell: false,
+			shell: isWindows,
 		});
 
 		// Handle abort signal

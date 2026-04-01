@@ -148,6 +148,9 @@ export interface RunnerGroup {
 
 // --- Registry ---
 
+// Test edit - adding unused variable to check inline diagnostics flow
+const _unusedTestVariable = "checking pre-write and post-write flow";
+
 export interface RunnerRegistry {
 	register(runner: RunnerDefinition): void;
 	get(id: string): RunnerDefinition | undefined;

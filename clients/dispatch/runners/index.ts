@@ -4,9 +4,11 @@
 
 import { registerRunner } from "../dispatcher.js";
 import architectRunner from "./architect.js";
+import astGrepNapiRunner from "./ast-grep-napi.js";
 import biomeRunner from "./biome.js";
 import configValidationRunner from "./config-validation.js";
 import goVetRunner from "./go-vet.js";
+import lspRunner from "./lsp.js";
 import oxlintRunner from "./oxlint.js";
 import pyrightRunner from "./pyright.js";
 import pythonSlopRunner from "./python-slop.js";
@@ -23,11 +25,13 @@ import tsSlopRunner from "./ts-slop.js";
 import typeSafetyRunner from "./type-safety.js";
 
 // Register all runners (ordered by priority)
-registerRunner(tsLspRunner); // TypeScript type-checking (priority 5)
-registerRunner(pyrightRunner); // Python type-checking (priority 5)
+// Unified LSP runner for all languages (TypeScript, Python, Go, Rust, etc.) - priority 4
+registerRunner(lspRunner); // Unified LSP type-checking for all languages (priority 4)
+registerRunner(tsLspRunner); // TypeScript type-checking (priority 5) - fallback when --lens-lsp disabled
+registerRunner(pyrightRunner); // Python type-checking (priority 5) - fallback when --lens-lsp disabled
 registerRunner(configValidationRunner); // Config/env validation (priority 8)
-// DISABLED: ast-grep-napi temporarily disabled for debugging
-// registerRunner(astGrepNapiRunner); // TS/JS structural analysis via NAPI (priority 15)
+// OPTIMIZED: ast-grep-napi now loads only blocking rules when blockingOnly=true (21 vs 73 rules)
+registerRunner(astGrepNapiRunner); // TS/JS structural analysis via NAPI (priority 15)
 registerRunner(biomeRunner); // Biome formatting/linting (priority 10)
 registerRunner(oxlintRunner); // Oxlint fast JS/TS linter (priority 12)
 registerRunner(treeSitterRunner); // Tree-sitter structural analysis (priority 14)

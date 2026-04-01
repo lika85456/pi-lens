@@ -39,15 +39,20 @@ async function loadSg(): Promise<typeof import("@ast-grep/napi") | undefined> {
 
 // --- Rule Caching ---
 // Cache parsed YAML rules to avoid re-parsing on every file edit
+// Separate caches for "all" rules vs "error-only" (blocking) rules
 interface CachedRules {
 	rules: YamlRule[];
 	mtime: number;
 }
 
 const rulesCache = new Map<string, CachedRules>();
+const blockingRulesCache = new Map<string, CachedRules>();
 
 /** Get cached rules or reload if cache is stale */
-function _getCachedRules(ruleDir: string): YamlRule[] {
+function _getCachedRules(
+	ruleDir: string,
+	severityFilter?: "error",
+): YamlRule[] {
 	// Check if directory exists
 	if (!fs.existsSync(ruleDir)) {
 		return [];
@@ -62,21 +67,25 @@ function _getCachedRules(ruleDir: string): YamlRule[] {
 		return [];
 	}
 
+	// Use appropriate cache based on filter
+	const cache = severityFilter === "error" ? blockingRulesCache : rulesCache;
+
 	// Check cache
-	const cached = rulesCache.get(ruleDir);
+	const cached = cache.get(ruleDir);
 	if (cached && cached.mtime === currentMtime) {
 		return cached.rules;
 	}
 
-	// Load and cache
-	const rules = loadYamlRulesUncached(ruleDir);
-	rulesCache.set(ruleDir, { rules, mtime: currentMtime });
+	// Load and cache (with severity filter if specified)
+	const rules = loadYamlRulesUncached(ruleDir, severityFilter);
+	cache.set(ruleDir, { rules, mtime: currentMtime });
 	return rules;
 }
 
 /** Clear rules cache (useful for testing or when rules change) */
 export function clearRulesCache(): void {
 	rulesCache.clear();
+	blockingRulesCache.clear();
 }
 
 // Supported extensions for NAPI
@@ -178,7 +187,10 @@ interface YamlRule {
 	rule?: YamlRuleCondition;
 }
 
-function loadYamlRulesUncached(ruleDir: string): YamlRule[] {
+function loadYamlRulesUncached(
+	ruleDir: string,
+	severityFilter?: "error",
+): YamlRule[] {
 	const rules: YamlRule[] = [];
 	if (!fs.existsSync(ruleDir)) return rules;
 
@@ -193,6 +205,10 @@ function loadYamlRulesUncached(ruleDir: string): YamlRule[] {
 			for (const doc of documents) {
 				const rule = parseSimpleYaml(doc.trim());
 				if (rule?.id) {
+					// Filter by severity if specified (for blocking-only mode)
+					if (severityFilter && rule.severity !== severityFilter) {
+						continue;
+					}
 					rules.push(rule);
 				}
 			}
@@ -205,8 +221,8 @@ function loadYamlRulesUncached(ruleDir: string): YamlRule[] {
 }
 
 /** Load rules with caching - use this for production */
-function loadYamlRules(ruleDir: string): YamlRule[] {
-	return _getCachedRules(ruleDir);
+function loadYamlRules(ruleDir: string, severityFilter?: "error"): YamlRule[] {
+	return _getCachedRules(ruleDir, severityFilter);
 }
 
 function parseSimpleYaml(content: string): YamlRule | null {
@@ -418,6 +434,44 @@ function isStructuredRule(rule: YamlRule): boolean {
 }
 
 /**
+ * Calculate complexity score for structured rules
+ * Used to skip overly expensive rules when blockingOnly=true
+ */
+function calculateRuleComplexity(
+	condition: YamlRuleCondition | undefined,
+): number {
+	if (!condition) return 0;
+
+	let score = 0;
+
+	// Base cost for each condition type
+	if (condition.has) score += 3;
+	if (condition.not) score += 2;
+	if (condition.regex) score += 2;
+	if (condition.any) score += condition.any.length * 2;
+	if (condition.all) score += condition.all.length * 3; // 'all' is more expensive
+
+	// Recursively calculate nested conditions
+	if (condition.has) score += calculateRuleComplexity(condition.has);
+	if (condition.not) score += calculateRuleComplexity(condition.not);
+	if (condition.any) {
+		for (const sub of condition.any) {
+			score += calculateRuleComplexity(sub);
+		}
+	}
+	if (condition.all) {
+		for (const sub of condition.all) {
+			score += calculateRuleComplexity(sub);
+		}
+	}
+
+	return score;
+}
+
+/** Maximum complexity score for rules in blockingOnly mode */
+const MAX_BLOCKING_RULE_COMPLEXITY = 8;
+
+/**
  * Execute a structured rule using manual AST traversal
  */
 function executeStructuredRule(
@@ -568,6 +622,12 @@ const astGrepNapiRunner: RunnerDefinition = {
 	skipTestFiles: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
+		// DISABLED on post-write (blockingOnly) - too slow for inline feedback
+		// Full analysis available via /lens-booboo command instead
+		if (ctx.blockingOnly) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
 		if (!canHandle(ctx.filePath)) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
@@ -626,7 +686,9 @@ const astGrepNapiRunner: RunnerDefinition = {
 		for (const ruleDir of ruleDirs) {
 			let rules: YamlRule[];
 			try {
-				rules = loadYamlRules(ruleDir);
+				// OPTIMIZATION: When blockingOnly is set, only load error-level rules
+				// This avoids parsing ~50 warning-level rules from disk
+				rules = loadYamlRules(ruleDir, ctx.blockingOnly ? "error" : undefined);
 			} catch {
 				continue; // Skip this rule directory on error
 			}
@@ -638,9 +700,14 @@ const astGrepNapiRunner: RunnerDefinition = {
 					continue;
 				}
 
-				// When blockingOnly is set, only run BLOCKING rules (severity: error)
-				if (ctx.blockingOnly && rule.severity !== "error") {
-					continue;
+				// OPTIMIZATION: Skip overly complex structured rules in blockingOnly mode
+				// Complex rules with nested has/any/all/not can cause exponential slowdown
+				if (ctx.blockingOnly && rule.rule) {
+					const complexity = calculateRuleComplexity(rule.rule);
+					if (complexity > MAX_BLOCKING_RULE_COMPLEXITY) {
+						// Skip expensive rules - they'll run in full /lens-booboo instead
+						continue;
+					}
 				}
 
 				try {

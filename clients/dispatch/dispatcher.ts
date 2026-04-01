@@ -267,12 +267,17 @@ export async function dispatchForFile(
 	const runnerLatencies: RunnerLatency[] = [];
 
 	// Debug logging goes to latency log only (not console - avoid noise)
+	const allRunnerIds = groups.flatMap((g) => g.runnerIds);
 	logLatency({
 		type: "phase",
 		filePath: ctx.filePath,
 		phase: "dispatch_start",
 		durationMs: 0,
-		metadata: { groupCount: groups.length, kind: ctx.kind },
+		metadata: {
+			groupCount: groups.length,
+			kind: ctx.kind,
+			runners: allRunnerIds.join(","),
+		},
 	});
 
 	for (const group of groups) {
@@ -364,13 +369,6 @@ export async function dispatchForFile(
 				semantic: result.semantic ?? semantic,
 			});
 
-			// Log slow runners immediately for real-time debugging
-			if (duration > 500) {
-				ctx.log(
-					`⚠️ SLOW RUNNER: ${runnerId} took ${duration}ms (${result.status}, ${result.diagnostics.length} issues)`,
-				);
-			}
-
 			// Apply delta mode filtering
 			let diagnostics = result.diagnostics;
 			if (ctx.deltaMode && result.semantic !== "silent") {
@@ -437,18 +435,9 @@ export async function dispatchForFile(
 		latencyReports.shift();
 	}
 
-	// Log each runner as separate entry for detailed analysis
-	for (const runner of runnerLatencies) {
-		logLatency({
-			type: "runner",
-			filePath: ctx.filePath,
-			runnerId: runner.runnerId,
-			durationMs: runner.durationMs,
-			status: runner.status,
-			diagnosticCount: runner.diagnosticCount,
-			semantic: runner.semantic,
-		});
-	}
+	// Runner latencies already logged immediately after execution (line ~329)
+	// The runnerLatencies array is stored in latencyReport for aggregate analysis
+	// No need to log again here - would create duplicates in the log
 
 	// Log summary to latency log only (not console - avoid noise)
 	logLatency({

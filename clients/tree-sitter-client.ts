@@ -650,6 +650,18 @@ export class TreeSitterClient {
 					}
 				}
 
+				if (postFilter === "no_super_call") {
+					const bodyNode = captures.BODY;
+					if (bodyNode) {
+						// Check if body contains actual super() call (not in comments)
+						const bodyText = bodyNode.text;
+						// Match super() or super.method() but not // super() in comments
+						const superCallRegex = /(?<!\/\/.*)super\s*\(/;
+						const hasSuperCall = superCallRegex.test(bodyText);
+						if (hasSuperCall) continue; // Skip if has super() - this is the GOOD case
+					}
+				}
+
 				// Use first capture for position info
 				if (match.captures.length > 0) {
 					const firstNode = match.captures[0].node;
