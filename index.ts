@@ -928,9 +928,38 @@ export default function (pi: ExtensionAPI) {
 
 	// Real-time feedback on file writes/edits
 	pi.on("tool_result", async (event) => {
-		// LATENCY TRACKING: Start overall timer for this tool_result
+		// ═══════════════════════════════════════════════════════════════════
+		// LATENCY TRACKING: Comprehensive phase-based logging
+		// ═══════════════════════════════════════════════════════════════════
 		const toolResultStart = Date.now();
 		const toolName = event.toolName;
+		const phases: Array<{
+			name: string;
+			start: number;
+			end?: number;
+			duration?: number;
+		}> = [];
+
+		function phaseStart(name: string) {
+			phases.push({ name, start: Date.now() });
+		}
+		function phaseEnd(name: string, metadata?: Record<string, unknown>) {
+			const p = phases.find((x) => x.name === name && !x.end);
+			if (p) {
+				p.end = Date.now();
+				p.duration = p.end - p.start;
+				if (filePath) {
+					logLatency({
+						type: "phase",
+						toolName,
+						filePath,
+						phase: name,
+						durationMs: p.duration,
+						metadata,
+					});
+				}
+			}
+		}
 
 		// Track tool call for behavior analysis (all tool types)
 		const filePath = (event.input as { path?: string }).path;
@@ -954,6 +983,8 @@ export default function (pi: ExtensionAPI) {
 		dbg(
 			`tool_result: tracking turn state for ${event.toolName} on ${filePath}`,
 		);
+		phaseStart("total");
+		phaseStart("turn_state_tracking");
 
 		// --- Track modified ranges in turn state for async jscpd/madge at turn_end ---
 		const cwd = projectRoot;
@@ -1009,6 +1040,8 @@ export default function (pi: ExtensionAPI) {
 		preWriteHints.delete(filePath);
 
 		// Record write for metrics (silent tracking)
+		phaseEnd("turn_state_tracking");
+		phaseStart("read_file");
 
 		let fileContent: string | undefined;
 		try {
@@ -1017,10 +1050,13 @@ export default function (pi: ExtensionAPI) {
 		} catch (err) {
 			void err;
 		}
+		phaseEnd("read_file");
 
 		// --- Auto-format on write (default enabled) ---
+		phaseStart("format");
 		// Runs detected formatters concurrently via Effect-TS
 		let formatChanged = false;
+		let formattersUsed: string[] = [];
 		if (!pi.getFlag("no-autoformat") && fileContent) {
 			const formatService = getFormatService();
 			try {
@@ -1028,6 +1064,7 @@ export default function (pi: ExtensionAPI) {
 				// This prevents "modified externally" false positives when agent writes file
 				formatService.recordRead(filePath);
 				const result = await formatService.formatFile(filePath);
+				formattersUsed = result.formatters.map((f) => f.name);
 				if (result.anyChanged) {
 					formatChanged = true;
 					dbg(
@@ -1040,6 +1077,7 @@ export default function (pi: ExtensionAPI) {
 				dbg(`autoformat error: ${err}`);
 			}
 		}
+		phaseEnd("format", { formattersUsed, formatChanged });
 
 		// --- Publish file modified event to bus (Phase 1) ---
 		if (pi.getFlag("lens-bus")) {
@@ -1097,6 +1135,7 @@ export default function (pi: ExtensionAPI) {
 		let lspOutput = preHint ? `\n\n${preHint}` : "";
 
 		// --- Auto-fix on write (safely - track to prevent loops) ---
+		phaseStart("autofix");
 		// Apply fixes BEFORE dispatch so dispatch only reports remaining issues
 		// Autofix is enabled by default, use --no-autofix to disable
 		const noAutofix = pi.getFlag("no-autofix");
@@ -1133,8 +1172,10 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		}
+		phaseEnd("autofix", { fixedCount, tools: ["ruff", "biome"] });
 
 		// --- Declarative dispatch: run all applicable lint tools ---
+		phaseStart("dispatch_lint");
 		// Phase 2: Replaced ~400 lines of if/else with unified dispatch system
 		dbg(`dispatch: running lint tools for ${filePath}`);
 
@@ -1165,16 +1206,26 @@ export default function (pi: ExtensionAPI) {
 		if (formatChanged || fixedCount > 0) {
 			lspOutput += `\n\n⚠️ **File modified by auto-format/fix. Re-read before next edit.**`;
 		}
+		phaseEnd("dispatch_lint", {
+			hasOutput: !!dispatchOutput,
+			effect: pi.getFlag("lens-effect"),
+			bus: pi.getFlag("lens-bus"),
+		});
 
 		// --- Test runner: run corresponding tests on write ---
+		phaseStart("test_runner");
+		let testInfoFound = false;
+		let testRunnerRan = false;
 		if (!pi.getFlag("no-tests")) {
 			const testInfo = testRunnerClient.findTestFile(filePath, cwd);
+			testInfoFound = !!testInfo;
 			if (testInfo) {
 				dbg(
 					`test-runner: found test file ${testInfo.testFile} for ${filePath}`,
 				);
 				const detectedRunner = testRunnerClient.detectRunner(cwd);
 				if (detectedRunner) {
+					testRunnerRan = true;
 					const testStart = Date.now();
 					const testResult = testRunnerClient.runTestFile(
 						testInfo.testFile,
@@ -1204,8 +1255,10 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		}
+		phaseEnd("test_runner", { found: testInfoFound, ran: testRunnerRan });
 
 		// --- TypeScript Language Service diagnostics (post-write) ---
+		phaseStart("typescript_lsp");
 		// Fast semantic analysis for type errors, unused vars, etc.
 		if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
 			try {
@@ -1245,6 +1298,7 @@ export default function (pi: ExtensionAPI) {
 				dbg(`typescript-client error: ${err}`);
 			}
 		}
+		phaseEnd("typescript_lsp", { isTsFile: filePath.endsWith(".ts") || filePath.endsWith(".tsx") });
 
 		// Agent behavior warnings (blind writes, thrashing)
 		if (behaviorWarnings.length > 0) {
@@ -1253,6 +1307,7 @@ export default function (pi: ExtensionAPI) {
 
 		// LATENCY TRACKING: Log timing before returning
 		const elapsed = Date.now() - toolResultStart;
+		phaseEnd("total", { hasOutput: !!lspOutput });
 		if (!lspOutput) {
 			logLatency({
 				type: "tool_result",
