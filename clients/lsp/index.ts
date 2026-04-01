@@ -178,6 +178,71 @@ export class LSPService {
 	}
 
 	/**
+	 * Navigation: go to definition
+	 */
+	async definition(filePath: string, line: number, character: number) {
+		const spawned = await this.getClientForFile(filePath);
+		if (!spawned) return [];
+		return spawned.client.definition(filePath, line, character);
+	}
+
+	/**
+	 * Navigation: find all references
+	 */
+	async references(
+		filePath: string,
+		line: number,
+		character: number,
+		includeDeclaration = true,
+	) {
+		const spawned = await this.getClientForFile(filePath);
+		if (!spawned) return [];
+		return spawned.client.references(
+			filePath,
+			line,
+			character,
+			includeDeclaration,
+		);
+	}
+
+	/**
+	 * Navigation: hover info
+	 */
+	async hover(filePath: string, line: number, character: number) {
+		const spawned = await this.getClientForFile(filePath);
+		if (!spawned) return null;
+		return spawned.client.hover(filePath, line, character);
+	}
+
+	/**
+	 * Navigation: symbols in document
+	 */
+	async documentSymbol(filePath: string) {
+		const spawned = await this.getClientForFile(filePath);
+		if (!spawned) return [];
+		return spawned.client.documentSymbol(filePath);
+	}
+
+	/**
+	 * Navigation: workspace-wide symbol search
+	 */
+	async workspaceSymbol(query: string) {
+		// Use the first active client for workspace-level queries
+		const clients = Array.from(this.state.clients.values());
+		if (clients.length === 0) return [];
+		return clients[0].workspaceSymbol(query);
+	}
+
+	/**
+	 * Navigation: go to implementation
+	 */
+	async implementation(filePath: string, line: number, character: number) {
+		const spawned = await this.getClientForFile(filePath);
+		if (!spawned) return [];
+		return spawned.client.implementation(filePath, line, character);
+	}
+
+	/**
 	 * Check if LSP is available for a file
 	 */
 	async hasLSP(filePath: string): Promise<boolean> {

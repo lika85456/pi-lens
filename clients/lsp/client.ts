@@ -32,6 +32,32 @@ export interface LSPDiagnostic {
 	source?: string;
 }
 
+export interface LSPLocation {
+	uri: string;
+	range: {
+		start: { line: number; character: number };
+		end: { line: number; character: number };
+	};
+}
+
+export interface LSPHover {
+	contents:
+		| string
+		| { kind: string; value: string }
+		| Array<string | { language: string; value: string }>;
+	range?: LSPLocation["range"];
+}
+
+export interface LSPSymbol {
+	name: string;
+	kind: number;
+	location?: LSPLocation;
+	range?: LSPLocation["range"];
+	selectionRange?: LSPLocation["range"];
+	detail?: string;
+	children?: LSPSymbol[];
+}
+
 export interface LSPClientInfo {
 	serverId: string;
 	root: string;
@@ -42,6 +68,35 @@ export interface LSPClientInfo {
 	};
 	getDiagnostics(filePath: string): LSPDiagnostic[];
 	waitForDiagnostics(filePath: string, timeoutMs?: number): Promise<void>;
+	/** Go to definition — returns Location[] */
+	definition(
+		filePath: string,
+		line: number,
+		character: number,
+	): Promise<LSPLocation[]>;
+	/** Find all references */
+	references(
+		filePath: string,
+		line: number,
+		character: number,
+		includeDeclaration?: boolean,
+	): Promise<LSPLocation[]>;
+	/** Hover info at position */
+	hover(
+		filePath: string,
+		line: number,
+		character: number,
+	): Promise<LSPHover | null>;
+	/** Symbols in a document */
+	documentSymbol(filePath: string): Promise<LSPSymbol[]>;
+	/** Workspace-wide symbol search */
+	workspaceSymbol(query: string): Promise<LSPSymbol[]>;
+	/** Go to implementation */
+	implementation(
+		filePath: string,
+		line: number,
+		character: number,
+	): Promise<LSPLocation[]>;
 	shutdown(): Promise<void>;
 }
 
@@ -268,6 +323,89 @@ export async function createLSPClient(options: {
 					resolve();
 				}, timeoutMs);
 			});
+		},
+
+		async definition(filePath, line, character) {
+			const uri = pathToFileURL(filePath).href;
+			try {
+				const result = await connection.sendRequest("textDocument/definition", {
+					textDocument: { uri },
+					position: { line, character },
+				});
+				if (!result) return [];
+				return Array.isArray(result) ? result : [result];
+			} catch {
+				return [];
+			}
+		},
+
+		async references(filePath, line, character, includeDeclaration = true) {
+			const uri = pathToFileURL(filePath).href;
+			try {
+				const result = await connection.sendRequest("textDocument/references", {
+					textDocument: { uri },
+					position: { line, character },
+					context: { includeDeclaration },
+				});
+				return Array.isArray(result) ? result : [];
+			} catch {
+				return [];
+			}
+		},
+
+		async hover(filePath, line, character) {
+			const uri = pathToFileURL(filePath).href;
+			try {
+				return (await connection.sendRequest("textDocument/hover", {
+					textDocument: { uri },
+					position: { line, character },
+				})) as LSPHover | null;
+			} catch {
+				return null;
+			}
+		},
+
+		async documentSymbol(filePath) {
+			const uri = pathToFileURL(filePath).href;
+			try {
+				const result = await connection.sendRequest(
+					"textDocument/documentSymbol",
+					{
+						textDocument: { uri },
+					},
+				);
+				return Array.isArray(result) ? result : [];
+			} catch {
+				return [];
+			}
+		},
+
+		async workspaceSymbol(query) {
+			try {
+				const result = await connection.sendRequest("workspace/symbol", {
+					query,
+				});
+				return Array.isArray(result) ? result : [];
+			} catch {
+				return [];
+			}
+		},
+
+		async implementation(filePath, line, character) {
+			const uri = pathToFileURL(filePath).href;
+			try {
+				const result = await connection.sendRequest(
+					"textDocument/implementation",
+					{
+						textDocument: { uri },
+						position: { line, character },
+					},
+				);
+				if (!result) return [];
+				return Array.isArray(result) ? result : [result];
+			} catch {
+				return [];
+			}
 		},
 
 		async shutdown() {

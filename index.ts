@@ -584,6 +584,172 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// --- LSP Navigation Tool (requires --lens-lsp) ---
+	// Exposes go-to-definition, find-references, hover, documentSymbol, workspaceSymbol, goToImplementation
+	pi.registerTool({
+		name: "lsp_navigation",
+		label: "LSP Navigate",
+		description:
+			"Navigate code using LSP (Language Server Protocol). Requires --lens-lsp flag.\n" +
+			"Operations:\n" +
+			"- definition: Jump to where a symbol is defined\n" +
+			"- references: Find all usages of a symbol\n" +
+			"- hover: Get type/doc info at a position\n" +
+			"- documentSymbol: List all symbols (functions/classes/vars) in a file\n" +
+			"- workspaceSymbol: Search symbols across the whole project\n" +
+			"- implementation: Jump to interface implementations\n\n" +
+			"Line and character are 1-based (as shown in editors).",
+		promptSnippet:
+			"Use lsp_navigation to find definitions, references, and hover info via LSP",
+		parameters: Type.Object({
+			operation: Type.Union(
+				[
+					Type.Literal("definition"),
+					Type.Literal("references"),
+					Type.Literal("hover"),
+					Type.Literal("documentSymbol"),
+					Type.Literal("workspaceSymbol"),
+					Type.Literal("implementation"),
+				],
+				{ description: "LSP operation to perform" },
+			),
+			filePath: Type.String({
+				description: "Absolute or relative path to the file",
+			}),
+			line: Type.Optional(
+				Type.Number({
+					description:
+						"Line number (1-based). Required for definition/references/hover/implementation",
+				}),
+			),
+			character: Type.Optional(
+				Type.Number({
+					description:
+						"Character offset (1-based). Required for definition/references/hover/implementation",
+				}),
+			),
+			query: Type.Optional(
+				Type.String({
+					description: "Symbol name to search. Used by workspaceSymbol",
+				}),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!pi.getFlag("lens-lsp")) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "lsp_navigation requires the --lens-lsp flag. Start pi with --lens-lsp to enable.",
+						},
+					],
+					isError: true,
+					details: {},
+				};
+			}
+
+			const {
+				operation,
+				filePath: rawPath,
+				line,
+				character,
+				query,
+			} = params as {
+				operation: string;
+				filePath: string;
+				line?: number;
+				character?: number;
+				query?: string;
+			};
+
+			const filePath = path.isAbsolute(rawPath)
+				? rawPath
+				: path.resolve(ctx.cwd || ".", rawPath);
+
+			const lspService = getLSPService();
+			const hasLSP = await lspService.hasLSP(filePath);
+			if (!hasLSP) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `No LSP server available for ${path.basename(filePath)}. Check that the language server is installed.`,
+						},
+					],
+					isError: true,
+					details: {},
+				};
+			}
+
+			// Ensure file is open in LSP before querying
+			let fileContent: string | undefined;
+			try {
+				fileContent = nodeFs.readFileSync(filePath, "utf-8");
+			} catch {
+				/* ignore */
+			}
+			if (fileContent) await lspService.openFile(filePath, fileContent);
+
+			// Convert 1-based editor coords to 0-based LSP coords
+			const lspLine = (line ?? 1) - 1;
+			const lspChar = (character ?? 1) - 1;
+
+			let result: unknown;
+			try {
+				switch (operation) {
+					case "definition":
+						result = await lspService.definition(filePath, lspLine, lspChar);
+						break;
+					case "references":
+						result = await lspService.references(filePath, lspLine, lspChar);
+						break;
+					case "hover":
+						result = await lspService.hover(filePath, lspLine, lspChar);
+						break;
+					case "documentSymbol":
+						result = await lspService.documentSymbol(filePath);
+						break;
+					case "workspaceSymbol":
+						result = await lspService.workspaceSymbol(query ?? "");
+						break;
+					case "implementation":
+						result = await lspService.implementation(
+							filePath,
+							lspLine,
+							lspChar,
+						);
+						break;
+					default:
+						result = [];
+				}
+			} catch (err) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `LSP error: ${err instanceof Error ? err.message : String(err)}`,
+						},
+					],
+					isError: true,
+					details: {},
+				};
+			}
+
+			const isEmpty = !result || (Array.isArray(result) && result.length === 0);
+			const output = isEmpty
+				? `No results for ${operation} at ${path.basename(filePath)}${line ? `:${line}:${character}` : ""}`
+				: JSON.stringify(result, null, 2);
+
+			return {
+				content: [{ type: "text" as const, text: output }],
+				details: {
+					operation,
+					resultCount: Array.isArray(result) ? result.length : result ? 1 : 0,
+				},
+			};
+		},
+	});
+
 	let _cachedJscpdClones: import("./clients/jscpd-client.js").DuplicateClone[] =
 		[];
 	const cachedExports = new Map<string, string>(); // function name -> file path
@@ -1311,50 +1477,8 @@ export default function (pi: ExtensionAPI) {
 		}
 		phaseEnd("test_runner", { found: testInfoFound, ran: testRunnerRan });
 
-		// --- TypeScript Language Service diagnostics (post-write) ---
-		phaseStart("typescript_lsp");
-		// Fast semantic analysis for type errors, unused vars, etc.
-		if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
-			try {
-				const tsClient = new TypeScriptClient();
-
-				// Track the file in the language service
-				tsClient.addFile(filePath, fileContent || "");
-
-				// Get diagnostics (syntactic + semantic)
-				const diagnostics = tsClient.getDiagnostics(filePath);
-
-				if (diagnostics.length > 0) {
-					// Filter to most important diagnostics
-					const importantDiags = diagnostics.filter((d) => {
-						// Focus on errors and important warnings
-						// Skip noisy ones like "cannot find name" from missing imports
-						const code = (d as any).code;
-						if (code === 2304) return false; // "Cannot find name"
-						if (code === 2307) return false; // "Cannot find module"
-						// DiagnosticSeverity.Error = 1, Warning = 2
-						return d.severity === 1 || (d.severity === 2 && !code);
-					});
-
-					if (importantDiags.length > 0) {
-						const tsOutput = importantDiags
-							.slice(0, 5)
-							.map((d) => {
-								// DiagnosticSeverity.Error = 1
-								const severity = d.severity === 1 ? "🔴" : "🟡";
-								return `  ${severity} [TS${(d as any).code}] ${d.message.split("\n")[0]}`;
-							})
-							.join("\n");
-						lspOutput += `\n\n📐 TypeScript Diagnostics:\n${tsOutput}`;
-					}
-				}
-			} catch (err) {
-				dbg(`typescript-client error: ${err}`);
-			}
-		}
-		phaseEnd("typescript_lsp", {
-			isTsFile: filePath.endsWith(".ts") || filePath.endsWith(".tsx"),
-		});
+		// Note: TypeScript diagnostics are handled by the ts-lsp dispatch runner above.
+		// No inline TypeScriptClient check here — dispatch already covers it.
 
 		// --- Complexity tracking (post-write) ---
 		phaseStart("complexity_check");

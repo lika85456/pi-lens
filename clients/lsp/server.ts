@@ -7,6 +7,7 @@
  * - Platform-specific handling
  */
 
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { ensureTool, getToolEnvironment } from "../installer/index.js";
 import {
@@ -86,50 +87,59 @@ async function spawnWithInteractiveInstall(
 }
 
 /**
- * Walk up the tree looking for project root markers
+ * Walk up the directory tree looking for project root markers.
+ *
+ * NearestRoot(includePatterns, excludePatterns?) → RootFunction
+ *
+ * - includePatterns: file/dir names that signal the project root (e.g. ["package.json"])
+ * - excludePatterns: if any of these exist in a directory, skip it (e.g. ["node_modules"])
+ * - stopDir: walk stops here (defaults to filesystem root; set to project cwd for safety)
+ *
+ * Equivalent to createRootDetector; exported under both names for clarity.
  */
-export function createRootDetector(
+export function NearestRoot(
 	includePatterns: string[],
 	excludePatterns?: string[],
+	stopDir?: string,
 ): RootFunction {
 	return async (file: string): Promise<string | undefined> => {
 		let currentDir = path.dirname(file);
-		const root = path.parse(currentDir).root;
+		const fsRoot = path.parse(currentDir).root;
+		const stop = stopDir ?? fsRoot;
 
-		while (currentDir !== root) {
-			// Check exclude patterns first - skip this directory if excluded
-			let excluded = false;
+		while (currentDir !== fsRoot) {
+			// Bail out if we've reached the stop boundary
+			if (
+				currentDir === stop ||
+				(currentDir.startsWith(stop + path.sep) === false &&
+					currentDir === stop)
+			) {
+				break;
+			}
+
+			// Check exclude patterns — skip this dir (but keep walking up)
 			if (excludePatterns) {
+				let excluded = false;
 				for (const pattern of excludePatterns) {
-					const checkPath = path.join(currentDir, pattern);
 					try {
-						const stat = await import("node:fs/promises").then((fs) =>
-							fs.stat(checkPath),
-						);
-						if (stat) {
-							excluded = true;
-							break; // Skip this directory
-						}
+						await stat(path.join(currentDir, pattern));
+						excluded = true;
+						break;
 					} catch {
 						/* not found */
 					}
 				}
-			}
-
-			// If excluded, skip to parent directory
-			if (excluded) {
-				currentDir = path.dirname(currentDir);
-				continue;
+				if (excluded) {
+					currentDir = path.dirname(currentDir);
+					continue;
+				}
 			}
 
 			// Check include patterns
 			for (const pattern of includePatterns) {
-				const checkPath = path.join(currentDir, pattern);
 				try {
-					const stat = await import("node:fs/promises").then((fs) =>
-						fs.stat(checkPath),
-					);
-					if (stat) return currentDir;
+					await stat(path.join(currentDir, pattern));
+					return currentDir;
 				} catch {
 					/* not found */
 				}
@@ -141,6 +151,9 @@ export function createRootDetector(
 		return undefined;
 	};
 }
+
+/** Alias kept for backward compatibility */
+export const createRootDetector = NearestRoot;
 
 // --- Server Definitions ---
 

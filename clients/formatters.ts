@@ -223,18 +223,9 @@ export const ruffFormatter: FormatterInfo = {
 			}
 		}
 
-		// Check if ruff binary available and no other Python formatter detected
-		const hasRuff = (await which("ruff")) !== null;
-		if (hasRuff) {
-			// Prefer ruff if no black config found
-			const blackFound = await findUp(["pyproject.toml"], cwd);
-			for (const p of blackFound) {
-				const content = await fs.readFile(p, "utf-8");
-				if (content.includes("[tool.black]")) return false; // Prefer black if configured
-			}
-			return true;
-		}
-
+		// Only enable if the project explicitly uses ruff (config or deps).
+		// Do NOT fall back to "ruff binary is installed" — that would format
+		// projects that never asked for ruff.
 		return false;
 	},
 };
@@ -364,6 +355,53 @@ export const ktlintFormatter: FormatterInfo = {
 	},
 };
 
+export const rubocopFormatter: FormatterInfo = {
+	name: "rubocop",
+	command: ["rubocop", "-a", "--no-color", "$FILE"],
+	extensions: [".rb", ".rake", ".gemspec", ".ru"],
+	async detect(cwd: string) {
+		// Only run if project has explicit RuboCop config
+		const configs = [".rubocop.yml", ".rubocop.yaml"];
+		const found = await findUp(configs, cwd);
+		if (found.length > 0) return (await which("rubocop")) !== null;
+		// Or rubocop in Gemfile
+		const gemfile = path.join(cwd, "Gemfile");
+		if (await fileExists(gemfile)) {
+			const content = await fs.readFile(gemfile, "utf-8");
+			if (content.includes("rubocop")) return (await which("rubocop")) !== null;
+		}
+		return false;
+	},
+};
+
+export const standardrbFormatter: FormatterInfo = {
+	name: "standardrb",
+	command: ["standardrb", "--fix", "$FILE"],
+	extensions: [".rb", ".rake"],
+	async detect(cwd: string) {
+		// standardrb is only used if explicitly in Gemfile (no config file — it is the config)
+		const gemfile = path.join(cwd, "Gemfile");
+		if (await fileExists(gemfile)) {
+			const content = await fs.readFile(gemfile, "utf-8");
+			if (content.includes("standard"))
+				return (await which("standardrb")) !== null;
+		}
+		return false;
+	},
+};
+
+export const gleamFormatter: FormatterInfo = {
+	name: "gleam",
+	command: ["gleam", "format", "$FILE"],
+	extensions: [".gleam"],
+	async detect(cwd: string) {
+		// Present if gleam.toml exists (any Gleam project)
+		const found = await findUp(["gleam.toml"], cwd);
+		if (found.length > 0) return (await which("gleam")) !== null;
+		return false;
+	},
+};
+
 export const terraformFormatter: FormatterInfo = {
 	name: "terraform",
 	command: ["terraform", "fmt", "$FILE"],
@@ -391,6 +429,9 @@ const ALL_FORMATTERS: FormatterInfo[] = [
 	clangFormatFormatter,
 	ktlintFormatter,
 	terraformFormatter,
+	rubocopFormatter,
+	standardrbFormatter,
+	gleamFormatter,
 ];
 
 // Cache for detection results - stores array of enabled formatter names per cwd+ext

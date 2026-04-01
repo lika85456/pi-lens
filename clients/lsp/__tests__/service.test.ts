@@ -1,6 +1,6 @@
 /**
  * LSP Service Test Suite
- * 
+ *
  * Tests for the LSP Service layer including:
  * - Client lifecycle management
  * - Effect-TS integration
@@ -9,15 +9,21 @@
  * - Cleanup and shutdown
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Effect } from "effect";
-import { LSPService, lspEffect, getLSPService, resetLSPService } from "../index.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LSPClientInfo } from "../client.js";
+import {
+	getLSPService,
+	LSPService,
+	lspEffect,
+	resetLSPService,
+} from "../index.js";
 import type { LSPServerInfo } from "../server.js";
 
 // Mock the dependencies
 vi.mock("../server.js", async () => {
-	const actual = await vi.importActual<typeof import("../server.js")>("../server.js");
+	const actual =
+		await vi.importActual<typeof import("../server.js")>("../server.js");
 	return {
 		...actual,
 		getServersForFileWithConfig: vi.fn(),
@@ -41,8 +47,8 @@ vi.mock("../client.js", () => ({
 	createLSPClient: vi.fn(),
 }));
 
-import { getServersForFileWithConfig as mockGetServersForFile } from "../config.js";
 import { createLSPClient as mockCreateLSPClient } from "../client.js";
+import { getServersForFileWithConfig as mockGetServersForFile } from "../config.js";
 
 describe("LSPService", () => {
 	let service: LSPService;
@@ -74,7 +80,7 @@ describe("LSPService", () => {
 	describe("hasLSP", () => {
 		it("should return false when no servers match file extension", async () => {
 			vi.mocked(mockGetServersForFile).mockReturnValue([]);
-			
+
 			const result = await service.hasLSP("/test/file.unknown");
 			expect(result).toBe(false);
 		});
@@ -88,7 +94,7 @@ describe("LSPService", () => {
 				spawn: vi.fn(),
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
-			
+
 			const result = await service.hasLSP("/project/test.ts");
 			expect(result).toBe(true);
 		});
@@ -102,7 +108,7 @@ describe("LSPService", () => {
 				spawn: vi.fn(),
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
-			
+
 			const result = await service.hasLSP("/project/test.ts");
 			expect(result).toBe(false);
 		});
@@ -123,7 +129,7 @@ describe("LSPService", () => {
 				spawn: vi.fn(),
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([server1, server2]);
-			
+
 			const result = await service.hasLSP("/project/test.ts");
 			expect(result).toBe(true);
 			expect(server1.root).toHaveBeenCalled();
@@ -134,7 +140,7 @@ describe("LSPService", () => {
 	describe("getClientForFile", () => {
 		it("should return undefined when no servers match", async () => {
 			vi.mocked(mockGetServersForFile).mockReturnValue([]);
-			
+
 			const result = await service.getClientForFile("/test/file.unknown");
 			expect(result).toBeUndefined();
 		});
@@ -152,12 +158,12 @@ describe("LSPService", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			// First call creates client
 			const result1 = await service.getClientForFile("/project/test.ts");
 			expect(result1).toBeDefined();
 			expect(mockCreateLSPClient).toHaveBeenCalledTimes(1);
-			
+
 			// Second call returns cached client
 			const result2 = await service.getClientForFile("/project/other.ts");
 			expect(result2?.client).toBe(result1?.client);
@@ -174,7 +180,7 @@ describe("LSPService", () => {
 				spawn: mockSpawn as any,
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
-			
+
 			const result = await service.getClientForFile("/project/test.ts");
 			expect(result).toBeUndefined();
 		});
@@ -197,9 +203,12 @@ describe("LSPService", () => {
 					process: { pid: 456 } as any,
 				}),
 			};
-			vi.mocked(mockGetServersForFile).mockReturnValue([failingServer, workingServer]);
+			vi.mocked(mockGetServersForFile).mockReturnValue([
+				failingServer,
+				workingServer,
+			]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			const result = await service.getClientForFile("/project/test.ts");
 			expect(result).toBeDefined();
 			expect(result?.info.id).toBe("server2");
@@ -220,22 +229,23 @@ describe("LSPService", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			await service.openFile("/project/test.ts", "const x = 1;");
-			
+
 			expect(mockClient.notify.open).toHaveBeenCalledWith(
 				"/project/test.ts",
 				"const x = 1;",
-				"typescript"
+				"typescript",
 			);
 		});
 
 		it("should do nothing when no LSP available", async () => {
 			vi.mocked(mockGetServersForFile).mockReturnValue([]);
-			
+
 			// Should not throw
-			await expect(service.openFile("/test.unknown", "content"))
-				.resolves.not.toThrow();
+			await expect(
+				service.openFile("/test.unknown", "content"),
+			).resolves.not.toThrow();
 		});
 	});
 
@@ -253,12 +263,12 @@ describe("LSPService", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			await service.updateFile("/project/test.ts", "const x = 2;");
-			
+
 			expect(mockClient.notify.change).toHaveBeenCalledWith(
 				"/project/test.ts",
-				"const x = 2;"
+				"const x = 2;",
 			);
 		});
 	});
@@ -287,16 +297,16 @@ describe("LSPService", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			const result = await service.getDiagnostics("/project/test.ts");
-			
+
 			expect(result).toEqual(mockDiagnostics);
 			expect(mockClient.waitForDiagnostics).toHaveBeenCalled();
 		});
 
 		it("should return empty array when no LSP available", async () => {
 			vi.mocked(mockGetServersForFile).mockReturnValue([]);
-			
+
 			const result = await service.getDiagnostics("/test.unknown");
 			expect(result).toEqual([]);
 		});
@@ -306,7 +316,7 @@ describe("LSPService", () => {
 		it("should shutdown all clients", async () => {
 			const mockClient1 = createMockClient();
 			const mockClient2 = createMockClient();
-			
+
 			// Add clients to service
 			const mockServer1: LSPServerInfo = {
 				id: "typescript",
@@ -322,29 +332,31 @@ describe("LSPService", () => {
 				root: vi.fn().mockResolvedValue("/project2"),
 				spawn: vi.fn().mockResolvedValue({ process: { pid: 2 } as any }),
 			};
-			
+
 			vi.mocked(mockGetServersForFile)
 				.mockReturnValueOnce([mockServer1])
 				.mockReturnValueOnce([mockServer2]);
-			
+
 			vi.mocked(mockCreateLSPClient)
 				.mockResolvedValueOnce(mockClient1)
 				.mockResolvedValueOnce(mockClient2);
-			
+
 			// Create clients
 			await service.getClientForFile("/project1/test.ts");
 			await service.getClientForFile("/project2/test.py");
-			
+
 			await service.shutdown();
-			
+
 			expect(mockClient1.shutdown).toHaveBeenCalled();
 			expect(mockClient2.shutdown).toHaveBeenCalled();
 		});
 
 		it("should handle shutdown errors gracefully", async () => {
 			const mockClient = createMockClient();
-			(mockClient.shutdown as any).mockRejectedValue(new Error("Shutdown failed"));
-			
+			(mockClient.shutdown as any).mockRejectedValue(
+				new Error("Shutdown failed"),
+			);
+
 			const mockServer: LSPServerInfo = {
 				id: "typescript",
 				name: "TypeScript Server",
@@ -354,9 +366,9 @@ describe("LSPService", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			await service.getClientForFile("/project/test.ts");
-			
+
 			// Should not throw even when client shutdown fails
 			await expect(service.shutdown()).resolves.not.toThrow();
 		});
@@ -374,9 +386,9 @@ describe("LSPService", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			await service.getClientForFile("/project/test.ts");
-			
+
 			const status = service.getStatus();
 			expect(status).toHaveLength(1);
 			expect(status[0]).toEqual({
@@ -416,17 +428,17 @@ describe("lspEffect", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			const program = effect.openFile("/project/test.ts", "content");
 			const result = await Effect.runPromise(program);
-			
+
 			expect(result).toBeUndefined();
 			expect(mockClient.notify.open).toHaveBeenCalled();
 		});
 
 		it("should handle errors in Effect", async () => {
 			vi.mocked(mockGetServersForFile).mockReturnValue([]);
-			
+
 			const program = effect.openFile("/test.unknown", "content");
 			// Should complete successfully (no-op for unknown files)
 			await expect(Effect.runPromise(program)).resolves.not.toThrow();
@@ -435,7 +447,16 @@ describe("lspEffect", () => {
 
 	describe("getDiagnostics Effect", () => {
 		it("should wrap getDiagnostics in Effect", async () => {
-			const mockDiagnostics = [{ severity: 1, message: "Error", range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } } }];
+			const mockDiagnostics = [
+				{
+					severity: 1,
+					message: "Error",
+					range: {
+						start: { line: 0, character: 0 },
+						end: { line: 0, character: 1 },
+					},
+				},
+			];
 			const mockClient = createMockClient(mockDiagnostics);
 			const mockServer: LSPServerInfo = {
 				id: "typescript",
@@ -446,10 +467,10 @@ describe("lspEffect", () => {
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
 			vi.mocked(mockCreateLSPClient).mockResolvedValue(mockClient as any);
-			
+
 			const program = effect.getDiagnostics("/project/test.ts");
 			const result = await Effect.runPromise(program);
-			
+
 			expect(result).toEqual(mockDiagnostics);
 		});
 	});
@@ -464,10 +485,10 @@ describe("lspEffect", () => {
 				spawn: vi.fn(),
 			};
 			vi.mocked(mockGetServersForFile).mockReturnValue([mockServer]);
-			
+
 			const program = effect.hasLSP("/project/test.ts");
 			const result = await Effect.runPromise(program);
-			
+
 			expect(result).toBe(true);
 		});
 	});
@@ -476,7 +497,7 @@ describe("lspEffect", () => {
 		it("should wrap shutdown in Effect", async () => {
 			const program = effect.shutdown();
 			const result = await Effect.runPromise(program);
-			
+
 			expect(result).toBeUndefined();
 		});
 	});
@@ -494,6 +515,12 @@ function createMockClient(diagnostics: any[] = []): LSPClientInfo {
 		},
 		getDiagnostics: vi.fn().mockReturnValue(diagnostics),
 		waitForDiagnostics: vi.fn().mockResolvedValue(undefined),
+		definition: vi.fn().mockResolvedValue([]),
+		references: vi.fn().mockResolvedValue([]),
+		hover: vi.fn().mockResolvedValue(null),
+		documentSymbol: vi.fn().mockResolvedValue([]),
+		workspaceSymbol: vi.fn().mockResolvedValue([]),
+		implementation: vi.fn().mockResolvedValue([]),
 		shutdown: vi.fn().mockResolvedValue(undefined),
 	};
 }
