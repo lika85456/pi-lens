@@ -2,6 +2,18 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.1.1] - 2026-04-01
+
+### Added
+- **File-based latency logging** — Performance analysis via `~/.pi-lens/latency.log`
+  - New `latency-logger.ts` module for centralized logging
+  - Logs every runner's timing (ts-lsp, ast-grep-napi, biome, test-runner, etc.)
+  - Logs tool_result overall timing with result status (completed/blocked/no_output)
+  - JSON Lines format for easy analysis with `jq`
+  - Read with: `cat ~/.pi-lens/latency.log | jq -s '.[] | select(.type=="runner")'`
+
+---
+
 ## [3.1.0] - 2026-04-01
 
 ### Changed
