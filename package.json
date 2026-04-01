@@ -56,6 +56,7 @@
 	},
 	"devDependencies": {
 		"@ast-grep/napi": "^0.42.0",
+		"@biomejs/biome": "^2.4.10",
 		"@types/node": "^22.10.5",
 		"js-yaml": "^4.1.1",
 		"typescript": "^5.0.0",

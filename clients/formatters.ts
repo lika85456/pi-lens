@@ -479,10 +479,22 @@ export async function formatFile(
 ): Promise<FormatterResult> {
 	try {
 		const absolutePath = path.resolve(filePath);
+		const cwd = path.dirname(absolutePath);
 		const contentBefore = await fs.readFile(absolutePath, "utf-8");
 
 		// Replace $FILE placeholder
-		const cmd = formatter.command.map((c) => c.replace("$FILE", absolutePath));
+		let cmd = formatter.command.map((c) => c.replace("$FILE", absolutePath));
+
+		// OPTIMIZATION: Use local biome binary instead of npx if available
+		if (formatter.name === "biome" && cmd[0] === "npx") {
+			const localBiome = path.join(cwd, "node_modules", ".bin", "biome");
+			const localBiomeWin = path.join(cwd, "node_modules", ".bin", "biome.cmd");
+			if (await fileExists(localBiome)) {
+				cmd = [localBiome, ...cmd.slice(2)]; // Replace "npx" "@biomejs/biome" with local path
+			} else if (await fileExists(localBiomeWin)) {
+				cmd = [localBiomeWin, ...cmd.slice(2)];
+			}
+		}
 
 		// Run formatter
 		const result = safeSpawn(cmd[0], cmd.slice(1), { timeout: 15000 });
