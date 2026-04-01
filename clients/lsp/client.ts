@@ -68,6 +68,8 @@ export interface LSPClientInfo {
 	};
 	getDiagnostics(filePath: string): LSPDiagnostic[];
 	waitForDiagnostics(filePath: string, timeoutMs?: number): Promise<void>;
+	/** Get all tracked diagnostics (for cascade checking) */
+	getAllDiagnostics(): Map<string, LSPDiagnostic[]>;
 	/** Go to definition — returns Location[] */
 	definition(
 		filePath: string,
@@ -291,6 +293,11 @@ export async function createLSPClient(options: {
 			// Normalize path for Windows case-insensitive lookup
 			const normalizedPath = normalizeMapKey(filePath);
 			return diagnostics.get(normalizedPath) ?? [];
+		},
+
+		getAllDiagnostics() {
+			// Return copy of all tracked diagnostics (for cascade checking)
+			return new Map(diagnostics);
 		},
 
 		async waitForDiagnostics(filePath, timeoutMs = 10000) {

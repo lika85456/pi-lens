@@ -243,6 +243,23 @@ export class LSPService {
 	}
 
 	/**
+	 * Get all diagnostics across all tracked files (for cascade checking)
+	 */
+	async getAllDiagnostics(): Promise<
+		Map<string, import("./client.js").LSPDiagnostic[]>
+	> {
+		const all = new Map<string, import("./client.js").LSPDiagnostic[]>();
+		for (const [_key, client] of this.state.clients) {
+			const clientDiags = client.getAllDiagnostics();
+			for (const [filePath, diags] of clientDiags) {
+				const existing = all.get(filePath) ?? [];
+				all.set(filePath, [...existing, ...diags]);
+			}
+		}
+		return all;
+	}
+
+	/**
 	 * Check if LSP is available for a file
 	 */
 	async hasLSP(filePath: string): Promise<boolean> {

@@ -20,6 +20,7 @@ import { ComplexityClient } from "./clients/complexity-client.js";
 import { DependencyChecker } from "./clients/dependency-checker.js";
 import { dispatchLintWithBus } from "./clients/dispatch/bus-dispatcher.js";
 import { dispatchLint } from "./clients/dispatch/integration.js";
+import { createFileTime, FileTimeError } from "./clients/file-time.js";
 import {
 	getFormatService,
 	resetFormatService,
@@ -1200,6 +1201,22 @@ export default function (pi: ExtensionAPI) {
 			);
 			return;
 		}
+
+		// --- FileTime assert: prevent stale writes (file modified since agent read it) ---
+		const sessionFileTime = createFileTime("default");
+		try {
+			sessionFileTime.assert(filePath);
+		} catch (err: unknown) {
+			if (err instanceof FileTimeError) {
+				// File was modified externally or never read - warn but don't block (for now)
+				// In strict mode this could block; currently we just surface the warning
+				const warning = `⚠️ FileTime warning: ${err.message}`;
+				dbg(warning);
+				// Don't return - let the operation proceed with warning
+			}
+		}
+		// Record this write so future assertions know the agent has the current state
+		sessionFileTime.read(filePath);
 		dbg(
 			`tool_result: tracking turn state for ${event.toolName} on ${filePath}`,
 		);
@@ -1517,6 +1534,68 @@ export default function (pi: ExtensionAPI) {
 		// Agent behavior warnings (blind writes, thrashing)
 		if (behaviorWarnings.length > 0) {
 			lspOutput += `\n\n${agentBehaviorClient.formatWarnings(behaviorWarnings)}`;
+		}
+
+		// --- Cascade diagnostics: check other files for errors (when --lens-lsp) ---
+		if (pi.getFlag("lens-lsp") && !pi.getFlag("no-lsp")) {
+			const MAX_CASCADE_FILES = 5;
+			const MAX_DIAGNOSTICS_PER_FILE = 20;
+			const cascadeStart = Date.now();
+
+			try {
+				const lspService = getLSPService();
+				const allDiags = await lspService.getAllDiagnostics();
+				const normalizedEditedPath = path.resolve(filePath);
+				const otherFileErrors: Array<{
+					file: string;
+					errors: import("./clients/lsp/client.js").LSPDiagnostic[];
+				}> = [];
+
+				for (const [diagPath, diags] of allDiags) {
+					if (path.resolve(diagPath) === normalizedEditedPath) continue; // Skip edited file (dispatch already covered it)
+					const errors = diags.filter((d) => d.severity === 1);
+					if (errors.length > 0) {
+						otherFileErrors.push({ file: diagPath, errors });
+					}
+				}
+
+				if (otherFileErrors.length > 0) {
+					lspOutput += `\n\n📐 Cascade errors detected in ${otherFileErrors.length} other file(s):`;
+					for (const { file, errors } of otherFileErrors.slice(
+						0,
+						MAX_CASCADE_FILES,
+					)) {
+						const limited = errors.slice(0, MAX_DIAGNOSTICS_PER_FILE);
+						const suffix =
+							errors.length > MAX_DIAGNOSTICS_PER_FILE
+								? `\n... and ${errors.length - MAX_DIAGNOSTICS_PER_FILE} more`
+								: "";
+						// Structured XML format (like OpenCode) for cleaner parsing
+						lspOutput += `\n<diagnostics file="${file}">`;
+						for (const e of limited) {
+							const line = (e.range?.start?.line ?? 0) + 1;
+							const col = (e.range?.start?.character ?? 0) + 1;
+							const code = e.code ? ` [${e.code}]` : "";
+							lspOutput += `\n  ${code} (${line}:${col}) ${e.message.split("\n")[0].slice(0, 100)}`;
+						}
+						lspOutput += `${suffix}\n</diagnostics>`;
+					}
+					if (otherFileErrors.length > MAX_CASCADE_FILES) {
+						lspOutput += `\n... and ${otherFileErrors.length - MAX_CASCADE_FILES} more files with errors`;
+					}
+				}
+
+				logLatency({
+					type: "phase",
+					toolName,
+					filePath,
+					phase: "cascade_diagnostics",
+					durationMs: Date.now() - cascadeStart,
+					metadata: { filesWithErrors: otherFileErrors.length },
+				});
+			} catch (err) {
+				dbg(`cascade diagnostics error: ${err}`);
+			}
 		}
 
 		// LATENCY TRACKING: Log timing before returning

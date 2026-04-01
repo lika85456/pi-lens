@@ -514,6 +514,7 @@ function createMockClient(diagnostics: any[] = []): LSPClientInfo {
 			change: vi.fn().mockResolvedValue(undefined),
 		},
 		getDiagnostics: vi.fn().mockReturnValue(diagnostics),
+		getAllDiagnostics: vi.fn().mockReturnValue(new Map()),
 		waitForDiagnostics: vi.fn().mockResolvedValue(undefined),
 		definition: vi.fn().mockResolvedValue([]),
 		references: vi.fn().mockResolvedValue([]),
