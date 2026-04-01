@@ -58,10 +58,10 @@ async function spawnWithInteractiveInstall(
 	_command: string,
 	_args: string[],
 	options: { cwd: string },
-	spawnFn: () => LSPProcess,
+	spawnFn: () => LSPProcess | Promise<LSPProcess>,
 ): Promise<LSPProcess | undefined> {
 	try {
-		return spawnFn();
+		return await spawnFn();
 	} catch (error) {
 		// Check if this is a "command not found" error
 		const errorMsg = String(error);
@@ -74,7 +74,7 @@ async function spawnWithInteractiveInstall(
 			const shouldInstall = await promptForInstall(language, options.cwd);
 			if (shouldInstall) {
 				// Try again after install
-				return spawnFn();
+				return await spawnFn();
 			}
 			// User declined, return undefined to skip this LSP
 			return undefined;
@@ -97,7 +97,8 @@ export function createRootDetector(
 		const root = path.parse(currentDir).root;
 
 		while (currentDir !== root) {
-			// Check exclude patterns first
+			// Check exclude patterns first - skip this directory if excluded
+			let excluded = false;
 			if (excludePatterns) {
 				for (const pattern of excludePatterns) {
 					const checkPath = path.join(currentDir, pattern);
@@ -105,11 +106,20 @@ export function createRootDetector(
 						const stat = await import("node:fs/promises").then((fs) =>
 							fs.stat(checkPath),
 						);
-						if (stat) return undefined; // Excluded
+						if (stat) {
+							excluded = true;
+							break; // Skip this directory
+						}
 					} catch {
 						/* not found */
 					}
 				}
+			}
+
+			// If excluded, skip to parent directory
+			if (excluded) {
+				currentDir = path.dirname(currentDir);
+				continue;
 			}
 
 			// Check include patterns
@@ -138,17 +148,14 @@ export const TypeScriptServer: LSPServerInfo = {
 	id: "typescript",
 	name: "TypeScript Language Server",
 	extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
-	root: createRootDetector(
-		[
-			"package-lock.json",
-			"bun.lockb",
-			"bun.lock",
-			"pnpm-lock.yaml",
-			"yarn.lock",
-			"package.json",
-		],
-		[".pi-lens"],
-	),
+	root: createRootDetector([
+		"package-lock.json",
+		"bun.lockb",
+		"bun.lock",
+		"pnpm-lock.yaml",
+		"yarn.lock",
+		"package.json",
+	]),
 	async spawn(root) {
 		const path = await import("node:path");
 		const fs = await import("node:fs/promises");
@@ -224,7 +231,7 @@ export const TypeScriptServer: LSPServerInfo = {
 
 		// Use absolute path and proper environment
 		const env = await getToolEnvironment();
-		const proc = launchLSP(lspPath, ["--stdio"], {
+		const proc = await launchLSP(lspPath, ["--stdio"], {
 			cwd: root,
 			env: {
 				...env,
@@ -245,23 +252,24 @@ export const PythonServer: LSPServerInfo = {
 	id: "python",
 	name: "Pyright Language Server",
 	extensions: [".py", ".pyi"],
-	root: createRootDetector(
-		[
-			"pyproject.toml",
-			"setup.py",
-			"setup.cfg",
-			"requirements.txt",
-			"Pipfile",
-			"poetry.lock",
-		],
-		[".pi-lens"],
-	),
+	root: createRootDetector([
+		"pyproject.toml",
+		"setup.py",
+		"setup.cfg",
+		"requirements.txt",
+		"Pipfile",
+		"poetry.lock",
+	]),
 	async spawn(root) {
 		const env = await getToolEnvironment();
-		const proc = launchViaPackageManager("pyright-langserver", ["--stdio"], {
-			cwd: root,
-			env,
-		});
+		const proc = await launchViaPackageManager(
+			"pyright-langserver",
+			["--stdio"],
+			{
+				cwd: root,
+				env,
+			},
+		);
 
 		// Detect virtual environment
 		const initialization: Record<string, unknown> = {};
@@ -296,14 +304,14 @@ export const GoServer: LSPServerInfo = {
 	id: "go",
 	name: "gopls",
 	extensions: [".go"],
-	root: createRootDetector(["go.mod", "go.sum"], [".pi-lens"]),
+	root: createRootDetector(["go.mod", "go.sum"]),
 	async spawn(root) {
 		const proc = await spawnWithInteractiveInstall(
 			"go",
 			"gopls",
 			[],
 			{ cwd: root },
-			() => launchLSP("gopls", [], { cwd: root }),
+			async () => await launchLSP("gopls", [], { cwd: root }),
 		);
 		return proc ? { process: proc } : undefined;
 	},
@@ -313,14 +321,14 @@ export const RustServer: LSPServerInfo = {
 	id: "rust",
 	name: "rust-analyzer",
 	extensions: [".rs"],
-	root: createRootDetector(["Cargo.toml", "Cargo.lock"], [".pi-lens"]),
+	root: createRootDetector(["Cargo.toml", "Cargo.lock"]),
 	async spawn(root) {
 		const proc = await spawnWithInteractiveInstall(
 			"rust",
 			"rust-analyzer",
 			[],
 			{ cwd: root },
-			() => launchLSP("rust-analyzer", [], { cwd: root }),
+			async () => await launchLSP("rust-analyzer", [], { cwd: root }),
 		);
 		return proc ? { process: proc } : undefined;
 	},
@@ -330,14 +338,14 @@ export const RubyServer: LSPServerInfo = {
 	id: "ruby",
 	name: "Ruby LSP",
 	extensions: [".rb", ".rake", ".gemspec", ".ru"],
-	root: createRootDetector(["Gemfile", ".ruby-version"], [".pi-lens"]),
+	root: createRootDetector(["Gemfile", ".ruby-version"]),
 	async spawn(root) {
 		// Try ruby-lsp first, fall back to solargraph
 		try {
-			const proc = launchLSP("ruby-lsp", [], { cwd: root });
+			const proc = await launchLSP("ruby-lsp", [], { cwd: root });
 			return { process: proc };
 		} catch {
-			const proc = launchViaPackageManager("solargraph", ["stdio"], {
+			const proc = await launchViaPackageManager("solargraph", ["stdio"], {
 				cwd: root,
 			});
 			return { process: proc };
@@ -349,9 +357,9 @@ export const PHPServer: LSPServerInfo = {
 	id: "php",
 	name: "Intelephense",
 	extensions: [".php"],
-	root: createRootDetector(["composer.json", "composer.lock"], [".pi-lens"]),
+	root: createRootDetector(["composer.json", "composer.lock"]),
 	async spawn(root) {
-		const proc = launchViaPackageManager("intelephense", ["--stdio"], {
+		const proc = await launchViaPackageManager("intelephense", ["--stdio"], {
 			cwd: root,
 		});
 		return {
@@ -365,9 +373,9 @@ export const CSharpServer: LSPServerInfo = {
 	id: "csharp",
 	name: "csharp-ls",
 	extensions: [".cs"],
-	root: createRootDetector([".sln", ".csproj", ".slnx"], [".pi-lens"]),
+	root: createRootDetector([".sln", ".csproj", ".slnx"]),
 	async spawn(root) {
-		const proc = launchLSP("csharp-ls", [], { cwd: root });
+		const proc = await launchLSP("csharp-ls", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -376,9 +384,9 @@ export const FSharpServer: LSPServerInfo = {
 	id: "fsharp",
 	name: "FSAutocomplete",
 	extensions: [".fs", ".fsi", ".fsx"],
-	root: createRootDetector([".sln", ".fsproj"], [".pi-lens"]),
+	root: createRootDetector([".sln", ".fsproj"]),
 	async spawn(root) {
-		const proc = launchLSP("fsautocomplete", [], { cwd: root });
+		const proc = await launchLSP("fsautocomplete", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -387,14 +395,11 @@ export const JavaServer: LSPServerInfo = {
 	id: "java",
 	name: "JDT Language Server",
 	extensions: [".java"],
-	root: createRootDetector(
-		["pom.xml", "build.gradle", ".classpath"],
-		[".pi-lens"],
-	),
+	root: createRootDetector(["pom.xml", "build.gradle", ".classpath"]),
 	async spawn(root) {
 		// JDTLS requires special handling - paths to launcher jar
 		const jdtlsPath = process.env.JDTLS_PATH || "jdtls";
-		const proc = launchLSP(jdtlsPath, [], { cwd: root });
+		const proc = await launchLSP(jdtlsPath, [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -403,12 +408,9 @@ export const KotlinServer: LSPServerInfo = {
 	id: "kotlin",
 	name: "Kotlin Language Server",
 	extensions: [".kt", ".kts"],
-	root: createRootDetector(
-		["build.gradle.kts", "build.gradle", "pom.xml"],
-		[".pi-lens"],
-	),
+	root: createRootDetector(["build.gradle.kts", "build.gradle", "pom.xml"]),
 	async spawn(root) {
-		const proc = launchLSP("kotlin-language-server", [], { cwd: root });
+		const proc = await launchLSP("kotlin-language-server", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -417,9 +419,9 @@ export const SwiftServer: LSPServerInfo = {
 	id: "swift",
 	name: "SourceKit-LSP",
 	extensions: [".swift"],
-	root: createRootDetector(["Package.swift"], [".pi-lens"]),
+	root: createRootDetector(["Package.swift"]),
 	async spawn(root) {
-		const proc = launchLSP("sourcekit-lsp", [], { cwd: root });
+		const proc = await launchLSP("sourcekit-lsp", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -428,11 +430,15 @@ export const DartServer: LSPServerInfo = {
 	id: "dart",
 	name: "Dart Analysis Server",
 	extensions: [".dart"],
-	root: createRootDetector(["pubspec.yaml"], [".pi-lens"]),
+	root: createRootDetector(["pubspec.yaml"]),
 	async spawn(root) {
-		const proc = launchLSP("dart", ["language-server", "--protocol=lsp"], {
-			cwd: root,
-		});
+		const proc = await launchLSP(
+			"dart",
+			["language-server", "--protocol=lsp"],
+			{
+				cwd: root,
+			},
+		);
 		return { process: proc };
 	},
 };
@@ -441,9 +447,9 @@ export const LuaServer: LSPServerInfo = {
 	id: "lua",
 	name: "Lua Language Server",
 	extensions: [".lua"],
-	root: createRootDetector([".luarc.json", ".luacheckrc"], [".pi-lens"]),
+	root: createRootDetector([".luarc.json", ".luacheckrc"]),
 	async spawn(root) {
-		const proc = launchLSP("lua-language-server", [], { cwd: root });
+		const proc = await launchLSP("lua-language-server", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -459,7 +465,9 @@ export const CppServer: LSPServerInfo = {
 		"Makefile",
 	]),
 	async spawn(root) {
-		const proc = launchLSP("clangd", ["--background-index"], { cwd: root });
+		const proc = await launchLSP("clangd", ["--background-index"], {
+			cwd: root,
+		});
 		return { process: proc };
 	},
 };
@@ -468,9 +476,9 @@ export const ZigServer: LSPServerInfo = {
 	id: "zig",
 	name: "ZLS",
 	extensions: [".zig", ".zon"],
-	root: createRootDetector(["build.zig"], [".pi-lens"]),
+	root: createRootDetector(["build.zig"]),
 	async spawn(root) {
-		const proc = launchLSP("zls", [], { cwd: root });
+		const proc = await launchLSP("zls", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -479,12 +487,9 @@ export const HaskellServer: LSPServerInfo = {
 	id: "haskell",
 	name: "Haskell Language Server",
 	extensions: [".hs", ".lhs"],
-	root: createRootDetector(
-		["stack.yaml", "cabal.project", "*.cabal"],
-		[".pi-lens"],
-	),
+	root: createRootDetector(["stack.yaml", "cabal.project", "*.cabal"]),
 	async spawn(root) {
-		const proc = launchLSP("haskell-language-server-wrapper", ["--lsp"], {
+		const proc = await launchLSP("haskell-language-server-wrapper", ["--lsp"], {
 			cwd: root,
 		});
 		return { process: proc };
@@ -495,9 +500,9 @@ export const ElixirServer: LSPServerInfo = {
 	id: "elixir",
 	name: "ElixirLS",
 	extensions: [".ex", ".exs"],
-	root: createRootDetector(["mix.exs"], [".pi-lens"]),
+	root: createRootDetector(["mix.exs"]),
 	async spawn(root) {
-		const proc = launchLSP("elixir-ls", [], { cwd: root });
+		const proc = await launchLSP("elixir-ls", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -506,9 +511,9 @@ export const GleamServer: LSPServerInfo = {
 	id: "gleam",
 	name: "Gleam LSP",
 	extensions: [".gleam"],
-	root: createRootDetector(["gleam.toml"], [".pi-lens"]),
+	root: createRootDetector(["gleam.toml"]),
 	async spawn(root) {
-		const proc = launchLSP("gleam", ["lsp"], { cwd: root });
+		const proc = await launchLSP("gleam", ["lsp"], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -517,9 +522,9 @@ export const OCamlServer: LSPServerInfo = {
 	id: "ocaml",
 	name: "ocamllsp",
 	extensions: [".ml", ".mli"],
-	root: createRootDetector(["dune-project", "opam"], [".pi-lens"]),
+	root: createRootDetector(["dune-project", "opam"]),
 	async spawn(root) {
-		const proc = launchLSP("ocamllsp", [], { cwd: root });
+		const proc = await launchLSP("ocamllsp", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -528,9 +533,9 @@ export const ClojureServer: LSPServerInfo = {
 	id: "clojure",
 	name: "Clojure LSP",
 	extensions: [".clj", ".cljs", ".cljc", ".edn"],
-	root: createRootDetector(["deps.edn", "project.clj"], [".pi-lens"]),
+	root: createRootDetector(["deps.edn", "project.clj"]),
 	async spawn(root) {
-		const proc = launchLSP("clojure-lsp", [], { cwd: root });
+		const proc = await launchLSP("clojure-lsp", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -539,9 +544,9 @@ export const TerraformServer: LSPServerInfo = {
 	id: "terraform",
 	name: "Terraform LSP",
 	extensions: [".tf", ".tfvars"],
-	root: createRootDetector([".terraform.lock.hcl"], [".pi-lens"]),
+	root: createRootDetector([".terraform.lock.hcl"]),
 	async spawn(root) {
-		const proc = launchLSP("terraform-ls", ["serve"], { cwd: root });
+		const proc = await launchLSP("terraform-ls", ["serve"], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -550,9 +555,9 @@ export const NixServer: LSPServerInfo = {
 	id: "nix",
 	name: "nixd",
 	extensions: [".nix"],
-	root: createRootDetector(["flake.nix"], [".pi-lens"]),
+	root: createRootDetector(["flake.nix"]),
 	async spawn(root) {
-		const proc = launchLSP("nixd", [], { cwd: root });
+		const proc = await launchLSP("nixd", [], { cwd: root });
 		return { process: proc };
 	},
 };
@@ -569,7 +574,7 @@ export const BashServer: LSPServerInfo = {
 			"bash-language-server",
 			["start"],
 			{ cwd },
-			() => launchLSP("bash-language-server", ["start"], {}),
+			async () => await launchLSP("bash-language-server", ["start"], {}),
 		);
 		return proc ? { process: proc } : undefined;
 	},
@@ -582,7 +587,7 @@ export const DockerServer: LSPServerInfo = {
 	root: async () => process.cwd(),
 	async spawn() {
 		// Use npx since it's not auto-installed
-		const proc = launchViaPackageManager(
+		const proc = await launchViaPackageManager(
 			"dockerfile-language-server-nodejs",
 			["--stdio"],
 			{},
@@ -603,7 +608,7 @@ export const YamlServer: LSPServerInfo = {
 			"yaml-language-server",
 			["--stdio"],
 			{ cwd },
-			() => launchLSP("yaml-language-server", ["--stdio"], {}),
+			async () => await launchLSP("yaml-language-server", ["--stdio"], {}),
 		);
 		return proc ? { process: proc } : undefined;
 	},
@@ -618,10 +623,11 @@ export const JsonServer: LSPServerInfo = {
 		const cwd = process.cwd();
 		const proc = await spawnWithInteractiveInstall(
 			"json",
-			"vscode-json-languageserver",
+			"vscode-json-language-server",
 			["--stdio"],
 			{ cwd },
-			() => launchLSP("vscode-json-languageserver", ["--stdio"], {}),
+			async () =>
+				await launchLSP("vscode-json-language-server", ["--stdio"], {}),
 		);
 		return proc ? { process: proc } : undefined;
 	},
@@ -631,10 +637,10 @@ export const PrismaServer: LSPServerInfo = {
 	id: "prisma",
 	name: "Prisma Language Server",
 	extensions: [".prisma"],
-	root: createRootDetector(["prisma/schema.prisma"], [".pi-lens"]),
+	root: createRootDetector(["prisma/schema.prisma"]),
 	async spawn(root) {
 		// Use npx since it's not auto-installed
-		const proc = launchViaPackageManager(
+		const proc = await launchViaPackageManager(
 			"@prisma/language-server",
 			["--stdio"],
 			{ cwd: root },
@@ -649,21 +655,22 @@ export const VueServer: LSPServerInfo = {
 	id: "vue",
 	name: "Vue Language Server",
 	extensions: [".vue"],
-	root: createRootDetector(
-		[
-			"package-lock.json",
-			"bun.lockb",
-			"bun.lock",
-			"pnpm-lock.yaml",
-			"yarn.lock",
-		],
-		[".pi-lens"],
-	),
+	root: createRootDetector([
+		"package-lock.json",
+		"bun.lockb",
+		"bun.lock",
+		"pnpm-lock.yaml",
+		"yarn.lock",
+	]),
 	async spawn(root) {
 		// Use npx since it's not auto-installed
-		const proc = launchViaPackageManager("@vue/language-server", ["--stdio"], {
-			cwd: root,
-		});
+		const proc = await launchViaPackageManager(
+			"@vue/language-server",
+			["--stdio"],
+			{
+				cwd: root,
+			},
+		);
 		return { process: proc };
 	},
 };
@@ -672,19 +679,16 @@ export const SvelteServer: LSPServerInfo = {
 	id: "svelte",
 	name: "Svelte Language Server",
 	extensions: [".svelte"],
-	root: createRootDetector(
-		[
-			"package-lock.json",
-			"bun.lockb",
-			"bun.lock",
-			"pnpm-lock.yaml",
-			"yarn.lock",
-		],
-		[".pi-lens"],
-	),
+	root: createRootDetector([
+		"package-lock.json",
+		"bun.lockb",
+		"bun.lock",
+		"pnpm-lock.yaml",
+		"yarn.lock",
+	]),
 	async spawn(root) {
 		// Use npx since it's not auto-installed
-		const proc = launchViaPackageManager(
+		const proc = await launchViaPackageManager(
 			"svelte-language-server",
 			["--stdio"],
 			{ cwd: root },
@@ -708,7 +712,7 @@ export const ESLintServer: LSPServerInfo = {
 	async spawn(root) {
 		// Try via package manager (npx) since it's not auto-installed
 		try {
-			const proc = launchViaPackageManager(
+			const proc = await launchViaPackageManager(
 				"vscode-eslint-language-server",
 				["--stdio"],
 				{ cwd: root },
@@ -731,7 +735,7 @@ export const CssServer: LSPServerInfo = {
 	root: async () => process.cwd(),
 	async spawn() {
 		// Use npx since it's not auto-installed
-		const proc = launchViaPackageManager(
+		const proc = await launchViaPackageManager(
 			"vscode-css-languageserver",
 			["--stdio"],
 			{},

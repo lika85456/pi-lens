@@ -9,9 +9,11 @@
 
 import {
 	type ChildProcess,
+	execSync,
 	spawn as nodeSpawn,
 	type SpawnOptions,
 } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 export interface LSPProcess {
@@ -22,17 +24,111 @@ export interface LSPProcess {
 	pid: number;
 }
 
-// Helper to detect if running on Windows
 const isWindows = process.platform === "win32";
+
+/**
+ * Find binary in npm global directory
+ * Works around PATH caching issue after npm install -g
+ */
+function _findBinaryInNpmGlobal(command: string): string | undefined {
+	try {
+		// Get npm global prefix
+		const prefix = execSync("npm prefix -g", { encoding: "utf-8" }).trim();
+
+		// On Windows, binaries are directly in the prefix dir
+		// On Unix, they're in prefix/bin
+		const binDir = isWindows ? prefix : path.join(prefix, "bin");
+
+		// Check for Windows variants
+		const candidates = isWindows
+			? [
+					path.join(binDir, `${command}.cmd`),
+					path.join(binDir, `${command}.exe`),
+					path.join(binDir, command),
+				]
+			: [path.join(binDir, command)];
+
+		for (const candidate of candidates) {
+			if (fs.existsSync(candidate)) {
+				return candidate;
+			}
+		}
+		return undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Try to spawn a process, throwing immediately if it fails
+ */
+function trySpawn(
+	command: string,
+	args: string[],
+	cwd: string,
+	env: NodeJS.ProcessEnv,
+	needsShell: boolean,
+): ChildProcess {
+	let proc: ChildProcess;
+
+	if (needsShell) {
+		// Use shell mode with quoted command
+		const shellCommand = `"${command}" ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`;
+		proc = nodeSpawn(shellCommand, [], {
+			cwd,
+			env,
+			stdio: ["pipe", "pipe", "pipe"],
+			detached: false,
+			windowsHide: true,
+			shell: true,
+		});
+	} else {
+		// Use normal spawn without shell
+		proc = nodeSpawn(command, args, {
+			cwd,
+			env,
+			stdio: ["pipe", "pipe", "pipe"],
+			detached: false,
+			windowsHide: isWindows,
+		});
+	}
+
+	if (!proc.stdin || !proc.stdout || !proc.stderr) {
+		throw new Error(`Failed to spawn LSP server: ${command}`);
+	}
+
+	// Check if process exited immediately (spawn failure - synchronous check)
+	if (proc.exitCode !== null || proc.killed) {
+		throw new Error(
+			`LSP server ${command} exited immediately (code: ${proc.exitCode}). ` +
+				`The binary may be missing or corrupted.`,
+		);
+	}
+
+	return proc;
+}
 
 /**
  * Attach error handler to a spawned process to prevent ENOENT crashes
  * This catches "command not found" errors and other spawn failures
+ * Returns a promise that rejects if an immediate error occurs
  */
-function _attachErrorHandler(proc: ChildProcess, context: string): void {
+function _attachErrorHandler(
+	proc: ChildProcess,
+	context: string,
+	rejectOnImmediateError?: (err: Error) => void,
+): void {
 	proc.on("error", (err) => {
 		// Log the error but don't crash - the caller should handle this gracefully
 		console.error(`[lsp] Spawn error for ${context}:`, err.message);
+
+		// If we have a reject function and this is an immediate spawn error, reject
+		if (
+			rejectOnImmediateError &&
+			(err as NodeJS.ErrnoException).code === "ENOENT"
+		) {
+			rejectOnImmediateError(err);
+		}
 	});
 
 	// Also handle unexpected exit (process crash after successful spawn)
@@ -60,17 +156,18 @@ function _attachErrorHandler(proc: ChildProcess, context: string): void {
  * - Uses absolute paths (relative paths fail in shell mode)
  * - Uses shell: true for .cmd files
  * - Uses windowsHide to prevent console window popup
+ * - Detects immediate spawn failures (ENOENT) before returning
  *
  * @param command - Command to run (e.g., "typescript-language-server")
  * @param args - Arguments (e.g., ["--stdio"])
  * @param options - Spawn options including cwd, env
  * @returns LSPProcess handle
  */
-export function launchLSP(
+export async function launchLSP(
 	command: string,
 	args: string[] = [],
 	options: SpawnOptions = {},
-): LSPProcess {
+): Promise<LSPProcess> {
 	const cwd = String(options.cwd ?? process.cwd());
 	const env = { ...process.env, ...options.env };
 
@@ -84,33 +181,56 @@ export function launchLSP(
 			? path.resolve(cwd, command)
 			: command; // Let system find it via PATH
 
-	// On Windows with shell: true, we need to quote the command if it has spaces
-	const needsShell =
+	// Compute needsShell based on command
+	let needsShell =
 		isWindows &&
 		(resolvedCommand.includes(" ") || resolvedCommand.includes(".cmd"));
 
+	// Try to spawn the process
+	// If command not found, try npm global as fallback (handles PATH caching after install)
+	let spawnCommand = resolvedCommand;
+
+	// First, try to find in npm global if it's a simple command name
+	if (
+		!path.isAbsolute(command) &&
+		!command.includes(path.sep) &&
+		!command.includes("/")
+	) {
+		const npmGlobalPath = _findBinaryInNpmGlobal(command);
+		if (npmGlobalPath) {
+			spawnCommand = npmGlobalPath;
+			// Recompute needsShell for npm global path (may be .cmd on Windows)
+			needsShell =
+				isWindows &&
+				(spawnCommand.includes(" ") || spawnCommand.includes(".cmd"));
+		}
+	}
+
 	let proc: ChildProcess;
 
-	if (needsShell) {
-		// Use shell mode with quoted command
-		const shellCommand = `"${resolvedCommand}" ${args.map((a) => (a.includes(" ") ? `"${a}"` : a)).join(" ")}`;
-		proc = nodeSpawn(shellCommand, [], {
-			cwd,
-			env,
-			stdio: ["pipe", "pipe", "pipe"],
-			detached: false,
-			windowsHide: true,
-			shell: true,
-		});
-	} else {
-		// Use normal spawn without shell
-		proc = nodeSpawn(resolvedCommand, args, {
-			cwd,
-			env,
-			stdio: ["pipe", "pipe", "pipe"],
-			detached: false,
-			windowsHide: isWindows,
-		});
+	try {
+		proc = trySpawn(spawnCommand, args, cwd, env, needsShell);
+	} catch (err) {
+		// If spawn failed with simple command, try npm global
+		if (
+			!path.isAbsolute(command) &&
+			!command.includes(path.sep) &&
+			!command.includes("/")
+		) {
+			const npmGlobalPath = _findBinaryInNpmGlobal(command);
+			if (npmGlobalPath && npmGlobalPath !== spawnCommand) {
+				console.error(`[lsp] Trying npm global: ${npmGlobalPath}`);
+				// Recompute needsShell for npm global path
+				const needsShellGlobal =
+					isWindows &&
+					(npmGlobalPath.includes(" ") || npmGlobalPath.includes(".cmd"));
+				proc = trySpawn(npmGlobalPath, args, cwd, env, needsShellGlobal);
+			} else {
+				throw err;
+			}
+		} else {
+			throw err;
+		}
 	}
 
 	if (!proc.stdin || !proc.stdout || !proc.stderr) {
@@ -125,7 +245,47 @@ export function launchLSP(
 		);
 	}
 
-	// Attach error handler to prevent ENOENT crashes and track later failures
+	// For Windows and certain spawn failures, the error is async (ENOENT)
+	// We need to wait a small tick to catch immediate spawn failures
+	await new Promise<void>((resolve, reject) => {
+		let settled = false;
+
+		// Attach error handler that can reject for immediate errors
+		proc.on("error", (err: Error & { code?: string }) => {
+			if (!settled && err.code === "ENOENT") {
+				settled = true;
+				reject(
+					new Error(
+						`LSP server binary not found: ${command}. ` +
+							`Install it or check your PATH.`,
+					),
+				);
+			}
+		});
+
+		// Also listen for immediate exit
+		proc.on("exit", (code: number | null) => {
+			if (!settled && code !== null) {
+				settled = true;
+				reject(
+					new Error(
+						`LSP server ${command} exited immediately with code ${code}. ` +
+							`The binary may be missing or corrupted.`,
+					),
+				);
+			}
+		});
+
+		// Give it a small window to fail immediately (ENOENT on Windows is fast)
+		setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				resolve();
+			}
+		}, 50);
+	});
+
+	// Re-attach the permanent error handler now that we've passed the danger zone
 	_attachErrorHandler(proc, command);
 
 	return {
@@ -140,11 +300,11 @@ export function launchLSP(
 /**
  * Spawn via package manager (npx/bun)
  */
-export function launchViaPackageManager(
+export async function launchViaPackageManager(
 	packageName: string,
 	args: string[] = [],
 	options: SpawnOptions = {},
-): LSPProcess {
+): Promise<LSPProcess> {
 	// Prefer bun if available, fall back to npx (use .cmd on Windows)
 	const isWin = process.platform === "win32";
 
@@ -173,14 +333,53 @@ export function launchViaPackageManager(
 			shell: true,
 		});
 
-		// Attach error handler to prevent ENOENT crashes
+		if (!proc.stdin || !proc.stdout || !proc.stderr) {
+			throw new Error(`Failed to spawn package manager for: ${packageName}`);
+		}
+
+		// Check for immediate spawn failure on Windows
+		await new Promise<void>((resolve, reject) => {
+			let settled = false;
+
+			proc.on("error", (err: Error & { code?: string }) => {
+				if (!settled && err.code === "ENOENT") {
+					settled = true;
+					reject(
+						new Error(
+							`Package manager not found for: ${packageName}. ` +
+								`Install Node.js or check your PATH.`,
+						),
+					);
+				}
+			});
+
+			proc.on("exit", (code: number | null) => {
+				if (!settled && code !== null) {
+					settled = true;
+					reject(
+						new Error(
+							`Package manager exited immediately for: ${packageName} (code: ${code})`,
+						),
+					);
+				}
+			});
+
+			setTimeout(() => {
+				if (!settled) {
+					settled = true;
+					resolve();
+				}
+			}, 50);
+		});
+
+		// Attach permanent error handler
 		_attachErrorHandler(proc, packageName);
 
 		return {
 			process: proc,
-			stdin: proc.stdin!,
-			stdout: proc.stdout!,
-			stderr: proc.stderr!,
+			stdin: proc.stdin,
+			stdout: proc.stdout,
+			stderr: proc.stderr,
 			pid: proc.pid ?? 0,
 		};
 	}
@@ -191,22 +390,22 @@ export function launchViaPackageManager(
 /**
  * Spawn via Node.js directly
  */
-export function launchViaNode(
+export async function launchViaNode(
 	scriptPath: string,
 	args: string[] = [],
 	options: SpawnOptions = {},
-): LSPProcess {
+): Promise<LSPProcess> {
 	return launchLSP(process.execPath, [scriptPath, ...args], options);
 }
 
 /**
  * Spawn via Python module
  */
-export function launchViaPython(
+export async function launchViaPython(
 	moduleName: string,
 	args: string[] = [],
 	options: SpawnOptions = {},
-): LSPProcess {
+): Promise<LSPProcess> {
 	// On Windows, prefer 'py' launcher, fall back to 'python'
 	const pythonCmd = process.platform === "win32" ? "py" : "python3";
 	return launchLSP(pythonCmd, ["-m", moduleName, ...args], options);

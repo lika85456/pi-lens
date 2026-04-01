@@ -1,6 +1,6 @@
 /**
  * LSP Launch Utilities Test Suite
- * 
+ *
  * Tests for launching LSP servers including:
  * - Direct binary execution
  * - Package manager execution (npx/bun)
@@ -9,12 +9,12 @@
  * - Process cleanup
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { spawn, type SpawnOptions, type ChildProcess } from "child_process";
+import { type ChildProcess, spawn } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	launchLSP,
-	launchViaPackageManager,
 	launchViaNode,
+	launchViaPackageManager,
 	launchViaPython,
 	stopLSP,
 } from "../launch.js";
@@ -27,16 +27,30 @@ vi.mock("child_process", () => ({
 const mockSpawn = vi.mocked(spawn);
 
 // Helper to create mock child process
-function createMockChildProcess(pid: number = 123): Partial<ChildProcess> {
-	return {
+function createMockChildProcess(
+	pid: number = 123,
+): Partial<ChildProcess> & { _emit: (event: string, ...args: any[]) => void } {
+	const handlers = new Map<string, Array<(...args: any[]) => void>>();
+	const mockObj: any = {
 		pid,
 		stdin: { write: vi.fn() } as any,
 		stdout: { on: vi.fn(), pipe: vi.fn() } as any,
 		stderr: { on: vi.fn(), pipe: vi.fn() } as any,
 		kill: vi.fn(),
-		on: vi.fn(),
-		connected: true,
+		exitCode: null,
+		killed: false,
+		on(event: string, handler: (...args: any[]) => void) {
+			if (!handlers.has(event)) {
+				handlers.set(event, []);
+			}
+			handlers.get(event)?.push(handler);
+			return mockObj;
+		},
+		_emit(event: string, ...args: any[]) {
+			handlers.get(event)?.forEach((h) => h(...args));
+		},
 	};
+	return mockObj;
 }
 
 describe("launchLSP", () => {
@@ -48,11 +62,20 @@ describe("launchLSP", () => {
 		const mockProcess = createMockChildProcess();
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		launchLSP("typescript-language-server", ["--stdio"], { cwd: "/test" });
+		// Start the async operation
+		const launchPromise = launchLSP("typescript-language-server", ["--stdio"], {
+			cwd: "/test",
+		});
+
+		// Let the 50ms timeout pass
+		await new Promise((r) => setTimeout(r, 60));
+
+		// Now complete by resolving
+		const _result = await launchPromise;
 
 		expect(mockSpawn).toHaveBeenCalled();
-		const [cmd, args, options] = mockSpawn.mock.calls[0];
-		
+		const [cmd, _args, options] = mockSpawn.mock.calls[0];
+
 		// Command should be provided (format depends on platform)
 		expect(cmd).toBeTruthy();
 		expect(options).toMatchObject({
@@ -68,7 +91,10 @@ describe("launchLSP", () => {
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
 		const customEnv = { CUSTOM_VAR: "value" };
-		launchLSP("server", [], { env: customEnv });
+		const launchPromise = launchLSP("server", [], { env: customEnv });
+
+		await new Promise((r) => setTimeout(r, 60));
+		await launchPromise;
 
 		const [, , options] = mockSpawn.mock.calls[0];
 		expect(options?.env).toMatchObject({
@@ -80,7 +106,9 @@ describe("launchLSP", () => {
 		const mockProcess = createMockChildProcess(456);
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		const result = launchLSP("server", [], {});
+		const launchPromise = launchLSP("server", [], {});
+		await new Promise((r) => setTimeout(r, 60));
+		const result = await launchPromise;
 
 		expect(result.pid).toBe(456);
 		expect(result.stdin).toBeDefined();
@@ -89,31 +117,55 @@ describe("launchLSP", () => {
 	});
 
 	it("should throw if stdin is not available", async () => {
-		const mockProcess = { ...createMockChildProcess(), stdin: null };
+		const baseMock = createMockChildProcess();
+		const mockProcess = {
+			...baseMock,
+			stdin: null,
+			on: baseMock.on,
+			_emit: baseMock._emit,
+		};
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		expect(() => launchLSP("server", [], {})).toThrow("Failed to spawn LSP server");
+		// Use wrapper function for proper async error catching
+		const launchFn = async () => launchLSP("server", [], {});
+		await expect(launchFn()).rejects.toThrow("Failed to spawn LSP server");
 	});
 
 	it("should throw if stdout is not available", async () => {
-		const mockProcess = { ...createMockChildProcess(), stdout: null };
+		const baseMock = createMockChildProcess();
+		const mockProcess = {
+			...baseMock,
+			stdout: null,
+			on: baseMock.on,
+			_emit: baseMock._emit,
+		};
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		expect(() => launchLSP("server", [], {})).toThrow("Failed to spawn LSP server");
+		const launchFn = async () => launchLSP("server", [], {});
+		await expect(launchFn()).rejects.toThrow("Failed to spawn LSP server");
 	});
 
 	it("should throw if stderr is not available", async () => {
-		const mockProcess = { ...createMockChildProcess(), stderr: null };
+		const baseMock = createMockChildProcess();
+		const mockProcess = {
+			...baseMock,
+			stderr: null,
+			on: baseMock.on,
+			_emit: baseMock._emit,
+		};
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		expect(() => launchLSP("server", [], {})).toThrow("Failed to spawn LSP server");
+		const launchFn = async () => launchLSP("server", [], {});
+		await expect(launchFn()).rejects.toThrow("Failed to spawn LSP server");
 	});
 
 	it("should default to process.cwd() when cwd not provided", async () => {
 		const mockProcess = createMockChildProcess();
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		launchLSP("server", [], {});
+		const launchPromise = launchLSP("server", [], {});
+		await new Promise((r) => setTimeout(r, 60));
+		await launchPromise;
 
 		const [, , options] = mockSpawn.mock.calls[0];
 		expect(options?.cwd).toBe(process.cwd());
@@ -124,11 +176,16 @@ describe("launchLSP", () => {
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
 		// Save original platform
-		const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+		const originalPlatform = Object.getOwnPropertyDescriptor(
+			process,
+			"platform",
+		);
 		Object.defineProperty(process, "platform", { value: "win32" });
 
 		try {
-			launchLSP("server.cmd", ["--arg"], {});
+			const launchPromise = launchLSP("server.cmd", ["--arg"], {});
+			await new Promise((r) => setTimeout(r, 60));
+			await launchPromise;
 
 			const [, , options] = mockSpawn.mock.calls[0];
 			expect(options?.shell).toBe(true);
@@ -171,8 +228,9 @@ describe("launchViaPackageManager", () => {
 		const [cmd, args] = mockSpawn.mock.calls[0];
 		// On Windows with shell mode, args may be concatenated into cmd
 		const cmdStr = String(cmd);
-		const hasBun = cmdStr.includes("bun") || (args && args.some((a: string) => a && a.includes("bun")));
-		const hasX = cmdStr.includes(" x ") || (args && args.includes("x"));
+		const hasBun =
+			cmdStr.includes("bun") || args?.some((a: string) => a?.includes("bun"));
+		const _hasX = cmdStr.includes(" x ") || args?.includes("x");
 		expect(hasBun).toBe(true);
 		// Note: 'x' arg may be in command string on Windows
 	});
@@ -200,8 +258,8 @@ describe("launchViaNode", () => {
 		launchViaNode("/path/to/script.js", ["--arg"], { cwd: "/test" });
 
 		expect(mockSpawn).toHaveBeenCalled();
-		const [cmd, args, options] = mockSpawn.mock.calls[0];
-		
+		const [cmd, _args, options] = mockSpawn.mock.calls[0];
+
 		// On Windows, command is combined; on Unix, it's separate
 		expect(String(cmd)).toContain("node");
 		expect(options?.cwd).toBe("/test");
@@ -231,7 +289,7 @@ describe("launchViaPython", () => {
 		launchViaPython("pylsp", ["--verbose", "--log-file", "/tmp/log"], {});
 
 		expect(mockSpawn).toHaveBeenCalled();
-		const [cmd, args] = mockSpawn.mock.calls[0];
+		const [_cmd, args] = mockSpawn.mock.calls[0];
 		// Args should include the module and the passed args
 		expect(args).toContain("-m");
 		expect(args).toContain("pylsp");
@@ -252,7 +310,7 @@ describe("stopLSP", () => {
 	it("should send SIGTERM first", async () => {
 		const mockKill = vi.fn();
 		const exitHandlers: Array<() => void> = [];
-		
+
 		const mockProcess = {
 			...createMockChildProcess(),
 			kill: mockKill,
@@ -265,7 +323,7 @@ describe("stopLSP", () => {
 			}),
 		};
 
-		const stopPromise = stopLSP({
+		const _stopPromise = stopLSP({
 			process: mockProcess as any,
 			stdin: {} as any,
 			stdout: {} as any,
@@ -274,8 +332,8 @@ describe("stopLSP", () => {
 		});
 
 		// Let the exit handler fire
-		await new Promise(r => setTimeout(r, 20));
-		
+		await new Promise((r) => setTimeout(r, 20));
+
 		expect(mockKill).toHaveBeenCalledWith("SIGTERM");
 	});
 
@@ -295,13 +353,15 @@ describe("stopLSP", () => {
 			}),
 		};
 
-		await expect(stopLSP({
-			process: mockProcess as any,
-			stdin: {} as any,
-			stdout: {} as any,
-			stderr: {} as any,
-			pid: 123,
-		})).resolves.toBeUndefined();
+		await expect(
+			stopLSP({
+				process: mockProcess as any,
+				stdin: {} as any,
+				stdout: {} as any,
+				stderr: {} as any,
+				pid: 123,
+			}),
+		).resolves.toBeUndefined();
 	});
 
 	it("should resolve on error event", async () => {
@@ -323,7 +383,7 @@ describe("stopLSP", () => {
 		});
 
 		// Let the error handler fire
-		await new Promise(r => setTimeout(r, 20));
+		await new Promise((r) => setTimeout(r, 20));
 		await expect(stopPromise).resolves.toBeUndefined();
 	});
 });

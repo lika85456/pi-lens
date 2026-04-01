@@ -1,8 +1,8 @@
 /**
  * Interactive LSP Installer
- * 
+ *
  * Provides lazy auto-install with user prompt for common languages.
- * 
+ *
  * Features:
  * - 30-second timeout with auto-accept
  * - --auto-install flag for non-interactive mode
@@ -10,17 +10,20 @@
  * - Only prompts for "common" languages (Go, Rust, YAML, JSON, Bash)
  */
 
-import * as fs from "fs/promises";
-import * as path from "path";
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 // Languages that support interactive auto-install prompt
-const COMMON_LANGUAGES: Record<string, {
-	toolId: string;
-	toolName: string;
-	installCommand: string;
-	packageName: string;
-}> = {
+const COMMON_LANGUAGES: Record<
+	string,
+	{
+		toolId: string;
+		toolName: string;
+		installCommand: string;
+		packageName: string;
+	}
+> = {
 	go: {
 		toolId: "gopls",
 		toolName: "Go Language Server (gopls)",
@@ -40,7 +43,7 @@ const COMMON_LANGUAGES: Record<string, {
 		packageName: "yaml-language-server",
 	},
 	json: {
-		toolId: "vscode-json-languageserver",
+		toolId: "vscode-json-language-server",
 		toolName: "JSON Language Server",
 		installCommand: "npm install -g vscode-langservers-extracted",
 		packageName: "vscode-langservers-extracted",
@@ -68,7 +71,9 @@ function getCachePath(cwd: string): string {
 /**
  * Read cached install choices
  */
-async function readChoices(cwd: string): Promise<Record<string, InstallChoice>> {
+async function readChoices(
+	cwd: string,
+): Promise<Record<string, InstallChoice>> {
 	try {
 		const cachePath = getCachePath(cwd);
 		const content = await fs.readFile(cachePath, "utf-8");
@@ -84,11 +89,11 @@ async function readChoices(cwd: string): Promise<Record<string, InstallChoice>> 
 async function saveChoice(
 	cwd: string,
 	toolId: string,
-	choice: "yes" | "no" | "auto"
+	choice: "yes" | "no" | "auto",
 ): Promise<void> {
 	const choices = await readChoices(cwd);
 	choices[toolId] = { choice, timestamp: Date.now() };
-	
+
 	try {
 		const cachePath = getCachePath(cwd);
 		await fs.mkdir(path.dirname(cachePath), { recursive: true });
@@ -111,7 +116,7 @@ function promptUser(timeoutMs: number): Promise<"yes" | "no"> {
 		const onData = (data: Buffer | string) => {
 			const char = data.toString().trim().toLowerCase();
 			cleanup();
-			
+
 			if (char === "y" || char === "\n" || char === "\r") {
 				resolve("yes");
 			} else if (char === "n") {
@@ -148,16 +153,21 @@ function promptUser(timeoutMs: number): Promise<"yes" | "no"> {
  */
 function isAutoInstallEnabled(): boolean {
 	// Check environment variable or process arguments
-	return process.env.PI_LENS_AUTO_INSTALL === "1" ||
-		process.argv.includes("--auto-install");
+	return (
+		process.env.PI_LENS_AUTO_INSTALL === "1" ||
+		process.argv.includes("--auto-install")
+	);
 }
 
 /**
  * Attempt to install a tool
  */
-async function installTool(toolId: string, packageName: string): Promise<boolean> {
+async function installTool(
+	toolId: string,
+	packageName: string,
+): Promise<boolean> {
 	console.error(`[pi-lens] Installing ${toolId}...`);
-	
+
 	return new Promise((resolve) => {
 		const proc = spawn("npm", ["install", "-g", packageName], {
 			stdio: "inherit",
@@ -169,7 +179,9 @@ async function installTool(toolId: string, packageName: string): Promise<boolean
 				console.error(`[pi-lens] ✓ ${toolId} installed successfully`);
 				resolve(true);
 			} else {
-				console.error(`[pi-lens] ✗ ${toolId} installation failed (exit code ${code})`);
+				console.error(
+					`[pi-lens] ✗ ${toolId} installation failed (exit code ${code})`,
+				);
 				resolve(false);
 			}
 		});
@@ -183,14 +195,14 @@ async function installTool(toolId: string, packageName: string): Promise<boolean
 
 /**
  * Prompt user for installation with timeout, or auto-install if flag set
- * 
+ *
  * @param language - Language identifier (go, rust, yaml, json, bash)
  * @param cwd - Project root
  * @returns true if tool is/should be installed, false to skip
  */
 export async function promptForInstall(
 	language: string,
-	cwd: string
+	cwd: string,
 ): Promise<boolean> {
 	const config = COMMON_LANGUAGES[language];
 	if (!config) {
@@ -201,21 +213,34 @@ export async function promptForInstall(
 	// Check cache first
 	const choices = await readChoices(cwd);
 	const cached = choices[config.toolId];
-	
+
 	if (cached) {
 		// Cache valid for 30 days
 		const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 		if (Date.now() - cached.timestamp < thirtyDays) {
 			if (cached.choice === "yes" || cached.choice === "auto") {
-				return true;
+				// Verify binary actually exists before trusting cache
+				try {
+					const { execSync } = await import("node:child_process");
+					execSync(`which ${config.toolId}`, { stdio: "ignore" });
+					return true; // Binary exists, cache is valid
+				} catch {
+					// Binary not found, invalidate cache and continue to install
+					console.error(
+						`[pi-lens] Cached ${config.toolId} not found, re-installing...`,
+					);
+				}
+			} else {
+				return false; // User previously declined
 			}
-			return false;
 		}
 	}
 
 	// Check auto-install flag
 	if (isAutoInstallEnabled()) {
-		console.error(`[pi-lens] Auto-install enabled, installing ${config.toolName}...`);
+		console.error(
+			`[pi-lens] Auto-install enabled, installing ${config.toolName}...`,
+		);
 		await saveChoice(cwd, config.toolId, "auto");
 		return await installTool(config.toolId, config.packageName);
 	}
