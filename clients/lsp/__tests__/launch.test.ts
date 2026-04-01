@@ -286,14 +286,19 @@ describe("launchViaPython", () => {
 		const mockProcess = createMockChildProcess();
 		mockSpawn.mockReturnValue(mockProcess as ChildProcess);
 
-		launchViaPython("pylsp", ["--verbose", "--log-file", "/tmp/log"], {});
+		await launchViaPython("pylsp", ["--verbose", "--log-file", "/tmp/log"], {});
 
 		expect(mockSpawn).toHaveBeenCalled();
-		const [_cmd, args] = mockSpawn.mock.calls[0];
-		// Args should include the module and the passed args
-		expect(args).toContain("-m");
-		expect(args).toContain("pylsp");
-		expect(args).toContain("--verbose");
+		const [cmd, args] = mockSpawn.mock.calls[0];
+		// On Windows with shell mode, args may be combined into cmd string
+		// Check that the command contains all expected parts
+		const fullCommand =
+			typeof cmd === "string" && Array.isArray(args) && args.length === 0
+				? cmd // shell mode: everything in cmd
+				: `${cmd} ${args.join(" ")}`; // normal mode
+		expect(fullCommand).toContain("-m");
+		expect(fullCommand).toContain("pylsp");
+		expect(fullCommand).toContain("--verbose");
 	});
 });
 

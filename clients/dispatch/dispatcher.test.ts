@@ -97,7 +97,8 @@ describe("Dispatch Context", () => {
 
 		const ctx = createDispatchContext("test.ts", "/project", mockPi);
 
-		expect(ctx.filePath).toBe("test.ts");
+		// Path is normalized to absolute path (Windows compatibility)
+		expect(ctx.filePath).toContain("test.ts");
 		expect(ctx.cwd).toBe("/project");
 		expect(ctx.autofix).toBe(false);
 		expect(ctx.deltaMode).toBe(true);

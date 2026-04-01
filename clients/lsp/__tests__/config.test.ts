@@ -1,6 +1,6 @@
 /**
  * LSP Configuration Test Suite
- * 
+ *
  * Tests for configuration including:
  * - Config file loading
  * - Custom server creation
@@ -8,23 +8,31 @@
  * - Disabled server handling
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import * as fs from "fs/promises";
 import * as path from "path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock fs/promises before importing the module under test
-vi.mock("fs/promises", async () => {
+// Mock fs/promises before any imports that use it
+const mockReadFile = vi.fn();
+const mockAccess = vi.fn();
+const mockStat = vi.fn();
+
+vi.mock("node:fs/promises", async () => {
 	return {
-		readFile: vi.fn(),
-		access: vi.fn(),
-		stat: vi.fn(),
+		readFile: mockReadFile,
+		access: mockAccess,
+		stat: mockStat,
 	};
 });
 
-// Import after mocking
-const { loadLSPConfig, createCustomServer, initLSPConfig, getAllServers, isServerDisabled, getServersForFileWithConfig } = await import("../config.js");
-
-const mockReadFile = vi.mocked(fs.readFile);
+// Import after mocking - mocks are already defined above
+const {
+	loadLSPConfig,
+	createCustomServer,
+	initLSPConfig,
+	getAllServers,
+	isServerDisabled,
+	getServersForFileWithConfig,
+} = await import("../config.js");
 
 describe("loadLSPConfig", () => {
 	beforeEach(() => {
@@ -123,7 +131,7 @@ describe("initLSPConfig", () => {
 
 	it("should initialize with empty config", async () => {
 		mockReadFile.mockRejectedValue(new Error("ENOENT"));
-		
+
 		await initLSPConfig("/project");
 
 		const servers = getAllServers();
