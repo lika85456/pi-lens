@@ -5,7 +5,7 @@
  * - BLOCKING: Errors that stop the agent (architect, ts-lsp errors)
  * - WARNING: Non-blocking issues (biome warnings, type-safety)
  * - FIXABLE: Issues with auto-fix available
- * - SILENT: Metrics tracked but not shown (complexity, TDR)
+ * - SILENT: Metrics tracked but not shown (complexity)
  * - INFORMATIONAL: Shown in session summary only
  *
  * The dispatcher must handle these semantics consistently.

@@ -73,7 +73,7 @@ export async function dispatchLint(
 }
 
 /**
- * Run linting and return full result (including diagnostics for TDR)
+ * Run linting and return full result (including diagnostics)
  */
 export async function dispatchLintWithResult(
 	filePath: string,
