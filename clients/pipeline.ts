@@ -118,7 +118,6 @@ export async function runPipeline(
 	let fileContent: string | undefined;
 	try {
 		fileContent = nodeFs.readFileSync(filePath, "utf-8");
-		metricsClient.recordWrite(filePath, fileContent);
 	} catch {
 		// File may not exist (e.g., deleted)
 	}

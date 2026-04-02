@@ -85,46 +85,15 @@ describe("MetricsClient", () => {
 		});
 	});
 
-	describe("recordWrite", () => {
-		it("should track agent-written lines", () => {
-			const original = "const x = 1;\n";
-			const filePath = createTempFile(tmpDir, "test.ts", original);
+	describe("getFileMetrics", () => {
+		it("should return null for file without baseline", () => {
+			const filePath = createTempFile(tmpDir, "test.ts", "content");
 
-			client.recordBaseline(filePath);
-
-			const modified = "const x = 1;\nconst y = 2;\nconst z = 3;\n";
-			fs.writeFileSync(filePath, modified);
-			client.recordWrite(filePath, modified);
-
-			const aiRatio = client.getAICodeRatio();
-			expect(aiRatio.agentLines).toBeGreaterThan(0);
+			// Don't record baseline
+			const metrics = client.getFileMetrics(filePath);
+			expect(metrics).toBeNull();
 		});
 
-		it("should calculate AI code ratio", () => {
-			const file1 = createTempFile(
-				tmpDir,
-				"file1.ts",
-				"original content line 1\noriginal content line 2\n",
-			);
-			const file2 = createTempFile(tmpDir, "file2.ts", "original\n");
-
-			client.recordBaseline(file1);
-			client.recordBaseline(file2);
-
-			// Simulate agent writing new content
-			const newContent1 =
-				"original content line 1\noriginal content line 2\nagent line 3\nagent line 4\n";
-			fs.writeFileSync(file1, newContent1);
-			client.recordWrite(file1, newContent1);
-
-			const aiRatio = client.getAICodeRatio();
-			expect(aiRatio.fileCount).toBe(2);
-			expect(aiRatio.ratio).toBeGreaterThanOrEqual(0);
-			expect(aiRatio.ratio).toBeLessThanOrEqual(1);
-		});
-	});
-
-	describe("getEntropyDeltas", () => {
 		it("should track entropy changes", () => {
 			const simple = "const x = 1;\n";
 			const filePath = createTempFile(tmpDir, "test.ts", simple);
@@ -145,30 +114,37 @@ function complex(a: number, b: number, c: number): number {
 }
 `;
 			fs.writeFileSync(filePath, complex);
-			client.recordWrite(filePath, complex);
+
+			const metrics = client.getFileMetrics(filePath);
+			expect(metrics?.entropyDelta).not.toBe(0);
+		});
+	});
+
+	describe("getEntropyDeltas", () => {
+		it("should track entropy changes for baselined files", () => {
+			const simple = "const x = 1;\n";
+			const filePath = createTempFile(tmpDir, "test.ts", simple);
+
+			client.recordBaseline(filePath);
+
+			// Make file more complex
+			const complex = `
+function complex(a: number, b: number, c: number): number {
+  if (a > 0) {
+    if (b > 0) {
+      if (c > 0) {
+        return a + b + c;
+      }
+    }
+  }
+  return 0;
+}
+`;
+			fs.writeFileSync(filePath, complex);
 
 			const deltas = client.getEntropyDeltas();
 			expect(deltas.length).toBe(1);
 			expect(deltas[0].delta).not.toBe(0);
-		});
-	});
-
-	describe("formatSessionSummary", () => {
-		it("should return empty string when no files touched", () => {
-			expect(client.formatSessionSummary()).toBe("");
-		});
-
-		it("should format AI code ratio when files are modified", () => {
-			const filePath = createTempFile(tmpDir, "test.ts", "original\n");
-			client.recordBaseline(filePath);
-
-			const modified = "original\nnew line 1\nnew line 2\n";
-			fs.writeFileSync(filePath, modified);
-			client.recordWrite(filePath, modified);
-
-			const summary = client.formatSessionSummary();
-			expect(summary).toContain("AI Code");
-			expect(summary).toContain("file(s)");
 		});
 	});
 
@@ -179,9 +155,9 @@ function complex(a: number, b: number, c: number): number {
 
 			client.reset();
 
-			const aiRatio = client.getAICodeRatio();
-			expect(aiRatio.fileCount).toBe(0);
-			expect(client.formatSessionSummary()).toBe("");
+			// After reset, metrics should be null (baseline cleared)
+			const metrics = client.getFileMetrics(filePath);
+			expect(metrics).toBeNull();
 		});
 	});
 });
