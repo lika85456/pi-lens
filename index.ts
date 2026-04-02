@@ -621,7 +621,10 @@ export default function (pi: ExtensionAPI) {
 			"- hover: Get type/doc info at a position\n" +
 			"- documentSymbol: List all symbols (functions/classes/vars) in a file\n" +
 			"- workspaceSymbol: Search symbols across the whole project\n" +
-			"- implementation: Jump to interface implementations\n\n" +
+			"- implementation: Jump to interface implementations\n" +
+			"- prepareCallHierarchy: Get callable item at position (for incoming/outgoing)\n" +
+			"- incomingCalls: Find all functions/methods that CALL this function\n" +
+			"- outgoingCalls: Find all functions/methods CALLED by this function\n\n" +
 			"Line and character are 1-based (as shown in editors).",
 		promptSnippet:
 			"Use lsp_navigation to find definitions, references, and hover info via LSP",
@@ -634,6 +637,9 @@ export default function (pi: ExtensionAPI) {
 					Type.Literal("documentSymbol"),
 					Type.Literal("workspaceSymbol"),
 					Type.Literal("implementation"),
+					Type.Literal("prepareCallHierarchy"),
+					Type.Literal("incomingCalls"),
+					Type.Literal("outgoingCalls"),
 				],
 				{ description: "LSP operation to perform" },
 			),
@@ -656,6 +662,39 @@ export default function (pi: ExtensionAPI) {
 				Type.String({
 					description: "Symbol name to search. Used by workspaceSymbol",
 				}),
+			),
+			callHierarchyItem: Type.Optional(
+				Type.Object(
+					{
+						name: Type.String(),
+						kind: Type.Number(),
+						uri: Type.String(),
+						range: Type.Object({
+							start: Type.Object({
+								line: Type.Number(),
+								character: Type.Number(),
+							}),
+							end: Type.Object({
+								line: Type.Number(),
+								character: Type.Number(),
+							}),
+						}),
+						selectionRange: Type.Object({
+							start: Type.Object({
+								line: Type.Number(),
+								character: Type.Number(),
+							}),
+							end: Type.Object({
+								line: Type.Number(),
+								character: Type.Number(),
+							}),
+						}),
+					},
+					{
+						description:
+							"Call hierarchy item. Required for incomingCalls/outgoingCalls",
+					},
+				),
 			),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -742,6 +781,43 @@ export default function (pi: ExtensionAPI) {
 							lspLine,
 							lspChar,
 						);
+						break;
+					case "prepareCallHierarchy":
+						result = await lspService.prepareCallHierarchy(
+							filePath,
+							lspLine,
+							lspChar,
+						);
+						break;
+					case "incomingCalls":
+						if (!params.callHierarchyItem) {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: "callHierarchyItem parameter required for incomingCalls",
+									},
+								],
+								isError: true,
+								details: {},
+							};
+						}
+						result = await lspService.incomingCalls(params.callHierarchyItem);
+						break;
+					case "outgoingCalls":
+						if (!params.callHierarchyItem) {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: "callHierarchyItem parameter required for outgoingCalls",
+									},
+								],
+								isError: true,
+								details: {},
+							};
+						}
+						result = await lspService.outgoingCalls(params.callHierarchyItem);
 						break;
 					default:
 						result = [];
