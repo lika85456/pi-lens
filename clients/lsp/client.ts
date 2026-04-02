@@ -59,6 +59,26 @@ export interface LSPSymbol {
 	children?: LSPSymbol[];
 }
 
+// --- Call Hierarchy Types ---
+
+export interface LSPCallHierarchyItem {
+	name: string;
+	kind: number;
+	uri: string;
+	range: LSPLocation["range"];
+	selectionRange: LSPLocation["range"];
+}
+
+export interface LSPCallHierarchyIncomingCall {
+	from: LSPCallHierarchyItem;
+	fromRanges: LSPLocation["range"][];
+}
+
+export interface LSPCallHierarchyOutgoingCall {
+	to: LSPCallHierarchyItem;
+	fromRanges: LSPLocation["range"][];
+}
+
 export interface LSPClientInfo {
 	serverId: string;
 	root: string;
