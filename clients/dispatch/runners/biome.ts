@@ -58,7 +58,14 @@ const biomeRunner: RunnerDefinition = {
 
 		// Parse diagnostics (never autofix in dispatch to prevent loops)
 		const parseBiomeOutput = createBiomeParser(false);
-		const diagnostics = parseBiomeOutput(output, ctx.filePath);
+		const rawDiagnostics = parseBiomeOutput(output, ctx.filePath);
+
+		// Add tdrCategory to diagnostics
+		const diagnostics = rawDiagnostics.map((d) => ({
+			...d,
+			tdrCategory:
+				d.severity === "error" ? ("architecture" as const) : ("style" as const),
+		}));
 
 		return {
 			status: "failed",

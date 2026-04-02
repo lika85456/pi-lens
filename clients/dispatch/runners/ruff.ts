@@ -52,7 +52,15 @@ const ruffRunner: RunnerDefinition = {
 		}
 
 		// Parse diagnostics
-		const diagnostics = parseRuffOutput(raw, ctx.filePath);
+		const rawDiagnostics = parseRuffOutput(raw, ctx.filePath);
+
+		// Add tdrCategory to diagnostics
+		const diagnostics = rawDiagnostics.map((d) => ({
+			...d,
+			tdrCategory: d.rule?.startsWith("E")
+				? ("type_errors" as const)
+				: ("style" as const),
+		}));
 
 		return {
 			status: "failed",
