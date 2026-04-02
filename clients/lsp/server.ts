@@ -274,15 +274,83 @@ export const PythonServer: LSPServerInfo = {
 		"poetry.lock",
 	]),
 	async spawn(root) {
+		const path = await import("node:path");
+		const fs = await import("node:fs/promises");
 		const env = await getToolEnvironment();
-		const proc = await launchViaPackageManager(
-			"pyright-langserver",
-			["--stdio"],
-			{
+
+		// Strategy 1: Find pyright - prefer local project version
+		let pyrightPath: string | undefined;
+		const localPyright = path.join(root, "node_modules", ".bin", "pyright");
+		const localPyrightCmd = path.join(
+			root,
+			"node_modules",
+			".bin",
+			"pyright.cmd",
+		);
+
+		// Check for local version first (Windows .cmd first, then Unix)
+		for (const checkPath of [localPyrightCmd, localPyright]) {
+			try {
+				await fs.access(checkPath);
+				pyrightPath = checkPath;
+				break;
+			} catch {
+				/* not found */
+			}
+		}
+
+		// Strategy 2: Fall back to auto-installed version
+		if (!pyrightPath) {
+			pyrightPath = await ensureTool("pyright");
+			if (!pyrightPath) {
+				console.error("[lsp] pyright not found, falling back to npx");
+			}
+		}
+
+		// Strategy 3: Use found pyright to derive pyright-langserver path
+		let langserverPath: string | undefined;
+		if (pyrightPath) {
+			// Derive langserver from pyright binary location
+			// Both are in the same .bin directory
+			const binDir = path.dirname(pyrightPath);
+			const isWindows = process.platform === "win32";
+
+			const candidates = isWindows
+				? [
+						path.join(binDir, "pyright-langserver.cmd"),
+						path.join(binDir, "pyright-langserver.ps1"),
+						path.join(binDir, "pyright-langserver"),
+					]
+				: [path.join(binDir, "pyright-langserver")];
+
+			for (const candidate of candidates) {
+				try {
+					await fs.access(candidate);
+					langserverPath = candidate;
+					console.error(`[lsp] Found pyright-langserver: ${candidate}`);
+					break;
+				} catch {
+					/* not found */
+				}
+			}
+		}
+
+		// Spawn the LSP server
+		let proc;
+		if (langserverPath) {
+			// Use resolved langserver path
+			proc = await launchLSP(langserverPath, ["--stdio"], {
 				cwd: root,
 				env,
-			},
-		);
+			});
+		} else {
+			// Fallback to npx for auto-download
+			console.error("[lsp] Falling back to npx for pyright-langserver");
+			proc = await launchViaPackageManager("pyright-langserver", ["--stdio"], {
+				cwd: root,
+				env,
+			});
+		}
 
 		// Detect virtual environment
 		const initialization: Record<string, unknown> = {};
@@ -300,7 +368,7 @@ export const PythonServer: LSPServerInfo = {
 						? path.join(venv, "Scripts", "python.exe")
 						: path.join(venv, "bin", "python");
 
-				await import("node:fs/promises").then((fs) => fs.access(pythonPath));
+				await fs.access(pythonPath);
 				// Pyright expects pythonPath at top level, not nested
 				initialization.pythonPath = pythonPath;
 				break;
