@@ -29,9 +29,10 @@ const tsLspRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Phase 3: Use LSP client if --lens-lsp flag is enabled
+		// When --lens-lsp is active, the `lsp` runner (priority 4) already
+		// handles TypeScript via the LSP service. Skip to avoid duplicate work.
 		if (ctx.pi.getFlag("lens-lsp")) {
-			return runWithLSPClient(ctx);
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// DEPRECATED: Fall back to built-in TypeScriptClient
