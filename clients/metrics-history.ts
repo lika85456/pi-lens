@@ -398,6 +398,8 @@ export function computeTDI(history: MetricsHistory): ProjectTDI {
 	let debtFromMI = 0;
 	let debtFromCognitive = 0;
 	let debtFromNesting = 0;
+	const debtFromMaxCyclomatic = 0; // NEW
+	const debtFromEntropy = 0; // NEW
 
 	for (const file of files) {
 		const snap = file.latest;
@@ -420,8 +422,16 @@ export function computeTDI(history: MetricsHistory): ProjectTDI {
 		const nestDebt = Math.min(1, Math.max(0, snap.nesting - 3) / 7);
 		debtFromNesting += nestDebt;
 
-		fileDebt = miDebt + cogDebt + nestDebt;
-		if (fileDebt > 1) filesWithDebt++; // File has at least some debt
+		// Max Cyclomatic debt: 0 at max<=10, 1 at max>=30
+		const maxCycDebt = Math.min(1, Math.max(0, snap.maxCyclomatic - 10) / 20);
+		debtFromMaxCyclomatic += maxCycDebt;
+
+		// Entropy debt: 0 at entropy<=4.0, 1 at entropy>=7.0
+		const entropyDebt = Math.min(1, Math.max(0, snap.entropy - 4.0) / 3.0);
+		debtFromEntropy += entropyDebt;
+
+		fileDebt = miDebt + cogDebt + nestDebt + maxCycDebt + entropyDebt;
+		if (fileDebt > 0.5) filesWithDebt++; // Lowered threshold since we have more factors
 	}
 
 	const avgMI = totalMI / files.length;
@@ -430,9 +440,16 @@ export function computeTDI(history: MetricsHistory): ProjectTDI {
 	const avgMIDebt = debtFromMI / files.length; // 0-1
 	const avgCogDebt = debtFromCognitive / files.length; // 0-1
 	const avgNestDebt = debtFromNesting / files.length; // 0-1
+	const avgMaxCycDebt = debtFromMaxCyclomatic / files.length; // NEW
+	const avgEntropyDebt = debtFromEntropy / files.length; // NEW
 
-	// Weighted: MI matters most (50%), cognitive (35%), nesting (15%)
-	const rawScore = avgMIDebt * 50 + avgCogDebt * 35 + avgNestDebt * 15;
+	// Weighted: MI (45%), cognitive (30%), nesting (10%), maxCyc (10%), entropy (5%)
+	const rawScore =
+		avgMIDebt * 45 +
+		avgCogDebt * 30 +
+		avgNestDebt * 10 +
+		avgMaxCycDebt * 10 +
+		avgEntropyDebt * 5;
 	const score = Math.round(rawScore * 100) / 100;
 
 	// Grade
@@ -451,9 +468,11 @@ export function computeTDI(history: MetricsHistory): ProjectTDI {
 		filesAnalyzed: files.length,
 		filesWithDebt,
 		byCategory: {
-			complexity: Math.round(avgCogDebt * 100),
 			maintainability: Math.round(avgMIDebt * 100),
+			cognitive: Math.round(avgCogDebt * 100),
 			nesting: Math.round(avgNestDebt * 100),
+			maxCyclomatic: Math.round(avgMaxCycDebt * 100),
+			entropy: Math.round(avgEntropyDebt * 100),
 		},
 	};
 }
