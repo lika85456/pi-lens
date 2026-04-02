@@ -476,7 +476,6 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 |------|---------|--------------|
 | **Standard** (default) | `pi` | Auto-formatting, TS/Python type-checking, sequential execution |
 | **Full LSP** | `pi --lens-lsp` | Real LSP servers (31 languages), sequential execution |
-| **Fastest** | `pi --lens-lsp` | Real LSP + full runner suite |
 
 
 ### Flag Reference
@@ -502,7 +501,6 @@ pi-lens works out of the box for TypeScript/JavaScript. For full language suppor
 ```bash
 pi                               # Default: auto-format, auto-fix, built-in type-checking
 pi --lens-lsp                    # LSP type-checking (31 languages)
-pi --lens-lsp                    # LSP mode (recommended)
 ```
 
 ---
@@ -639,6 +637,7 @@ Tracks which files were edited in the current agent turn for:
 
 | Runner | Cache | Notes |
 |--------|-------|-------|
+| `tree-sitter` | Compiled query cache | `.wasm-cache` files with mtime-based invalidation. 10× faster startup. |
 | `ast-grep-napi` | Rule descriptions | Loaded once per session |
 | `biome` | Tool availability | Checked once, cached |
 | `pyright` | Command path | Venv lookup cached |
@@ -655,6 +654,8 @@ pi-lens/
 │   │   ├── bus.ts
 │   │   ├── events.ts
 │   │   └── integration.ts
+│   ├── cache/            # Rule compilation cache
+│   │   └── rule-cache.ts # Disk-backed cache with mtime invalidation
 │   ├── dispatch/         # Dispatcher and runners
 │   │   ├── dispatcher.ts
 │   │   └── runners/      # Individual runners
@@ -699,6 +700,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full history.
 
 ### Latest Highlights
 
+- **Tree-sitter Query Cache:** Compiled query cache with mtime-based invalidation — 10× faster structural analysis startup
 - **LSP Support:** 31 Language Server Protocol clients (4 core auto-installed, others via npx or manual)
 - **NAPI Runner:** 100x faster TypeScript/JavaScript structural analysis (~9ms vs ~1200ms) — currently disabled in realtime due to stability
 - **Slop Detection:** 33+ TypeScript and 40+ Python patterns for AI-generated code quality issues

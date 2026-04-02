@@ -2,6 +2,28 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.5.0] - 2026-04-02
+
+### Added
+- **Tree-sitter query compilation cache** — 10× performance improvement for structural analysis. Query files (`.yml`) are compiled to binary `.wasm-cache` format once and cached to disk. Subsequent loads use the compiled cache directly, reducing tree-sitter startup from ~50ms to ~5ms per query. Cache uses mtime-based invalidation — automatically recompiles when source `.yml` changes.
+- **Rule cache infrastructure** (`clients/cache/`) — New disk-backed cache system with:
+  - `RuleCache` class for storing compiled artifacts
+  - mtime-based invalidation (auto-refresh when source files change)
+  - JSON metadata tracking for cache entries
+  - TTL and integrity validation
+
+### Fixed
+- **YAML parser colon truncation** — Fixed regex-based parser that incorrectly truncated values containing colons. Changed from `split(':', 2)` to `indexOf(':')` for proper value extraction.
+- **Tree-sitter rules directory resolution** — Fixed path resolution to use `ctx.cwd` instead of hardcoded `.pi-lens/rules/` path. Rules now load correctly from the actual project root regardless of where pi is invoked.
+- **Tree-sitter post_filter support** — Implemented missing `post_filter` functionality for tree-sitter queries. Rules with post-filters (e.g., semantic validation for `bare-except` vs specific exception handlers) now work correctly instead of being silently skipped.
+- **Event handler silent crashes** — Wrapped all event handlers in try/catch to prevent unhandled exceptions from crashing the extension silently. Errors are now logged to stderr instead of terminating the process.
+- **Latency logging restored** — Fixed missing latency logging in `tool_result` handler. Runner timing data now correctly flows to `~/.pi-lens/latency.log` again.
+
+### Removed
+- **Broken ast-grep rules** — Removed overlapping rules that were causing false positives or conflicts with tree-sitter coverage.
+
+---
+
 ## [3.4.0] - 2026-04-02
 
 ### Fixed
