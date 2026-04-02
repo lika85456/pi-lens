@@ -1105,6 +1105,8 @@ export default function (pi: ExtensionAPI) {
 					cognitiveComplexity: baseline.cognitiveComplexity,
 					maxNestingDepth: baseline.maxNestingDepth,
 					linesOfCode: baseline.linesOfCode,
+					maxCyclomatic: baseline.maxCyclomaticComplexity,
+					entropy: baseline.codeEntropy,
 				});
 			}
 		}
