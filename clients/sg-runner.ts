@@ -168,11 +168,30 @@ export class SgRunner {
 
 			proc.on("close", (code: number | null) => {
 				if (code !== 0 && !stdout.trim()) {
+					// Enhanced error messages for common pattern issues
+					let errorMsg = stderr.trim() || `Exit code ${code}`;
+
+					if (stderr.includes("Multiple AST nodes are detected")) {
+						errorMsg =
+							`Invalid AST pattern: The pattern appears to contain multiple AST nodes or is malformed.\n` +
+							`Common causes:\n` +
+							`  1. Missing parentheses: use it($TEST) not it"test"\n` +
+							`  2. Raw text without structure: use console.log($MSG) not just "console.log"\n` +
+							`  3. Unclosed quotes or brackets\n\n` +
+							`Original error: ${errorMsg}`;
+					} else if (stderr.includes("Cannot parse query")) {
+						errorMsg =
+							`Pattern syntax error: The pattern could not be parsed as valid code.\n` +
+							`Tips:\n` +
+							`  - Patterns must be valid ${args.includes("--lang") ? args[args.indexOf("--lang") + 1] : "language"} syntax\n` +
+							`  - Use metavariables like $NAME, $ARGS for variable parts\n` +
+							`  - Example: 'function $NAME($$$PARAMS) { $$$BODY }'\n\n` +
+							`Original error: ${errorMsg}`;
+					}
+
 					resolve({
 						matches: [],
-						error: stderr.includes("No files found")
-							? undefined
-							: stderr.trim() || `Exit code ${code}`,
+						error: stderr.includes("No files found") ? undefined : errorMsg,
 					});
 					return;
 				}

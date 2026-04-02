@@ -462,7 +462,20 @@ export default function (pi: ExtensionAPI) {
 		name: "ast_grep_search",
 		label: "AST Search",
 		description:
-			"Search code using AST-aware pattern matching. IMPORTANT: Use specific AST patterns, NOT text search. Examples:\n- Find function: 'function $NAME() { $$$BODY }'\n- Find call: 'fetchMetrics($ARGS)'\n- Find import: 'import { $NAMES } from \"$PATH\"'\n- Generic identifier (broad): 'fetchMetrics'\n\nAlways prefer specific patterns with context over bare identifiers. Use 'paths' to scope to specific files/folders. Use 'selector' to extract specific nodes (e.g., just the function name). Use 'context' to show surrounding lines.",
+			"Search code using AST-aware pattern matching. IMPORTANT: Use specific AST patterns, NOT text search.\n\n" +
+			"✅ GOOD patterns (single AST node):\n" +
+			"  - function $NAME() { $$$BODY }     (function declaration)\n" +
+			"  - fetchMetrics($ARGS)               (function call)\n" +
+			'  - import { $NAMES } from "$PATH"   (import statement)\n' +
+			"  - console.log($MSG)                  (method call)\n\n" +
+			"❌ BAD patterns (multiple nodes / raw text):\n" +
+			'  - it"test name"                    (missing parens - use it($TEST))\n' +
+			"  - console.log without args          (incomplete code)\n" +
+			"  - arbitrary text without code structure\n\n" +
+			"Always prefer specific patterns with context over bare identifiers. " +
+			"Use 'paths' to scope to specific files/folders. " +
+			"Use 'selector' to extract specific nodes (e.g., just the function name). " +
+			"Use 'context' to show surrounding lines.",
 		promptSnippet: "Use ast_grep_search for AST-aware code search",
 		parameters: Type.Object({
 			pattern: Type.String({
@@ -536,7 +549,16 @@ export default function (pi: ExtensionAPI) {
 		name: "ast_grep_replace",
 		label: "AST Replace",
 		description:
-			"Replace code using AST-aware pattern matching. IMPORTANT: Use specific AST patterns, not text. Dry-run by default (use apply=true to apply).\n\nExamples:\n- pattern='console.log($MSG)' rewrite='logger.info($MSG)'\n- pattern='var $X' rewrite='let $X'\n- pattern='function $NAME() { }' rewrite='' (delete)\n\nAlways use 'paths' to scope to specific files/folders. Dry-run first to preview changes.",
+			"Replace code using AST-aware pattern matching. IMPORTANT: Use specific AST patterns, not text. Dry-run by default (use apply=true to apply).\n\n" +
+			"✅ GOOD patterns (single AST node):\n" +
+			"  - pattern='console.log($MSG)' rewrite='logger.info($MSG)'\n" +
+			"  - pattern='var $X' rewrite='let $X'\n" +
+			"  - pattern='function $NAME() { }' rewrite='' (delete)\n\n" +
+			"❌ BAD patterns (will error):\n" +
+			"  - Raw text without code structure\n" +
+			'  - Missing parentheses: use it($TEST) not it"text"\n' +
+			"  - Incomplete code fragments\n\n" +
+			"Always use 'paths' to scope to specific files/folders. Dry-run first to preview changes.",
 		promptSnippet: "Use ast_grep_replace for AST-aware find-and-replace",
 		parameters: Type.Object({
 			pattern: Type.String({
