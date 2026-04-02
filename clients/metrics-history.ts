@@ -19,6 +19,8 @@ export interface MetricSnapshot {
 	cognitive: number;
 	nesting: number;
 	lines: number;
+	maxCyclomatic: number; // NEW: worst function complexity
+	entropy: number; // NEW: code unpredictability in bits
 }
 
 export interface FileHistory {
