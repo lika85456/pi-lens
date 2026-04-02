@@ -4,6 +4,12 @@ All notable changes to pi-lens will be documented in this file.
 
 ## [3.6.1] - 2026-04-02
 
+### Added
+- **Condensed skill auto-loading** — Injects 70-token tool selection guidance at session start:
+  - Quick reference for when to use lsp_navigation vs ast_grep_search vs grep
+  - References full skills for lazy loading (ast-grep, lsp-navigation)
+  - Prevents common tool selection errors without loading full skill content
+
 ### Changed
 - **Updated package description** — More concise: "Real-time code feedback for pi — LSP, linters, formatters, type-checking, structural analysis & booboo"
 

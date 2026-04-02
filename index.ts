@@ -944,6 +944,11 @@ export default function (pi: ExtensionAPI) {
 			log(`Active tools: ${tools.join(", ")}`);
 			dbg(`session_start tools: ${tools.join(", ")}`);
 
+			// --- Condensed skill guidance for efficient tool selection ---
+			// Full skills available at skills/ast-grep/SKILL.md and skills/lsp-navigation/SKILL.md
+			const condensedGuidance =
+				"## Code Tool Selection\n- Navigation (definitions, references): lsp_navigation\n- Pattern search (functions, imports): ast_grep_search\n- Text/TODOs: grep\n- Full guides: skills/ast-grep, skills/lsp-navigation";
+
 			const parts: string[] = [];
 
 			// --- Error ownership reminder ---
@@ -951,6 +956,9 @@ export default function (pi: ExtensionAPI) {
 			parts.push(
 				"📌 Remember: If you find ANY errors (test failures, compile errors, lint issues) in this codebase, fix them — even if you didn't cause them. Don't skip errors as 'not my fault'.",
 			);
+
+			// Add condensed skill guidance to system message
+			parts.push(condensedGuidance);
 
 			// Scan for project-specific rules (.claude/rules, .agents/rules, CLAUDE.md, etc.)
 			projectRulesScan = scanProjectRules(cwd);
