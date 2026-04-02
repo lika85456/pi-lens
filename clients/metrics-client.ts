@@ -395,16 +395,49 @@ export class MetricsClient {
 			}
 		}
 
-		// Technical Debt Index
+		// Technical Debt Index with breakdown
 		if (totalTdrCurrent > 0 || totalTdrStart > 0) {
 			const delta = totalTdrCurrent - totalTdrStart;
 			const deltaStr =
 				delta !== 0
-					? ` (${delta > 0 ? "+" : ""}${delta.toFixed(1)} this session)`
+					? ` (${delta > 0 ? "📈 +" : "📉 "}${delta.toFixed(1)} this session)`
 					: "";
 			parts.push(
 				`[TDR Index] Total Debt: ${totalTdrCurrent.toFixed(1)}${deltaStr}`,
 			);
+
+			// Show breakdown by category
+			const categoryTotals = new Map<string, number>();
+			for (const [filePath, entries] of this.tdrFindings) {
+				if (this.fileSessionWrites.has(filePath)) {
+					for (const entry of entries) {
+						categoryTotals.set(
+							entry.category,
+							(categoryTotals.get(entry.category) ?? 0) + entry.count,
+						);
+					}
+				}
+			}
+
+			if (categoryTotals.size > 0) {
+				const sortedCategories = Array.from(categoryTotals.entries()).sort(
+					(a, b) => b[1] - a[1],
+				);
+				for (const [category, count] of sortedCategories.slice(0, 5)) {
+					const emoji =
+						{
+							type_errors: "🔴",
+							security: "🔒",
+							architecture: "🏗️",
+							complexity: "🧠",
+							style: "🎨",
+							tests: "🧪",
+							dead_code: "🗑️",
+							duplication: "📋",
+						}[category] || "📊";
+					parts.push(`  ${emoji} ${category}: ${count}`);
+				}
+			}
 		}
 
 		// AI Code Ratio
