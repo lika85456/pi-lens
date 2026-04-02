@@ -1,10 +1,5 @@
 /**
- * Shared formatting utilities for dispatch system
- * 
- * Consolidated from:
- * - clients/dispatch/dispatcher.ts
- * - clients/dispatch/bus-dispatcher.ts
- * - clients/services/effect-integration.ts
+ * Shared formatting utilities for the dispatch system.
  */
 
 import type { Diagnostic, OutputSemantic } from "../types.js";

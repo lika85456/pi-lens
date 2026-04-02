@@ -23,7 +23,7 @@ describe("Runner Registration", () => {
 		clearRunnerRegistry();
 
 		// Import runners to trigger registration
-		// This is the critical import that was missing in the effect-integration bug
+		// This is the critical import that ensures runners are registered before dispatch
 		await import("../runners/index.js");
 
 		// Get all registered runners
@@ -200,7 +200,7 @@ describe("Runner Registration", () => {
 	describe("Runner Import Verification", () => {
 		it("should load runner index without errors", async () => {
 			// This catches the bug where runners weren't imported
-			// in effect-integration.ts and bus-dispatcher.ts
+			// in the dispatch system
 			expect(async () => {
 				await import("../runners/index.js");
 			}).not.toThrow();
