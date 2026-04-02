@@ -977,13 +977,12 @@ export default function (pi: ExtensionAPI) {
 				dbg("session_start: no project rules found");
 			}
 
-			// TODO/FIXME scan — fast, no deps
+			// TODO/FIXME scan — fast, no deps (cached for on-demand reporting)
 			const todoResult = todoScanner.scanDirectory(cwd);
-			const todoReport = todoScanner.formatResult(todoResult);
 			dbg(`session_start TODO scan: ${todoResult.items.length} items`);
-			if (todoReport) parts.push(todoReport);
+			// Note: TODOs not shown at session start — use /lens-booboo to see them
 
-			// Dead code scan — use cache if fresh, auto-install if needed
+			// Dead code scan — use cache if fresh, auto-install if needed (cached for on-demand reporting)
 			if (await knipClient.ensureAvailable()) {
 				const cached = cacheManager.readCache<
 					ReturnType<KnipClient["analyze"]>
@@ -992,23 +991,20 @@ export default function (pi: ExtensionAPI) {
 					dbg(
 						`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
 					);
-					const knipReport = knipClient.formatResult(cached.data);
-					if (knipReport) parts.push(knipReport);
 				} else {
 					const startMs = Date.now();
 					const knipResult = knipClient.analyze(cwd);
 					cacheManager.writeCache("knip", knipResult, cwd, {
 						scanDurationMs: Date.now() - startMs,
 					});
-					const knipReport = knipClient.formatResult(knipResult);
 					dbg(`session_start Knip scan done`);
-					if (knipReport) parts.push(knipReport);
 				}
 			} else {
 				dbg(`session_start Knip: not available`);
 			}
+			// Note: Knip results not shown at session start — use /lens-booboo to see dead code
 
-			// Duplicate code detection — use cache if fresh, auto-install if needed
+			// Duplicate code detection — use cache if fresh, auto-install if needed (cached for on-demand reporting)
 			if (await jscpdClient.ensureAvailable()) {
 				const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
 					"jscpd",
@@ -1017,8 +1013,6 @@ export default function (pi: ExtensionAPI) {
 				if (cached) {
 					dbg(`session_start jscpd: cache hit`);
 					_cachedJscpdClones = cached.data.clones;
-					const jscpdReport = jscpdClient.formatResult(cached.data);
-					if (jscpdReport) parts.push(jscpdReport);
 				} else {
 					const startMs = Date.now();
 					const jscpdResult = jscpdClient.scan(cwd);
@@ -1026,13 +1020,12 @@ export default function (pi: ExtensionAPI) {
 					cacheManager.writeCache("jscpd", jscpdResult, cwd, {
 						scanDurationMs: Date.now() - startMs,
 					});
-					const jscpdReport = jscpdClient.formatResult(jscpdResult);
 					dbg(`session_start jscpd scan done`);
-					if (jscpdReport) parts.push(jscpdReport);
 				}
 			} else {
 				dbg(`session_start jscpd: not available`);
 			}
+			// Note: jscpd results not shown at session start — use /lens-booboo to see duplicates
 
 			// Note: type-coverage runs on-demand via /lens-booboo only (not at session_start)
 
