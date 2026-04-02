@@ -2,6 +2,14 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.3.1] - 2026-04-02
+
+### Fixed
+- **LSP spawn `EINVAL` on Windows** — `.cmd` files (e.g. `vscode-json-language-server.cmd`) found via npm global lookup were spawned without `shell: true`, causing `EINVAL` from `CreateProcess`. The `needsShell` recomputation for npm global paths incorrectly treated `.cmd` the same as `.exe`. Fixed in both primary and fallback spawn paths.
+- **Unhandled `EINVAL` rejection** — LSP error handlers only caught `ENOENT` (binary not found). `EINVAL` (binary found but can't execute directly) now caught alongside `ENOENT` in both `launchLSP` and `launchViaPackageManager`.
+
+---
+
 ## [3.3.0] - 2026-04-02
 
 ### Removed
