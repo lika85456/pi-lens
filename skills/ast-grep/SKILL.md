@@ -143,10 +143,22 @@ pattern: "console.log($$$ARGS)"
 
 **Error: "Multiple AST nodes detected"** → Your pattern has multiple code fragments. Use metavariables like `$TEST` instead of literal text in quotes.
 
-**No matches found?** → Debug efficiently (don't `read` large files):
-1. Use `ast_grep_search` with same pattern to preview matches - costs same as `read` for small result sets
-2. Simplify pattern: remove constraints, test basic match first
-3. Check metavariables capture what you expect (`$PARAM` = whole parameter including name and type)
+**No matches found?** → Simplify on 2nd try:
+
+```typescript
+// 1st try: Be specific
+ast_grep_search({ pattern: "console.log($$$ARGS)", ... })
+// → No matches? (could be console.error, console.warn, etc.)
+
+// 2nd try: Simplify to base identifier
+ast_grep_search({ pattern: "console", ... })
+// → Catches ALL console.* usage, then narrow down
+```
+
+**Debug steps:**
+1. Use `ast_grep_search` with same pattern to preview matches
+2. **2nd try: Simplify pattern** — remove constraints, test base match
+3. Check metavariables capture what you expect
 4. Ensure quotes/parentheses balance in pattern
 
 **Fallback:** If pattern fails twice → `grep -rn "pattern" src/`
