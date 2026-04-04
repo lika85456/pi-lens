@@ -357,6 +357,7 @@ async function runGroup(
 			type: "runner",
 			filePath: ctx.filePath,
 			runnerId,
+			startedAt: new Date(runnerStart).toISOString(),
 			durationMs: duration,
 			status: result.status,
 			diagnosticCount: result.diagnostics.length,
@@ -482,14 +483,20 @@ export async function dispatchForFile(
 	// No need to log again here - would create duplicates in the log
 
 	// Log summary to latency log only (not console - avoid noise)
+	const sumMs = runnerLatencies.reduce((s, r) => s + r.durationMs, 0);
+	const wallClockMs = latencyReport.totalDurationMs;
 	logLatency({
 		type: "tool_result",
 		filePath: ctx.filePath,
-		durationMs: latencyReport.totalDurationMs,
+		durationMs: wallClockMs,
+		wallClockMs,
+		sumMs,
+		parallelGainMs: Math.max(0, sumMs - wallClockMs),
 		result: "dispatch_complete",
 		metadata: {
 			runners: runnerLatencies.map((r) => ({
 				id: r.runnerId,
+				startedAt: new Date(r.startTime).toISOString(),
 				duration: r.durationMs,
 				status: r.status,
 			})),

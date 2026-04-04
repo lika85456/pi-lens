@@ -13,7 +13,10 @@ try {
 
 export interface LatencyEntry {
 	type: "runner" | "tool_result" | "phase";
+	/** ISO timestamp when this entry was written (= finish time for runners) */
 	ts?: string;
+	/** ISO timestamp when the runner/phase started — diff with ts = durationMs */
+	startedAt?: string;
 	toolName?: string;
 	filePath: string;
 	fullPath?: string;
@@ -25,6 +28,12 @@ export interface LatencyEntry {
 	status?: string;
 	diagnosticCount?: number;
 	semantic?: string;
+	/** For dispatch_complete: actual wall-clock time (groups run in parallel) */
+	wallClockMs?: number;
+	/** For dispatch_complete: sum of all individual runner durationMs */
+	sumMs?: number;
+	/** wallClockMs - sumMs ≥ 0 means parallelism saved this many ms */
+	parallelGainMs?: number;
 	metadata?: Record<string, unknown>;
 }
 
