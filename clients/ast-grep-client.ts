@@ -96,21 +96,43 @@ export class AstGrepClient {
 		paths: string[],
 		apply = false,
 	): Promise<{ matches: AstGrepMatch[]; applied: boolean; error?: string }> {
-		const args = [
+		const baseArgs = ["run", "-p", pattern, "-r", rewrite, "--lang", lang];
+
+		if (!apply) {
+			// Dry-run: --json=compact shows what would change without writing
+			const result = await this.runner.exec([
+				...baseArgs,
+				"--json=compact",
+				...paths,
+			]);
+			return { matches: result.matches, applied: false, error: result.error };
+		}
+
+		// Apply: --update-all and --json are MUTUALLY EXCLUSIVE in sg.
+		// Run twice:
+		//   1. --update-all to actually write the files
+		//   2. --json=compact (without rewrite) to collect matches for display
+		const applyResult = await this.runner.exec([
+			...baseArgs,
+			"--update-all",
+			...paths,
+		]);
+		if (applyResult.error) {
+			return { matches: [], applied: false, error: applyResult.error };
+		}
+
+		// Search for what was changed (pattern no longer matches after rewrite,
+		// so search for the rewrite pattern to show what was applied)
+		const searchResult = await this.runner.exec([
 			"run",
 			"-p",
-			pattern,
-			"-r",
 			rewrite,
 			"--lang",
 			lang,
 			"--json=compact",
-		];
-		if (apply) args.push("--update-all");
-		args.push(...paths);
-
-		const result = await this.runner.exec(args);
-		return { matches: result.matches, applied: apply, error: result.error };
+			...paths,
+		]);
+		return { matches: searchResult.matches, applied: true, error: undefined };
 	}
 
 	/**
