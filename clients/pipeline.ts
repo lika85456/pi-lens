@@ -186,6 +186,8 @@ export async function runPipeline(
 	let output = "";
 
 	// --- 4. Auto-fix ---
+	// Biome (TS/JS) and Ruff (Python) never touch the same file, so their
+	// availability checks can run in parallel.
 	phase.start("autofix");
 	const noAutofix = getFlag("no-autofix");
 	const noAutofixBiome = getFlag("no-autofix-biome");
@@ -193,11 +195,16 @@ export async function runPipeline(
 	let fixedCount = 0;
 
 	if (!fixedThisTurn.has(filePath) && !noAutofix) {
-		if (
-			!noAutofixRuff &&
-			(await ruffClient.ensureAvailable()) &&
-			ruffClient.isPythonFile(filePath)
-		) {
+		const [ruffReady, biomeReady] = await Promise.all([
+			!noAutofixRuff && ruffClient.isPythonFile(filePath)
+				? ruffClient.ensureAvailable()
+				: Promise.resolve(false),
+			!noAutofixBiome && biomeClient.isSupportedFile(filePath)
+				? biomeClient.ensureAvailable()
+				: Promise.resolve(false),
+		]);
+
+		if (ruffReady) {
 			const result = ruffClient.fixFile(filePath);
 			if (result.success && result.fixed > 0) {
 				fixedCount += result.fixed;
@@ -206,11 +213,7 @@ export async function runPipeline(
 			}
 		}
 
-		if (
-			!noAutofixBiome &&
-			(await biomeClient.ensureAvailable()) &&
-			biomeClient.isSupportedFile(filePath)
-		) {
+		if (biomeReady) {
 			const result = biomeClient.fixFile(filePath);
 			if (result.success && result.fixed > 0) {
 				fixedCount += result.fixed;

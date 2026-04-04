@@ -254,6 +254,134 @@ export function formatLatencyReport(report: DispatchLatencyReport): string {
 	return lines.join("\n");
 }
 
+// --- Group runner (used by dispatchForFile for parallel execution) ---
+
+interface GroupResult {
+	diagnostics: Diagnostic[];
+	latencies: RunnerLatency[];
+	hadBlocker: boolean;
+}
+
+/**
+ * Execute all runners in a single group.
+ *
+ * - mode "fallback": run runners sequentially and stop at the first
+ *   one that succeeds (returns status !== "skipped").
+ * - mode "all" (default): run all runners in the group sequentially
+ *   and collect every diagnostic.
+ *
+ * Groups themselves are run in parallel by dispatchForFile, so this
+ * function must NOT mutate shared state.
+ */
+async function runGroup(
+	ctx: DispatchContext,
+	group: RunnerGroup,
+): Promise<GroupResult> {
+	const diagnostics: Diagnostic[] = [];
+	const latencies: RunnerLatency[] = [];
+	let hadBlocker = false;
+
+	// Filter runners by kind if specified
+	const runnerIds = group.filterKinds
+		? group.runnerIds.filter((id) => {
+				const runner = getRunner(id);
+				return runner && ctx.kind && group.filterKinds?.includes(ctx.kind);
+			})
+		: group.runnerIds;
+
+	const semantic = group.semantic ?? "warning";
+
+	for (const runnerId of runnerIds) {
+		const runnerStart = Date.now();
+		const runner = getRunner(runnerId);
+
+		if (!runner) {
+			latencies.push({
+				runnerId,
+				startTime: runnerStart,
+				endTime: Date.now(),
+				durationMs: 0,
+				status: "skipped",
+				diagnosticCount: 0,
+				semantic: "unknown",
+			});
+			logLatency({
+				type: "runner",
+				filePath: ctx.filePath,
+				runnerId,
+				durationMs: 0,
+				status: "not_registered",
+				diagnosticCount: 0,
+				semantic: "unknown",
+			});
+			continue;
+		}
+
+		// Check preconditions
+		if (runner.when && !(await runner.when(ctx))) {
+			latencies.push({
+				runnerId,
+				startTime: runnerStart,
+				endTime: Date.now(),
+				durationMs: Date.now() - runnerStart,
+				status: "when_skipped",
+				diagnosticCount: 0,
+				semantic: runner.id,
+			});
+			logLatency({
+				type: "runner",
+				filePath: ctx.filePath,
+				runnerId,
+				durationMs: 0,
+				status: "when_skipped",
+				diagnosticCount: 0,
+				semantic: "when_condition",
+			});
+			continue;
+		}
+
+		const result = await runRunner(ctx, runner, semantic);
+		const runnerEnd = Date.now();
+		const duration = runnerEnd - runnerStart;
+
+		latencies.push({
+			runnerId,
+			startTime: runnerStart,
+			endTime: runnerEnd,
+			durationMs: duration,
+			status: result.status,
+			diagnosticCount: result.diagnostics.length,
+			semantic: result.semantic ?? semantic,
+		});
+		logLatency({
+			type: "runner",
+			filePath: ctx.filePath,
+			runnerId,
+			durationMs: duration,
+			status: result.status,
+			diagnosticCount: result.diagnostics.length,
+			semantic: result.semantic ?? semantic,
+		});
+
+		diagnostics.push(...result.diagnostics);
+
+		const resultSemantic = result.semantic ?? semantic;
+		if (
+			(resultSemantic === "blocking" && result.diagnostics.length > 0) ||
+			result.diagnostics.some((d) => d.semantic === "blocking")
+		) {
+			hadBlocker = true;
+		}
+
+		// mode:"fallback" — stop at first runner that produced results
+		if (group.mode === "fallback" && result.status !== "skipped") {
+			break;
+		}
+	}
+
+	return { diagnostics, latencies, hadBlocker };
+}
+
 // --- Main Dispatch Function ---
 
 export async function dispatchForFile(
@@ -280,124 +408,38 @@ export async function dispatchForFile(
 		},
 	});
 
-	for (const group of groups) {
-		if (stopped && ctx.pi.getFlag("stop-on-error")) {
-			break;
+	// Run all groups in parallel — they are independent and don't depend on
+	// each other's results. Within each group, mode:"fallback" semantics are
+	// preserved (sequential first-success). Results are merged in original
+	// group order so output is deterministic.
+	const groupResults = await Promise.all(
+		groups.map((group) => runGroup(ctx, group)),
+	);
+
+	for (const {
+		diagnostics: groupDiags,
+		latencies,
+		hadBlocker,
+	} of groupResults) {
+		runnerLatencies.push(...latencies);
+
+		// Apply delta mode filtering across the accumulated set
+		let diagnostics = groupDiags;
+		if (ctx.deltaMode) {
+			const before = ctx.baselines.get(ctx.filePath);
+			if (before) {
+				const filtered = filterDelta(
+					diagnostics,
+					before as Diagnostic[],
+					(d) => d.id,
+				);
+				diagnostics = filtered.new;
+			}
+			ctx.baselines.set(ctx.filePath, [...allDiagnostics, ...diagnostics]);
 		}
 
-		// Filter runners by kind if specified
-		const runnerIds = group.filterKinds
-			? group.runnerIds.filter((id) => {
-					const runner = getRunner(id);
-					return runner && ctx.kind && group.filterKinds?.includes(ctx.kind);
-				})
-			: group.runnerIds;
-
-		const semantic = group.semantic ?? "warning";
-
-		for (const runnerId of runnerIds) {
-			const runnerStart = Date.now();
-			const runner = getRunner(runnerId);
-			if (!runner) {
-				runnerLatencies.push({
-					runnerId,
-					startTime: runnerStart,
-					endTime: Date.now(),
-					durationMs: 0,
-					status: "skipped",
-					diagnosticCount: 0,
-					semantic: "unknown",
-				});
-				logLatency({
-					type: "runner",
-					filePath: ctx.filePath,
-					runnerId,
-					durationMs: 0,
-					status: "not_registered",
-					diagnosticCount: 0,
-					semantic: "unknown",
-				});
-				continue;
-			}
-
-			// Check preconditions
-			if (runner.when && !(await runner.when(ctx))) {
-				runnerLatencies.push({
-					runnerId,
-					startTime: runnerStart,
-					endTime: Date.now(),
-					durationMs: Date.now() - runnerStart,
-					status: "when_skipped",
-					diagnosticCount: 0,
-					semantic: runner.id,
-				});
-				logLatency({
-					type: "runner",
-					filePath: ctx.filePath,
-					runnerId,
-					durationMs: 0,
-					status: "when_skipped",
-					diagnosticCount: 0,
-					semantic: "when_condition",
-				});
-				continue;
-			}
-
-			const result = await runRunner(ctx, runner, semantic);
-			const runnerEnd = Date.now();
-			const duration = runnerEnd - runnerStart;
-
-			// Track latency for this runner
-			runnerLatencies.push({
-				runnerId,
-				startTime: runnerStart,
-				endTime: runnerEnd,
-				durationMs: duration,
-				status: result.status,
-				diagnosticCount: result.diagnostics.length,
-				semantic: result.semantic ?? semantic,
-			});
-
-			// IMMEDIATE LOG: Each runner result (for debugging)
-			logLatency({
-				type: "runner",
-				filePath: ctx.filePath,
-				runnerId,
-				durationMs: duration,
-				status: result.status,
-				diagnosticCount: result.diagnostics.length,
-				semantic: result.semantic ?? semantic,
-			});
-
-			// Apply delta mode filtering
-			let diagnostics = result.diagnostics;
-			if (ctx.deltaMode && result.semantic !== "silent") {
-				const before = ctx.baselines.get(ctx.filePath);
-				if (before) {
-					const filtered = filterDelta(
-						diagnostics,
-						before as Diagnostic[],
-						(d) => d.id,
-					);
-					diagnostics = filtered.new;
-					// TODO: Track fixed diagnostics
-				}
-				// Update baseline
-				ctx.baselines.set(ctx.filePath, [...allDiagnostics, ...diagnostics]);
-			}
-
-			allDiagnostics.push(...diagnostics);
-
-			// Check for blockers - use result semantic (not group default) and check individual diagnostics
-			const resultSemantic = result.semantic ?? semantic;
-			if (resultSemantic === "blocking" && diagnostics.length > 0) {
-				stopped = true;
-			}
-			// Also check if any individual diagnostic is blocking
-			if (diagnostics.some((d) => d.semantic === "blocking")) {
-				stopped = true;
-			}
-		}
+		allDiagnostics.push(...diagnostics);
+		if (hadBlocker) stopped = true;
 	}
 
 	// Categorize results

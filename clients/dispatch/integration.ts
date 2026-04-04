@@ -11,10 +11,13 @@ import {
 	createBaselineStore,
 	createDispatchContext,
 	type DispatchLatencyReport,
+	dispatchForFile,
 	formatLatencyReport,
 	getLatencyReports,
+	getRunnersForKind,
 	type RunnerLatency,
 } from "./dispatcher.js";
+import { TOOL_PLANS } from "./plan.js";
 import type { BaselineStore, DispatchResult, PiAgentAPI } from "./types.js";
 
 export type { DispatchLatencyReport, RunnerLatency };
@@ -57,11 +60,6 @@ export async function dispatchLint(
 	// pre-existing issues after the first write.
 	const ctx = createDispatchContext(filePath, cwd, pi, sessionBaselines, true);
 
-	// Import dispatchForFile dynamically to avoid circular deps
-	const { dispatchForFile } = await import("./dispatcher.js");
-	const { getRunnersForKind } = await import("./dispatcher.js");
-	const { TOOL_PLANS } = await import("./plan.js");
-
 	const kind = ctx.kind;
 	if (!kind) return "";
 
@@ -81,10 +79,6 @@ export async function dispatchLintWithResult(
 	pi: PiAgentAPI,
 ): Promise<DispatchResult> {
 	const ctx = createDispatchContext(filePath, cwd, pi, sessionBaselines, true);
-
-	const { dispatchForFile } = await import("./dispatcher.js");
-	const { getRunnersForKind } = await import("./dispatcher.js");
-	const { TOOL_PLANS } = await import("./plan.js");
 
 	const kind = ctx.kind;
 	if (!kind) {
@@ -110,7 +104,7 @@ export async function dispatchLintWithResult(
 		};
 	}
 
-	return await dispatchForFile(ctx, plan.groups);
+	return dispatchForFile(ctx, plan.groups);
 }
 
 /**
@@ -136,7 +130,6 @@ export async function getAvailableRunners(filePath: string): Promise<string[]> {
 	const kind = detectFileKind(filePath);
 	if (!kind) return [];
 
-	const { getRunnersForKind } = await import("./dispatcher.js");
 	const runners = getRunnersForKind(kind);
 	return runners.map((r) => r.id);
 }
