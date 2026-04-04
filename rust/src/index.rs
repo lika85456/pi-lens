@@ -11,6 +11,10 @@ pub fn build_project_index(_project_root: &str, _files: &[String]) -> anyhow::Re
 }
 
 /// Find similar functions in the index
-pub fn find_similar_to(_index: &IndexData, _function_id: &str, _threshold: f32) -> Vec<crate::SimilarityMatch> {
+pub fn find_similar_to(
+    _index: &IndexData,
+    _function_id: &str,
+    _threshold: f32,
+) -> Vec<crate::SimilarityMatch> {
     Vec::new()
 }

@@ -8,10 +8,10 @@
 
 #![allow(missing_docs)] // Temporarily allow during development
 
+pub mod cache;
+pub mod index;
 pub mod scan;
 pub mod similarity;
-pub mod index;
-pub mod cache;
 
 use serde::{Deserialize, Serialize};
 
@@ -25,10 +25,21 @@ pub struct AnalyzeRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
-    Scan { extensions: Vec<String> },
-    BuildIndex { files: Vec<String> },
-    Similarity { file_path: String, threshold: f32 },
-    Query { language: String, query: String, file_path: String },
+    Scan {
+        extensions: Vec<String>,
+    },
+    BuildIndex {
+        files: Vec<String>,
+    },
+    Similarity {
+        file_path: String,
+        threshold: f32,
+    },
+    Query {
+        language: String,
+        query: String,
+        file_path: String,
+    },
 }
 
 /// Analysis response to TypeScript

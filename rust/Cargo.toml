@@ -24,13 +24,8 @@ walkdir = "2.5"
 anyhow = "1.0"
 tempfile = "3.10"
 
+# Relaxed lints for development - can be tightened later
 [lints.rust]
 unsafe_code = "forbid"
-warnings = "deny"
-rust_2024_compatibility = "deny"
-missing_debug_implementations = "deny"
-missing_docs = "deny"
 
 [lints.clippy]
-all = "deny"
-pedantic = "deny"

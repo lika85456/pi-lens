@@ -1,15 +1,15 @@
 //! Fast file system scanning with gitignore support
 
-use std::path::Path;
 use crate::FileEntry;
-use ignore::WalkBuilder;
 use ignore::DirEntry;
+use ignore::WalkBuilder;
+use std::path::Path;
 
 /// Scan project for files matching extensions
 /// Uses ripgrep's `ignore` crate for .gitignore support
 pub fn scan_project(root: &str, extensions: &[String]) -> anyhow::Result<Vec<FileEntry>> {
     let root_path = Path::new(root);
-    
+
     let walker = WalkBuilder::new(root_path)
         .hidden(true)
         .git_ignore(true)
@@ -35,7 +35,7 @@ pub fn scan_project(root: &str, extensions: &[String]) -> anyhow::Result<Vec<Fil
 
 fn process_entry(entry: DirEntry, extensions: &[String]) -> Option<FileEntry> {
     let path = entry.path();
-    
+
     // Check if it's a file
     let file_type = entry.file_type()?;
     if !file_type.is_file() {
@@ -44,18 +44,21 @@ fn process_entry(entry: DirEntry, extensions: &[String]) -> Option<FileEntry> {
 
     let ext = path.extension()?.to_str()?;
     let ext_with_dot = format!(".{}", ext);
-    
+
     if !extensions.contains(&ext.to_string()) && !extensions.contains(&ext_with_dot) {
         return None;
     }
 
     let metadata = entry.metadata().ok()?;
-    
+
     Some(FileEntry {
         path: path.to_string_lossy().to_string(),
         size: metadata.len(),
-        modified: metadata.modified().ok()?
-            .duration_since(std::time::UNIX_EPOCH).ok()?
+        modified: metadata
+            .modified()
+            .ok()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
             .as_secs(),
     })
 }
