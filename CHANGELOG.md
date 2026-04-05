@@ -2,6 +2,18 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.1] - 2026-04-05
+
+### Fixed
+- **`console-statement` hijacking `no-console-in-tests`** — The keyword match for
+  `console-statement` (`pattern.includes("console")`) was catching `no-console-in-tests`
+  because both contain "console". The simpler rule always won, so both fired on every
+  console call. Fixed by excluding test-related patterns: `!pattern.includes("test")`.
+- **`hardcoded-secrets` malformed tree-sitter query** — Had two top-level S-expression
+  patterns instead of a single union pattern `[...]`. Replaced with valid union syntax
+  and added `post_filter: check_secret_pattern` so variable names are actually filtered
+  against credential patterns. Reduced false positives from 58 → 0 on the codebase.
+
 ## [3.8.0] - 2026-04-05
 
 ### Added — Tree-sitter Expansion
