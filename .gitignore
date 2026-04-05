@@ -53,6 +53,8 @@ migrate-*.js
 !docs/COMPLEXITY_METRICS.md
 !docs/ARCHITECTURE.md
 !docs/EXCLUSIONS.md
+!docs/AST_GREP_RULES.md
+!docs/TREE_SITTER_RULES.md
 !skills/**/*.md
 
 # Auto-generated reports (CAPS)
