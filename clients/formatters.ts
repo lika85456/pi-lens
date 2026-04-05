@@ -17,10 +17,16 @@ import { safeSpawn } from "./safe-spawn.js";
 
 export interface FormatterInfo {
 	name: string;
-	command: string[]; // Command with $FILE placeholder
+	command: string[]; // Command with $FILE placeholder — used as fallback
 	extensions: string[];
 	/** Detect if this formatter should be used for a project */
 	detect(cwd: string): Promise<boolean>;
+	/**
+	 * Optionally resolve the full command at runtime (venv, vendor/bin, bundle exec).
+	 * Return null to fall back to the static `command` field.
+	 * filePath is already resolved to an absolute path.
+	 */
+	resolveCommand?(filePath: string, cwd: string): Promise<string[] | null>;
 }
 
 export interface FormatterResult {
@@ -82,11 +88,107 @@ async function which(command: string): Promise<string | null> {
 	return result.stdout?.trim().split("\n")[0] ?? null;
 }
 
+// --- Venv / Local Binary Helpers ---
+
+/**
+ * Walk up from cwd looking for a binary in .venv or venv.
+ * Returns the absolute path if found, null otherwise.
+ */
+async function findInVenv(binary: string, cwd: string): Promise<string | null> {
+	const isWin = process.platform === "win32";
+	const candidates = isWin
+		? [
+				`.venv/Scripts/${binary}.exe`,
+				`venv/Scripts/${binary}.exe`,
+				`.venv/Scripts/${binary}`,
+				`venv/Scripts/${binary}`,
+			]
+		: [`.venv/bin/${binary}`, `venv/bin/${binary}`];
+
+	let dir = cwd;
+	const root = path.parse(dir).root;
+	while (dir !== root) {
+		for (const candidate of candidates) {
+			const full = path.join(dir, candidate);
+			if (await fileExists(full)) return full;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return null;
+}
+
+/**
+ * Check vendor/bin for PHP Composer-managed tools.
+ * Walks up from cwd to find vendor/bin/<binary>.
+ */
+async function findInVendorBin(
+	binary: string,
+	cwd: string,
+): Promise<string | null> {
+	const isWin = process.platform === "win32";
+	const name = isWin ? `${binary}.bat` : binary;
+	let dir = cwd;
+	const root = path.parse(dir).root;
+	while (dir !== root) {
+		const full = path.join(dir, "vendor", "bin", name);
+		if (await fileExists(full)) return full;
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return null;
+}
+
+/**
+ * Check node_modules/.bin for locally installed Node tools.
+ * Walks up from cwd to find node_modules/.bin/<binary>.
+ */
+async function findInNodeModules(
+	binary: string,
+	cwd: string,
+): Promise<string | null> {
+	const isWin = process.platform === "win32";
+	let dir = cwd;
+	const root = path.parse(dir).root;
+	while (dir !== root) {
+		const candidates = isWin
+			? [
+					path.join(dir, "node_modules", ".bin", `${binary}.cmd`),
+					path.join(dir, "node_modules", ".bin", binary),
+				]
+			: [path.join(dir, "node_modules", ".bin", binary)];
+		for (const full of candidates) {
+			if (await fileExists(full)) return full;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return null;
+}
+
+/**
+ * Returns true if `bundle exec <gem>` should be used:
+ * bundle binary is available AND Gemfile.lock exists in the tree.
+ */
+async function canUseBundleExec(cwd: string): Promise<boolean> {
+	if ((await which("bundle")) === null) return false;
+	const lockfiles = await findUp(["Gemfile.lock"], cwd);
+	return lockfiles.length > 0;
+}
+
 // --- Formatter Definitions ---
 
 export const biomeFormatter: FormatterInfo = {
 	name: "biome",
 	command: ["npx", "@biomejs/biome", "format", "--write", "$FILE"],
+	async resolveCommand(filePath, cwd) {
+		const local = await findInNodeModules("biome", cwd);
+		if (local) return [local, "format", "--write", filePath];
+		return null;
+	},
 	extensions: [
 		".js",
 		".jsx",
@@ -127,6 +229,11 @@ export const biomeFormatter: FormatterInfo = {
 export const prettierFormatter: FormatterInfo = {
 	name: "prettier",
 	command: ["npx", "prettier", "--write", "$FILE"],
+	async resolveCommand(filePath, cwd) {
+		const local = await findInNodeModules("prettier", cwd);
+		if (local) return [local, "--write", filePath];
+		return null;
+	},
 	extensions: [
 		".js",
 		".jsx",
@@ -191,6 +298,11 @@ export const ruffFormatter: FormatterInfo = {
 	name: "ruff",
 	command: ["ruff", "format", "$FILE"],
 	extensions: [".py", ".pyi"],
+	async resolveCommand(filePath, cwd) {
+		const venv = await findInVenv("ruff", cwd);
+		if (venv) return [venv, "format", filePath];
+		return null;
+	},
 	async detect(cwd: string) {
 		// Check for ruff config
 		const configs = ["pyproject.toml", "ruff.toml", ".ruff.toml"];
@@ -226,6 +338,11 @@ export const blackFormatter: FormatterInfo = {
 	name: "black",
 	command: ["black", "$FILE"],
 	extensions: [".py", ".pyi"],
+	async resolveCommand(filePath, cwd) {
+		const venv = await findInVenv("black", cwd);
+		if (venv) return [venv, filePath];
+		return null;
+	},
 	async detect(cwd: string) {
 		// Check for black config in pyproject.toml
 		const configs = ["pyproject.toml"];
@@ -351,6 +468,11 @@ export const rubocopFormatter: FormatterInfo = {
 	name: "rubocop",
 	command: ["rubocop", "-a", "--no-color", "$FILE"],
 	extensions: [".rb", ".rake", ".gemspec", ".ru"],
+	async resolveCommand(filePath, cwd) {
+		if (await canUseBundleExec(cwd))
+			return ["bundle", "exec", "rubocop", "-a", "--no-color", filePath];
+		return null;
+	},
 	async detect(cwd: string) {
 		// Only run if project has explicit RuboCop config
 		const configs = [".rubocop.yml", ".rubocop.yaml"];
@@ -370,6 +492,11 @@ export const standardrbFormatter: FormatterInfo = {
 	name: "standardrb",
 	command: ["standardrb", "--fix", "$FILE"],
 	extensions: [".rb", ".rake"],
+	async resolveCommand(filePath, cwd) {
+		if (await canUseBundleExec(cwd))
+			return ["bundle", "exec", "standardrb", "--fix", filePath];
+		return null;
+	},
 	async detect(cwd: string) {
 		// standardrb is only used if explicitly in Gemfile (no config file — it is the config)
 		const gemfile = path.join(cwd, "Gemfile");
@@ -407,8 +534,15 @@ export const phpCsFixerFormatter: FormatterInfo = {
 	name: "php-cs-fixer",
 	command: ["php-cs-fixer", "fix", "$FILE"],
 	extensions: [".php"],
+	async resolveCommand(filePath, cwd) {
+		const vendor = await findInVendorBin("php-cs-fixer", cwd);
+		if (vendor) return [vendor, "fix", filePath];
+		return null;
+	},
 	async detect(cwd: string) {
-		if ((await which("php-cs-fixer")) === null) return false;
+		const vendorBin = await findInVendorBin("php-cs-fixer", cwd);
+		const globalBin = await which("php-cs-fixer");
+		if (!vendorBin && !globalBin) return false;
 		// Only run if project has explicit config
 		const configs = [".php-cs-fixer.php", ".php-cs-fixer.dist.php"];
 		const found = await findUp(configs, cwd);
@@ -421,7 +555,12 @@ export const csharpierFormatter: FormatterInfo = {
 	command: ["dotnet", "csharpier", "$FILE"],
 	extensions: [".cs"],
 	async detect(_cwd: string) {
-		return (await which("dotnet")) !== null;
+		// Check dotnet is available AND csharpier tool is installed
+		if ((await which("dotnet")) === null) return false;
+		const result = safeSpawn("dotnet", ["csharpier", "--version"], {
+			timeout: 5000,
+		});
+		return !result.error && result.status === 0;
 	},
 };
 
@@ -582,19 +721,13 @@ export async function formatFile(
 		const cwd = path.dirname(absolutePath);
 		const contentBefore = await fs.readFile(absolutePath, "utf-8");
 
-		// Replace $FILE placeholder
-		let cmd = formatter.command.map((c) => c.replace("$FILE", absolutePath));
-
-		// OPTIMIZATION: Use local biome binary instead of npx if available
-		if (formatter.name === "biome" && cmd[0] === "npx") {
-			const localBiome = path.join(cwd, "node_modules", ".bin", "biome");
-			const localBiomeWin = path.join(cwd, "node_modules", ".bin", "biome.cmd");
-			if (await fileExists(localBiome)) {
-				cmd = [localBiome, ...cmd.slice(2)]; // Replace "npx" "@biomejs/biome" with local path
-			} else if (await fileExists(localBiomeWin)) {
-				cmd = [localBiomeWin, ...cmd.slice(2)];
-			}
-		}
+		// Resolve command: prefer local (venv/vendor/node_modules) over global
+		const resolved = formatter.resolveCommand
+			? await formatter.resolveCommand(absolutePath, cwd)
+			: null;
+		const cmd =
+			resolved ??
+			formatter.command.map((c) => c.replace("$FILE", absolutePath));
 
 		// Run formatter
 		const result = safeSpawn(cmd[0], cmd.slice(1), { timeout: 15000, cwd });
