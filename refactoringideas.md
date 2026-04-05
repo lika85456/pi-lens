@@ -169,20 +169,27 @@ the file against baseline to detect added deps, skip if no new entries).
 
 ---
 
-### Complexity Metrics — YES, promote to dispatch runner
+### Complexity Metrics — NO, keep in booboo only
 
 **Current:** booboo-only (`ComplexityClient.analyzeFile(filePath)`)  
-**Assessment: High value, zero cost**
+**Assessment: Not actionable for agents in real-time**
 
-`analyzeFile` is pure in-memory — reads the file, counts cyclomatic complexity, function length,
-nesting depth, parameter count. No subprocess, no network. Runs in <5ms.
+`analyzeFile` is fast (<5ms, pure in-memory), so the cost argument is fine. The problem
+is that agents almost never reduce complexity unprompted mid-task. If the task is
+"add Stripe integration", the agent won’t stop to restructure a function that hits
+cyclomatic complexity 12. It acknowledges the warning and continues.
 
-The feedback is maximally actionable when *immediate*: agent just wrote a 60-line function
-with complexity 14 and should be told before it moves on, not after running `/lens-booboo`
-two turns later. By then the function is entangled with other changes.
+Complexity warnings also have no clear single action (extract? split? simplify conditions?)
+and are often intentional — 8 payment error cases means 8 branches, necessarily.
 
-Implementation: new `complexity.ts` dispatch runner, calls `complexityClient.analyzeFile(ctx.filePath)`,
-emits warnings above threshold. ~60 lines. Gate on `jsts`/`python`/`go` file kinds.
+Additional problem: if the agent builds a complex function over 4 incremental writes, the
+warning fires 4 times for the same growing function. Delta-mode filters pre-existing
+complexity but not "complexity you’re actively introducing this turn."
+
+Booboo is exactly the right home: it’s the deliberate quality review pass where the agent
+(or human) has specifically asked "what needs improving?" That’s when complexity is
+actionable. Real-time pipeline should be reserved for things that *change what the agent
+does next*. Complexity doesn’t clear that bar.
 
 ---
 
@@ -268,7 +275,7 @@ Promoting `production-readiness.ts` to real-time would duplicate existing runner
 
 | Tool | Realtime? | Why |
 |------|-----------|-----|
-| Complexity metrics | **YES — add to dispatch** | Fast, per-file, maximally actionable immediately |
+| Complexity metrics | **No — keep in booboo** | Not actionable mid-task; agents ignore it; booboo is the right review moment |
 | Architectural rules | **Already a dispatch runner ✓** | Fast, per-file, wired in both plans |
 | TODO scanner | **turn_end delta only** | Per-write is noisy; delta catches unresolved placeholders |
 | Knip | No | Whole-project, 30s, structurally wrong |
