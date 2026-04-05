@@ -93,6 +93,29 @@ rules:
         message: "No eval()/exec() — security risk and architectural anti-pattern."
 
   # ===========================================================================
+  # AGENT-SPECIFIC ANTI-PATTERNS
+  # Catches common failure modes where agents scaffold but forget to implement.
+  # Test files are excluded by the architect runner (skipTestFiles: true).
+  # ===========================================================================
+
+  - pattern: "**/*.{ts,tsx,js,jsx}"
+    must_not:
+      - pattern: 'throw new Error\(["\'](?:not implemented|TODO|todo|Not implemented|NotImplemented)["\']\)'
+        message: "Stub not implemented — function body was scaffolded but never completed."
+        fix: "Implement the function body or remove the stub."
+      - pattern: 'throw new Error\(["\']\s*["\']\)'
+        message: "Empty error throw — replace with a real implementation or meaningful error."
+
+  - pattern: "**/*.py"
+    must_not:
+      - pattern: 'raise NotImplementedError(?:\(\))?'
+        message: "NotImplementedError stub — function was scaffolded but never completed."
+        fix: "Implement the function body."
+      - pattern: '^\s*\.\.\.\s*$'
+        message: "Bare ellipsis body — function was scaffolded but never completed."
+        fix: "Implement the function body."
+
+  # ===========================================================================
   # PROJECT-SPECIFIC TEMPLATES (uncomment and customise)
   # ===========================================================================
 
