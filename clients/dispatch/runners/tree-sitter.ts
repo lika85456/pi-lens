@@ -26,6 +26,7 @@ import type {
 // Creating a new TreeSitterClient() on every write resets TRANSFER_BUFFER (a module-level
 // WASM pointer) — concurrent writes race on _ts_init() and corrupt shared WASM state → crash.
 let _sharedClient: TreeSitterClient | null = null;
+
 function getSharedClient(): TreeSitterClient {
 	if (!_sharedClient) {
 		_sharedClient = new TreeSitterClient();
@@ -117,7 +118,7 @@ function matchesSecretPattern(varName: string): boolean {
 
 const treeSitterRunner: RunnerDefinition = {
 	id: "tree-sitter",
-	appliesTo: ["jsts", "python"],
+	appliesTo: ["jsts", "python", "go", "rust", "ruby"],
 	priority: 14, // Between oxlint (12) and ast-grep-napi (15)
 	enabledByDefault: true,
 	skipTestFiles: false, // Run on test files too (structural issues matter there)
@@ -136,21 +137,23 @@ const treeSitterRunner: RunnerDefinition = {
 
 		// Determine language from file extension
 		const filePath = ctx.filePath;
-		const isPython = filePath.endsWith(".py");
-		const isTypeScript = filePath.endsWith(".ts");
-		const isTSX = filePath.endsWith(".tsx");
-		const isJavaScript = filePath.endsWith(".js") || filePath.endsWith(".jsx");
-
-		let languageId: string;
-		if (isPython) {
-			languageId = "python";
-		} else if (isTSX) {
-			languageId = "tsx";
-		} else if (isTypeScript) {
-			languageId = "typescript";
-		} else if (isJavaScript) {
-			languageId = "javascript";
-		} else {
+		const ext = filePath.slice(filePath.lastIndexOf("."));
+		const EXT_TO_LANG: Record<string, string> = {
+			".ts": "typescript",
+			".mts": "typescript",
+			".cts": "typescript",
+			".tsx": "tsx",
+			".js": "javascript",
+			".mjs": "javascript",
+			".cjs": "javascript",
+			".jsx": "javascript",
+			".py": "python",
+			".go": "go",
+			".rs": "rust",
+			".rb": "ruby",
+		};
+		const languageId = EXT_TO_LANG[ext];
+		if (!languageId) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
@@ -197,7 +200,7 @@ const treeSitterRunner: RunnerDefinition = {
 			languageQueries = allQueries.filter(
 				(q) =>
 					q.language === languageId ||
-					(isJavaScript && q.language === "typescript"),
+					(languageId === "javascript" && q.language === "typescript"),
 			);
 
 			// Save to cache
@@ -245,8 +248,9 @@ const treeSitterRunner: RunnerDefinition = {
 						continue; // Skip this match - filter didn't pass
 					}
 
-					// For hardcoded-secrets, also check variable name pattern
-					if (query.id === "hardcoded-secrets") {
+					// check_secret_pattern post-filter is handled in tree-sitter-client.ts
+					// Legacy: hardcoded-secrets id check (kept for backward compat)
+					if (query.id === "hardcoded-secrets" && !query.post_filter) {
 						// Extract variable name from captures
 						const varName = match.captures?.VARNAME || "";
 						if (!varName || !matchesSecretPattern(varName)) {
@@ -276,6 +280,13 @@ const treeSitterRunner: RunnerDefinition = {
 						semantic,
 						tool: "tree-sitter",
 						rule: query.id,
+						// Surface fix intent to agent — tree-sitter never auto-applies;
+						// linters (biome/ruff/eslint) own the autofix phase.
+						fixable: query.has_fix,
+						fixSuggestion:
+							query.has_fix && query.fix_action
+								? `${query.fix_action} this statement`
+								: undefined,
 					});
 				}
 			} catch (err) {

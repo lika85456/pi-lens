@@ -19,7 +19,8 @@ export const EMOJI: Record<string, string> = {
 export function formatDiagnostic(d: Diagnostic): string {
 	const line = d.line ? `L${d.line}: ` : "";
 	const indented = d.message.split("\n").join("\n  ");
-	return `  ${line}${indented}`;
+	const fix = d.fixSuggestion ? `\n    💡 Fix: ${d.fixSuggestion}` : "";
+	return `  ${line}${indented}${fix}`;
 }
 
 /**

@@ -18,6 +18,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { EXCLUDED_DIRS } from "./file-utils.js";
+import { TreeCache } from "./tree-sitter-cache.js";
+import { TreeSitterNavigator } from "./tree-sitter-navigator.js";
 import {
 	type TreeSitterQuery,
 	TreeSitterQueryLoader,
@@ -88,6 +90,8 @@ export class TreeSitterClient {
 	private initialized = false;
 	private languages: Map<string, TreeSitterLanguage> = new Map();
 	private parsers: Map<string, TreeSitterParserInstance> = new Map();
+	private treeCache: TreeCache;
+	private navigator = new TreeSitterNavigator();
 	private grammarsDir: string;
 	// biome-ignore lint/suspicious/noExplicitAny: Optional dependency loaded dynamically
 	private ParserClass: any = null;
@@ -102,6 +106,7 @@ export class TreeSitterClient {
 	constructor(verbose = false) {
 		this.grammarsDir = this.findGrammarsDir();
 		this.verbose = verbose;
+		this.treeCache = new TreeCache(50, verbose);
 	}
 
 	/** Debug logging helper */
@@ -319,13 +324,87 @@ export class TreeSitterClient {
 		try {
 			const content = fs.readFileSync(filePath, "utf-8");
 			this.dbg(`File content length: ${content.length}`);
+
+			// Check cache first
+			const cachedTree = this.treeCache.get(filePath, content, languageId);
+			if (cachedTree) {
+				this.dbg(`Using cached tree for ${filePath}`);
+				return cachedTree;
+			}
+
+			// Parse and cache
 			const tree = parser.parse(content);
 			this.dbg(`Parsed, root node type: ${tree.rootNode.type}`);
+
+			// Cache the tree
+			this.treeCache.set(filePath, content, languageId, tree);
+
 			return tree;
 		} catch (err) {
 			this.dbg(`Parse error: ${err}`);
 			return null;
 		}
+	}
+
+	/**
+	 * Detect and extract injected content from template literals
+	 * Used for security analysis (SQL injection, unsafe regex, etc.)
+	 */
+	extractInjections(
+		filePath: string,
+		content: string,
+	): Array<{
+		type: "sql" | "css" | "html" | "gql" | "regex";
+		content: string;
+		line: number;
+		column: number;
+	}> {
+		const injections: Array<{
+			type: "sql" | "css" | "html" | "gql" | "regex";
+			content: string;
+			line: number;
+			column: number;
+		}> = [];
+
+		// Pattern: sql`SELECT * FROM users` or query`...`
+		const sqlPattern = /\b(sql|query|execute)\s*`([^`]+)`/gi;
+		let match: RegExpExecArray | null;
+		while ((match = sqlPattern.exec(content)) !== null) {
+			const lines = content.slice(0, match.index).split("\n");
+			injections.push({
+				type: "sql",
+				content: match[2],
+				line: lines.length,
+				column: lines[lines.length - 1].length,
+			});
+		}
+
+		// Pattern: styled.div`color: red;` or css`...`
+		const cssPattern = /\b(styled(?:\.\w+)?|css)\s*`([^`]+)`/gi;
+		while ((match = cssPattern.exec(content)) !== null) {
+			const lines = content.slice(0, match.index).split("\n");
+			injections.push({
+				type: "css",
+				content: match[2],
+				line: lines.length,
+				column: lines[lines.length - 1].length,
+			});
+		}
+
+		// Pattern: new RegExp(`pattern`)
+		const regexPattern = /new\s+RegExp\s*\(\s*`([^`]+)`/gi;
+		while ((match = regexPattern.exec(content)) !== null) {
+			const lines = content.slice(0, match.index).split("\n");
+			injections.push({
+				type: "regex",
+				content: match[1],
+				line: lines.length,
+				column: lines[lines.length - 1].length,
+			});
+		}
+
+		this.dbg(`Found ${injections.length} injections in ${filePath}`);
+		return injections;
 	}
 
 	/** Check if tree-sitter is available (grammars installed) */
@@ -520,6 +599,10 @@ export class TreeSitterClient {
 		return { query: "", metavars: [] };
 	}
 
+	/**
+	 * Inject native tree-sitter predicates into S-expression query
+	 * This moves text filtering to WASM for better performance
+	 */
 	/** Generate cache key for compiled query */
 	private getQueryCacheKey(pattern: string, languageId: string): string {
 		// Simple hash for the query string
@@ -667,14 +750,6 @@ export class TreeSitterClient {
 					}
 				}
 
-				if (postFilter === "not_dbg_method") {
-					const methodNode = captures.METHOD;
-					if (methodNode) {
-						const methodName = methodNode.text;
-						if (methodName === "dbg") continue; // Skip console.dbg()
-					}
-				}
-
 				if (postFilter === "no_super_call") {
 					const bodyNode = captures.BODY;
 					if (bodyNode) {
@@ -684,6 +759,112 @@ export class TreeSitterClient {
 						const superCallRegex = /(?<!\/\/.*)super\s*\(/;
 						const hasSuperCall = superCallRegex.test(bodyText);
 						if (hasSuperCall) continue; // Skip if has super() - this is the GOOD case
+					}
+				}
+
+				// Scope-aware: keep only matches inside test blocks
+				if (postFilter === "in_test_block") {
+					const capturesArray = Object.values(captures);
+					if (capturesArray.length > 0 && capturesArray[0]) {
+						if (!this.navigator.isInTestBlock(capturesArray[0])) continue;
+					}
+				}
+
+				// Structural: keep only matches NOT inside a try/catch (or begin/rescue in Ruby)
+				if (postFilter === "not_in_try_catch") {
+					const capturesArray = Object.values(captures);
+					if (capturesArray.length > 0 && capturesArray[0]) {
+						if (this.navigator.isInTryCatch(capturesArray[0])) continue;
+					}
+				}
+
+				// Structural: keep only matches that ARE inside a try/catch (or begin/rescue)
+				if (postFilter === "in_try_catch") {
+					const capturesArray = Object.values(captures);
+					if (capturesArray.length > 0 && capturesArray[0]) {
+						if (!this.navigator.isInTryCatch(capturesArray[0])) continue;
+					}
+				}
+
+				// Scope-aware: keep only matches outside test blocks
+				if (postFilter === "not_in_test_block") {
+					const capturesArray = Object.values(captures);
+					if (capturesArray.length > 0 && capturesArray[0]) {
+						if (this.navigator.isInTestBlock(capturesArray[0])) continue;
+					}
+				}
+
+				// Structural: NAME capture must equal PARAM capture (actual shadowing check)
+				if (postFilter === "name_matches_param") {
+					const nameNode = captures.NAME;
+					const paramNode = captures.PARAM;
+					if (!nameNode || !paramNode) continue;
+					if (nameNode.text !== paramNode.text) continue;
+				}
+
+				// Scope: skip matches inside any function/method definition
+				if (postFilter === "not_in_function") {
+					const first = Object.values(captures)[0];
+					if (
+						first &&
+						this.navigator.isInside(first, [
+							"function_definition",
+							"function_declaration",
+							"method_definition",
+							"arrow_function",
+						])
+					)
+						continue;
+				}
+
+				// Security: variable name must match secret naming patterns
+				if (postFilter === "check_secret_pattern") {
+					const varName = (captures.VARNAME?.text ?? "").toLowerCase();
+					const secretPatterns = [
+						/api[_-]?key/,
+						/api[_-]?secret/,
+						/password/,
+						/passwd/,
+						/secret/,
+						/token/,
+						/auth/,
+						/private[_-]?key/,
+						/access[_-]?token/,
+						/credentials/,
+						/aws[_-]?secret/,
+						/github[_-]?token/,
+						/private[_-]?key/,
+						/client[_-]?secret/,
+					];
+					if (!secretPatterns.some((p) => p.test(varName))) continue;
+				}
+
+				// Python: except body that only contains pass (effectively empty)
+				if (postFilter === "python_empty_except") {
+					const bodyNode = captures.BODY;
+					if (bodyNode) {
+						// biome-ignore lint/suspicious/noExplicitAny: tree-sitter node
+						const realStmts = bodyNode.children.filter(
+							(c: any) =>
+								c.isNamed &&
+								c.type !== "pass_statement" &&
+								c.type !== "comment",
+						);
+						if (realStmts.length > 0) continue; // has real statements
+					}
+				}
+
+				// Ruby: rescue body with no meaningful statements
+				if (postFilter === "ruby_empty_rescue") {
+					const bodyNode = captures.BODY;
+					if (bodyNode) {
+						// biome-ignore lint/suspicious/noExplicitAny: tree-sitter node
+						const realStmts = bodyNode.children.filter(
+							(c: any) =>
+								c.isNamed &&
+								!["comment", "nil", "nil_literal"].includes(c.type),
+						);
+						if (realStmts.length > 0) continue;
 					}
 				}
 

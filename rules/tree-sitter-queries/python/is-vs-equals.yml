@@ -2,7 +2,7 @@
 # Detects 'is' used with string/int literals (should use '==')
 id: is-vs-equals
 name: Is vs Equals for Literals
-severity: warning
+severity: error
 category: reliability
 language: python
 

@@ -79,7 +79,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			{ mode: "fallback", runnerIds: ["go-vet"], filterKinds: ["go"] },
 			// golangci-lint: only fires when project has .golangci.yml config
 			{ mode: "fallback", runnerIds: ["golangci-lint"], filterKinds: ["go"] },
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
+			// Structural analysis
+			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["go"] },
 		],
 	},
 
@@ -93,7 +94,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["rust"] },
 			// Cargo clippy for additional checks
 			{ mode: "fallback", runnerIds: ["rust-clippy"], filterKinds: ["rust"] },
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
+			// Structural analysis
+			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["rust"] },
 		],
 	},
 
@@ -104,6 +106,8 @@ export const TOOL_PLANS: Record<string, ToolPlan> = {
 		name: "Ruby Linting",
 		groups: [
 			{ mode: "fallback", runnerIds: ["rubocop"], filterKinds: ["ruby"] },
+			// Structural analysis
+			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["ruby"] },
 		],
 	},
 

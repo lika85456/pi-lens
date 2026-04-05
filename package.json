@@ -20,7 +20,8 @@
 		"rust:test": "cargo test --manifest-path rust/Cargo.toml --all-targets --all-features",
 		"rust:build": "cargo build --manifest-path rust/Cargo.toml --release",
 		"rust:build:debug": "cargo build --manifest-path rust/Cargo.toml",
-		"rust:test:integration": "node rust/test_integration.mjs"
+		"download-grammars": "node scripts/download-grammars.js",
+		"postinstall": "npm run download-grammars || true"
 	},
 	"keywords": [
 		"pi",

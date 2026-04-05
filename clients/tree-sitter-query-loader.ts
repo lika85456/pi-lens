@@ -24,6 +24,15 @@ export interface TreeSitterQuery {
 	post_filter?: string;
 	// biome-ignore lint/suspicious/noExplicitAny: Flexible filter params
 	post_filter_params?: Record<string, any>;
+	/**
+	 * Native tree-sitter predicates for filtering (#eq?, #match?)
+	 * These run in WASM and are faster than post-filters
+	 */
+	predicates?: Array<{
+		type: "eq" | "match" | "any-of";
+		var: string;
+		value: string | string[];
+	}>;
 	tags?: string[];
 	has_fix: boolean;
 	fix_action?: string;
@@ -133,6 +142,14 @@ export class TreeSitterQueryLoader {
 					: undefined,
 				// biome-ignore lint/suspicious/noExplicitAny: Post filter params
 				post_filter_params: parsed.post_filter_params as any,
+				// Parse predicates if present
+				predicates: Array.isArray(parsed.predicates)
+					? parsed.predicates.map((p: any) => ({
+							type: p.type,
+							var: p.var,
+							value: p.value,
+						}))
+					: undefined,
 				tags: Array.isArray(parsed.tags) ? parsed.tags.map(String) : undefined,
 				has_fix: parsed.has_fix === true || parsed.has_fix === "true",
 				fix_action: parsed.fix_action ? String(parsed.fix_action) : undefined,

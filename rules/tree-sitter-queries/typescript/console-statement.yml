@@ -17,11 +17,11 @@ query: |
   (call_expression
     function: (member_expression
       object: (identifier) @OBJ (#eq? @OBJ "console")
-      property: (property_identifier) @METHOD)
+      property: (property_identifier) @METHOD (#not-eq? @METHOD "dbg"))
     arguments: (arguments) @ARGS)
 
-# Post-filter: Exclude debug function names like "dbg"
-post_filter: not_dbg_method
+# Skip matches inside test blocks — no-console-in-tests handles that case
+post_filter: not_in_test_block
 
 metavars:
   - OBJ
