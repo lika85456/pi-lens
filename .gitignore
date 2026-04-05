@@ -79,3 +79,4 @@ BUG_*.md
 # Dev log
 clients/dispatch/debug.log
 AGENTS.md
+.npmignore
