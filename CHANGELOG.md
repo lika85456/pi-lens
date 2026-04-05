@@ -2,6 +2,62 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.7.0] - 2026-04-05
+
+### Added
+- **Test runner in pipeline** — After every file write/edit, pi-lens now automatically detects and
+  runs the corresponding test file (vitest, jest, pytest). Results surface inline so the agent sees
+  failures immediately without a separate test step. Supports TypeScript/JS/Python; file-level
+  targeted — only the test for the edited file runs, not the full suite.
+
+- **Parallel dispatch groups** — Lint runners now execute in parallel across independent groups
+  (e.g. `lsp`, `tree-sitter`, `ast-grep-napi`, `type-safety`, `similarity` all fire at once).
+  Typical wall-clock savings: 500–1500ms per file write (`parallelGainMs` logged in latency log).
+
+### Fixed
+- **`semantic: "none"` when 0 diagnostics** — LSP, Pyright, and type-safety runners were returning
+  `semantic: "warning"` even when `diagnosticCount` was 0 (clean file). Now correctly returns
+  `"none"` when no diagnostics are present, `"warning"` when warnings exist, `"blocking"` on errors.
+
+- **`ast_grep_replace` with `apply=true` not writing files** — Replaced tool was silently
+  discarding the rewritten content instead of persisting it to disk.
+
+- **Pipeline event loop blocked during test execution** — `spawnSync` in the test runner was
+  blocking the Node.js event loop for the duration of the test run. Switched to async spawn.
+
+- **Formatters: venv/vendor/node_modules awareness** — Formatters now skip files inside virtual
+  environments, vendor directories, and `node_modules` instead of attempting to format them.
+  CSharpier detection also improved.
+
+- **Formatter nearest-wins resolution** — When multiple formatter configs exist at different
+  directory levels, the one closest to the edited file is now used (was previously using the
+  root-level config regardless of nesting).
+
+- **Prettier auto-install** — Prettier is now auto-installed when detected as the project
+  formatter but not present, consistent with the Biome/Ruff auto-install behaviour.
+
+- **6 missing formatters added** — `clang-format` (C/C++/ObjC), `ktlint` (Kotlin), `scalafmt`
+  (Scala), `mix format` (Elixir), `dart format` (Dart), `terraform fmt` (HCL) now detected
+  and invoked automatically.
+
+- **LSP tier-4 install prompts** — Corrected missing interactive-install prompts for tier-4
+  language servers (less common languages). Users now see the install suggestion instead of a
+  silent skip.
+
+### Changed
+- **`startedAt` added to latency log runner entries** — Every runner entry now records when it
+  started, making wall-clock vs. sequential comparisons accurate. `dispatch_complete` also logs
+  `parallelGainMs = sumMs - wallClockMs` to quantify parallelism benefit.
+
+- **Dynamic imports removed from hot path** — Dispatch module no longer uses `await import()`
+  for runner loading; all imports are static, eliminating ~50ms warm-up latency on first dispatch.
+
+### Tests
+- Added formatter venv/vendor resolution and interactive-install coverage
+- Added LSP lifecycle test suite with mock LSP server (process spawn, open/change/close, shutdown)
+
+---
+
 ## [3.6.7] - 2026-04-04
 
 ### Fixed
