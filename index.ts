@@ -33,8 +33,10 @@ import { runPipeline } from "./clients/pipeline.js";
 import {
 	buildProjectIndex,
 	findSimilarFunctions,
+	isIndexFresh,
 	loadIndex,
 	type ProjectIndex,
+	saveIndex,
 } from "./clients/project-index.js";
 import { RuffClient } from "./clients/ruff-client.js";
 import {
@@ -44,6 +46,7 @@ import {
 } from "./clients/rules-scanner.js";
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
+import { resolveStartupScanContext } from "./clients/startup-scan.js";
 import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
 import { TypeCoverageClient } from "./clients/type-coverage-client.js";
@@ -861,6 +864,7 @@ export default function (pi: ExtensionAPI) {
 			metricsClient.reset();
 			complexityBaselines.clear();
 			resetDispatchBaselines();
+			cachedExports.clear();
 			cachedProjectIndex = null;
 
 			// Reset LSP service so the new session starts with fresh diagnostics.
@@ -874,7 +878,7 @@ export default function (pi: ExtensionAPI) {
 			// Log available tools
 			const tools: string[] = [];
 			tools.push("TypeScript LSP"); // Always available
-			if (await biomeClient.ensureAvailable()) tools.push("Biome");
+			if (biomeClient.isAvailable()) tools.push("Biome");
 			if (astGrepClient.isAvailable()) tools.push("ast-grep");
 			if (ruffClient.isAvailable()) tools.push("Ruff");
 			if (knipClient.isAvailable()) tools.push("Knip");
@@ -921,8 +925,13 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const cwd = ctx.cwd ?? process.cwd();
-			projectRoot = cwd; // Module-level for architect client
+			const startupScan = resolveStartupScanContext(cwd);
+			const scanRoot = startupScan.projectRoot ?? cwd;
+			projectRoot = scanRoot; // Module-level for architect client
 			dbg(`session_start cwd: ${cwd}`);
+			dbg(
+				`session_start scan root: ${scanRoot} (warmCaches=${startupScan.canWarmCaches}${startupScan.reason ? `, reason=${startupScan.reason}` : ""})`,
+			);
 
 			// Pre-install prettier if the project uses it but it's not on PATH.
 			// Only installs once (ensureTool is a no-op if already present).
@@ -1015,89 +1024,98 @@ export default function (pi: ExtensionAPI) {
 				cwd,
 			);
 
-			// Dead code scan — use cache if fresh, auto-install if needed (cached for on-demand reporting)
-			if (await knipClient.ensureAvailable()) {
-				const cached = cacheManager.readCache<
-					ReturnType<KnipClient["analyze"]>
-				>("knip", cwd);
-				if (cached) {
-					dbg(
-						`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
-					);
-				} else {
-					const startMs = Date.now();
-					const knipResult = knipClient.analyze(cwd);
-					cacheManager.writeCache("knip", knipResult, cwd, {
-						scanDurationMs: Date.now() - startMs,
-					});
-					dbg(`session_start Knip scan done`);
-				}
-			} else {
-				dbg(`session_start Knip: not available`);
-			}
-			// Note: Knip results not shown at session start — use /lens-booboo to see dead code
-
-			// Duplicate code detection — use cache if fresh, auto-install if needed (cached for on-demand reporting)
-			if (await jscpdClient.ensureAvailable()) {
-				const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
-					"jscpd",
-					cwd,
+			// Heavy startup scans — gated on project root + file count safety check
+			if (!startupScan.canWarmCaches) {
+				dbg(
+					`session_start: skipping heavy scans (${startupScan.reason ?? "unknown"})`,
 				);
-				if (cached) {
-					dbg(`session_start jscpd: cache hit`);
-				} else {
-					const startMs = Date.now();
-					const jscpdResult = jscpdClient.scan(cwd);
-					cacheManager.writeCache("jscpd", jscpdResult, cwd, {
-						scanDurationMs: Date.now() - startMs,
-					});
-					dbg(`session_start jscpd scan done`);
-				}
 			} else {
-				dbg(`session_start jscpd: not available`);
-			}
-			// Note: jscpd results not shown at session start — use /lens-booboo to see duplicates
-
-			// Note: type-coverage runs on-demand via /lens-booboo only (not at session_start)
-
-			// Scan for exported functions (cached for duplicate detection on write)
-			if (await astGrepClient.ensureAvailable()) {
-				const exports = await astGrepClient.scanExports(cwd, "typescript");
-				dbg(`session_start exports scan: ${exports.size} functions found`);
-				for (const [name, file] of exports) {
-					cachedExports.set(name, file);
-				}
-			}
-
-			// Build similarity index for pre-write structural duplicate detection.
-			// Uses the same source files as the exports scan. The index is ~50ms
-			// to query but seconds to build, so we do it once at session start.
-			try {
-				const existing = await loadIndex(cwd);
-				if (existing && existing.entries.size > 0) {
-					cachedProjectIndex = existing;
-					dbg(
-						`session_start: loaded project index from disk (${existing.entries.size} entries)`,
-					);
-				} else {
-					const sourceFiles = getSourceFiles(cwd, true);
-					const tsFiles = sourceFiles.filter(
-						(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
-					);
-					if (tsFiles.length > 0 && tsFiles.length <= 500) {
-						cachedProjectIndex = await buildProjectIndex(cwd, tsFiles);
+				// Dead code scan — use cache if fresh (cached for on-demand reporting)
+				if (await knipClient.ensureAvailable()) {
+					const cached = cacheManager.readCache<
+						ReturnType<KnipClient["analyze"]>
+					>("knip", cwd);
+					if (cached) {
 						dbg(
-							`session_start: built project index (${cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+							`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
 						);
 					} else {
-						dbg(
-							`session_start: skipped project index (${tsFiles.length} files — ${tsFiles.length === 0 ? "none" : "too many"})`,
-						);
+						const startMs = Date.now();
+						const knipResult = knipClient.analyze(cwd);
+						cacheManager.writeCache("knip", knipResult, cwd, {
+							scanDurationMs: Date.now() - startMs,
+						});
+						dbg(`session_start Knip scan done`);
+					}
+				} else {
+					dbg(`session_start Knip: not available`);
+				}
+				// Note: Knip results not shown at session start — use /lens-booboo to see dead code
+
+				// Duplicate code detection — use cache if fresh, auto-install if needed (cached for on-demand reporting)
+				if (await jscpdClient.ensureAvailable()) {
+					const cached = cacheManager.readCache<
+						ReturnType<JscpdClient["scan"]>
+					>("jscpd", cwd);
+					if (cached) {
+						dbg(`session_start jscpd: cache hit`);
+					} else {
+						const startMs = Date.now();
+						const jscpdResult = jscpdClient.scan(cwd);
+						cacheManager.writeCache("jscpd", jscpdResult, cwd, {
+							scanDurationMs: Date.now() - startMs,
+						});
+						dbg(`session_start jscpd scan done`);
+					}
+				} else {
+					dbg(`session_start jscpd: not available`);
+				}
+				// Note: jscpd results not shown at session start — use /lens-booboo to see duplicates
+
+				// Note: type-coverage runs on-demand via /lens-booboo only (not at session_start)
+
+				// Scan for exported functions (cached for duplicate detection on write)
+				if (await astGrepClient.ensureAvailable()) {
+					const exports = await astGrepClient.scanExports(cwd, "typescript");
+					dbg(`session_start exports scan: ${exports.size} functions found`);
+					for (const [name, file] of exports) {
+						cachedExports.set(name, file);
 					}
 				}
-			} catch (err) {
-				dbg(`session_start: project index build failed: ${err}`);
-			}
+
+				// Build similarity index for pre-write structural duplicate detection.
+				try {
+					const existing = await loadIndex(scanRoot);
+					if (
+						existing &&
+						existing.entries.size > 0 &&
+						(await isIndexFresh(scanRoot))
+					) {
+						cachedProjectIndex = existing;
+						dbg(
+							`session_start: loaded fresh project index (${existing.entries.size} entries)`,
+						);
+					} else {
+						const sourceFiles = getSourceFiles(scanRoot, true);
+						const tsFiles = sourceFiles.filter(
+							(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
+						);
+						if (tsFiles.length > 0 && tsFiles.length <= 500) {
+							cachedProjectIndex = await buildProjectIndex(scanRoot, tsFiles);
+							await saveIndex(cachedProjectIndex, scanRoot);
+							dbg(
+								`session_start: built project index (${cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+							);
+						} else {
+							dbg(
+								`session_start: skipped project index (${tsFiles.length} files)`,
+							);
+						}
+					}
+				} catch (err) {
+					dbg(`session_start: project index build failed: ${err}`);
+				}
+			} // end canWarmCaches
 
 			dbg(
 				`session_start: scans complete (${parts.length} part(s)), cached for commands`,

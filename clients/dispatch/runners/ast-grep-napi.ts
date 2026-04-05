@@ -9,6 +9,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { resolvePackagePath } from "../../package-root.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -356,8 +357,10 @@ const astGrepNapiRunner: RunnerDefinition = {
 		const diagnostics: Diagnostic[] = [];
 
 		const ruleDirs = [
-			path.join(process.cwd(), "rules/ast-grep-rules/rules"),
-			path.join(process.cwd(), "rules/ast-grep-rules"),
+			path.join(process.cwd(), "rules", "ast-grep-rules", "rules"),
+			path.join(process.cwd(), "rules", "ast-grep-rules"),
+			resolvePackagePath(import.meta.url, "rules", "ast-grep-rules", "rules"),
+			resolvePackagePath(import.meta.url, "rules", "ast-grep-rules"),
 		];
 
 		for (const ruleDir of ruleDirs) {

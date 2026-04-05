@@ -19,6 +19,7 @@ import type {
 	RuleDescription,
 	SgMatch,
 } from "./ast-grep-types.js";
+import { resolvePackagePath } from "./package-root.js";
 import { SgRunner } from "./sg-runner.js";
 
 const _getExtensionDir = () => {
@@ -38,7 +39,12 @@ export class AstGrepClient {
 	private runner: SgRunner;
 
 	constructor(ruleDir?: string, verbose = false) {
-		this.ruleDir = ruleDir || path.join(process.cwd(), "rules");
+		const projectRuleDir = path.join(process.cwd(), "rules");
+		this.ruleDir =
+			ruleDir ||
+			(fs.existsSync(projectRuleDir)
+				? projectRuleDir
+				: resolvePackagePath(import.meta.url, "rules"));
 		this.log = verbose
 			? (msg: string) => console.error(`[ast-grep] ${msg}`)
 			: () => {};
