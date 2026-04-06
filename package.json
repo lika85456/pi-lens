@@ -45,6 +45,7 @@
 	"files": [
 		"index.ts",
 		"config/",
+		"tools/",
 		"clients/**/*.ts",
 		"commands/**/*.ts",
 		"rules/",
