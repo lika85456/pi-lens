@@ -104,7 +104,10 @@ const biomeCheckJsonRunner: RunnerDefinition = {
 								: "biome.json",
 						),
 				]
-			: ["--config-path=" + resolvePackagePath("config/biome/core.jsonc")];
+			: [
+					"--config-path=" +
+						resolvePackagePath(import.meta.url, "config/biome/core.jsonc"),
+				];
 
 		// Step 1: Capture diagnostics (before fixing)
 		const checkResult = await safeSpawnAsync(

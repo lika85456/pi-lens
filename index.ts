@@ -13,6 +13,7 @@ import { BiomeClient } from "./clients/biome-client.js";
 import { CacheManager } from "./clients/cache-manager.js";
 import { ComplexityClient } from "./clients/complexity-client.js";
 import { DependencyChecker } from "./clients/dependency-checker.js";
+import { getDiagnosticTracker } from "./clients/diagnostic-tracker.js";
 import { resetDispatchBaselines } from "./clients/dispatch/integration.js";
 import { extractFunctions } from "./clients/dispatch/runners/similarity.js";
 import { createFileTime, FileTimeError } from "./clients/file-time.js";
@@ -46,6 +47,7 @@ import {
 } from "./clients/rules-scanner.js";
 import { RustClient } from "./clients/rust-client.js";
 import { getSourceFiles } from "./clients/scan-utils.js";
+import { formatSessionSummary } from "./clients/session-summary.js";
 import { resolveStartupScanContext } from "./clients/startup-scan.js";
 import { TestRunnerClient } from "./clients/test-runner-client.js";
 import { TodoScanner } from "./clients/todo-scanner.js";
@@ -1608,6 +1610,19 @@ export default function (pi: ExtensionAPI) {
 					},
 					cwd,
 				);
+			}
+
+			// --- Diagnostic session summary ---
+			const tracker = getDiagnosticTracker();
+			const stats = tracker.getStats();
+			if (stats.totalShown > 0) {
+				const summary = formatSessionSummary(stats);
+				if (summary) {
+					parts.push(summary);
+					dbg(
+						`turn_end: diagnostic summary added (${stats.totalShown} shown, ${stats.totalAutoFixed} auto-fixed, ${stats.totalAgentFixed} agent-fixed)`,
+					);
+				}
 			}
 
 			// Clear fixed tracking so files can be fixed again on next turn
