@@ -5,6 +5,7 @@
  * Integrated into dispatch flow as a warning (non-blocking) suggestion.
  */
 
+import * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as ts from "typescript";
@@ -124,6 +125,16 @@ const similarityRunner: RunnerDefinition = {
 
 			// Create diagnostic for each match
 			for (const match of matches) {
+				const targetPath = extractLocationPath(match.targetLocation);
+				if (targetPath) {
+					const resolvedTarget = path.isAbsolute(targetPath)
+						? targetPath
+						: path.join(projectRoot, targetPath);
+					if (!nodeFs.existsSync(resolvedTarget)) {
+						continue;
+					}
+				}
+
 				// Skip if it's the same function (self-match by path/name)
 				if (
 					match.targetId ===
@@ -284,6 +295,12 @@ function buildSuggestionMessage(
 	return `Function '${func.name}' has ${similarityPct}% similarity to '${name}()' at ${location}. Consider reusing it if behavior is equivalent.`;
 }
 
+function extractLocationPath(location: string): string {
+	const m = location.match(/^(.*):\d+$/);
+	if (m?.[1]) return m[1];
+	return location;
+}
+
 // ============================================================================
 // Rust fast-path
 // ============================================================================
@@ -329,9 +346,8 @@ async function runWithRust(
 	}
 
 	// 4. Convert to Diagnostics.
-	const diagnostics: Diagnostic[] = matches
-		.slice(0, maxSuggestions)
-		.map((m) => {
+	const diagnostics: Diagnostic[] = [];
+	for (const m of matches.slice(0, maxSuggestions)) {
 			const similarityPct = Math.round(m.similarity * 100);
 			// source_id / target_id format: "path/to/file.ts::funcName@line"
 			const parseId = (id: string): { file: string; name: string; line: number } => {
@@ -345,7 +361,13 @@ async function runWithRust(
 			};
 			const source = parseId(m.source_id);
 			const target = parseId(m.target_id);
-			return {
+			const resolvedTarget = path.isAbsolute(target.file)
+				? target.file
+				: path.join(projectRoot, target.file);
+			if (!nodeFs.existsSync(resolvedTarget)) {
+				continue;
+			}
+			diagnostics.push({
 				id: `similarity-rust-${m.source_id}-${m.target_id}`,
 				tool: "similarity",
 				filePath,
@@ -354,8 +376,8 @@ async function runWithRust(
 				message: `Function '${source.name}' has ${similarityPct}% similarity to '${target.name}()' at ${target.file}:${target.line}. Consider reusing it if behavior is equivalent.`,
 				severity: "warning" as const,
 				semantic: "warning" as const,
-			};
-		});
+			});
+	}
 
 	return {
 		status: "succeeded",

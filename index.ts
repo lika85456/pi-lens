@@ -571,6 +571,15 @@ pi.on("tool_call", async (event, _ctx) => {
 							1,
 						);
 						for (const match of matches) {
+							const targetPathMatch = String(match.targetLocation).match(
+								/^(.*):\d+$/,
+							);
+							const targetPath = targetPathMatch?.[1] ?? String(match.targetLocation);
+							const resolvedTarget = path.isAbsolute(targetPath)
+								? targetPath
+								: path.join(runtime.projectRoot, targetPath);
+							if (!nodeFs.existsSync(resolvedTarget)) continue;
+
 							// Skip self-matches
 							if (match.targetId === `${relPath}:${func.name}`) continue;
 							const pct = Math.round(match.similarity * 100);
