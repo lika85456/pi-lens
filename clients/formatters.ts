@@ -113,6 +113,26 @@ async function which(command: string): Promise<string | null> {
 	return result.stdout?.trim().split("\n")[0] ?? null;
 }
 
+async function resolveGoFmtBinary(): Promise<string | null> {
+	const inPath = await which("gofmt");
+	if (inPath) return inPath;
+
+	const goCheck = safeSpawn("go", ["env", "GOROOT"], {
+		timeout: 5000,
+	});
+	if (goCheck.error || goCheck.status !== 0) return null;
+
+	const goroot = (goCheck.stdout ?? "").trim();
+	if (!goroot) return null;
+
+	const binary = path.join(
+		goroot,
+		"bin",
+		process.platform === "win32" ? "gofmt.exe" : "gofmt",
+	);
+	return (await fileExists(binary)) ? binary : null;
+}
+
 // --- Venv / Local Binary Helpers ---
 
 /**
@@ -395,8 +415,13 @@ export const gofmtFormatter: FormatterInfo = {
 	name: "gofmt",
 	command: ["gofmt", "-w", "$FILE"],
 	extensions: [".go"],
+	async resolveCommand(filePath, _cwd) {
+		const gofmtBinary = await resolveGoFmtBinary();
+		if (!gofmtBinary) return null;
+		return [gofmtBinary, "-w", filePath];
+	},
 	async detect(_cwd: string) {
-		return (await which("gofmt")) !== null;
+		return (await resolveGoFmtBinary()) !== null;
 	},
 };
 
