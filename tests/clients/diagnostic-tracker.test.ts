@@ -67,6 +67,19 @@ describe("diagnostic-tracker", () => {
 
 			const stats = tracker.getStats();
 			expect(stats.totalShown).toBe(1);
+			expect(stats.repeatOffenders.length).toBe(1);
+			expect(stats.repeatOffenders[0].count).toBe(2);
+		});
+
+		it("tracks auto-fixed counters", () => {
+			const tracker = createDiagnosticTracker();
+			tracker.trackShown([
+				{ rule: "no-shadow", filePath: "/src/utils.ts", line: 23 },
+			]);
+			tracker.trackAutoFixed(1);
+			const stats = tracker.getStats();
+			expect(stats.totalAutoFixed).toBe(1);
+			expect(stats.totalUnresolved).toBe(0);
 		});
 
 		it("ranks top violations correctly", () => {
