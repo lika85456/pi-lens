@@ -518,6 +518,7 @@ pi.on("tool_call", async (event, _ctx) => {
 					?.map((e) => e.newText ?? "")
 					.join("\n");
 		if (newContent) {
+			const INLINE_SIMILARITY_THRESHOLD = 0.88;
 			const dupeWarnings: string[] = [];
 			const exportRe =
 				/export\s+(?:async\s+)?(?:function|class|const|let|type|interface)\s+(\w+)/g;
@@ -566,7 +567,7 @@ pi.on("tool_call", async (event, _ctx) => {
 						const matches = findSimilarFunctions(
 							func.matrix,
 							runtime.cachedProjectIndex,
-							0.8,
+							INLINE_SIMILARITY_THRESHOLD,
 							1,
 						);
 						for (const match of matches) {
@@ -574,7 +575,7 @@ pi.on("tool_call", async (event, _ctx) => {
 							if (match.targetId === `${relPath}:${func.name}`) continue;
 							const pct = Math.round(match.similarity * 100);
 							simWarnings.push(
-								`\`${func.name}\` is ${pct}% similar to \`${match.targetName}\` in ${match.targetLocation}`,
+								`\`${func.name}\` is ${pct}% similar to \`${match.targetName}\` at \`${String(match.targetLocation).replace(/\\/g, "/")}\``,
 							);
 						}
 					}
@@ -582,7 +583,7 @@ pi.on("tool_call", async (event, _ctx) => {
 					if (simWarnings.length > 0) {
 						return {
 							block: false,
-							reason: `⚠️ Structural similarity detected — consider reusing existing code:\n${simWarnings.map((w) => `  • ${w}`).join("\n")}`,
+							reason: `⚠️ Potential structural similarity (advisory):\n${simWarnings.map((w) => `  • ${w}`).join("\n")}\nUse this only as a hint; verify behavior before refactoring.`,
 						};
 					}
 				} catch {

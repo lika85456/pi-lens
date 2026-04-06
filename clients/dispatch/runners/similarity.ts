@@ -278,12 +278,10 @@ function buildSuggestionMessage(
 	},
 ): string {
 	const similarityPct = Math.round(match.similarity * 100);
-	const parts = match.targetId.split(":");
-	const file = parts[0];
-	const name = parts[1] || match.targetName;
-	const location = `${file}:1`; // TODO: get actual line
+	const location = String(match.targetLocation || "").replace(/\\/g, "/");
+	const name = match.targetName;
 
-	return `Function '${func.name}' has ${similarityPct}% similarity to existing utility '${name}()' in ${location}. Consider reusing the existing utility.`;
+	return `Function '${func.name}' has ${similarityPct}% similarity to '${name}()' at ${location}. Consider reusing it if behavior is equivalent.`;
 }
 
 // ============================================================================
@@ -335,19 +333,25 @@ async function runWithRust(
 		.slice(0, maxSuggestions)
 		.map((m) => {
 			const similarityPct = Math.round(m.similarity * 100);
-			// source_id format: "path/to/file.ts::funcName@line"
-			const [srcFile, srcFunc] = m.source_id.split("::");
-			const [targetFile, targetFunc] = m.target_id.split("::");
-			const funcName = srcFunc?.split("@")[0] ?? "?";
-			const targetName = targetFunc?.split("@")[0] ?? "?";
-			void srcFile; // file is implicit (it's the current file)
+			// source_id / target_id format: "path/to/file.ts::funcName@line"
+			const parseId = (id: string): { file: string; name: string; line: number } => {
+				const m = id.match(/^(.*)::([^@]+)@(\d+)$/);
+				if (!m) return { file: id, name: "?", line: 1 };
+				return {
+					file: m[1].replace(/\\/g, "/"),
+					name: m[2],
+					line: Number.parseInt(m[3], 10) || 1,
+				};
+			};
+			const source = parseId(m.source_id);
+			const target = parseId(m.target_id);
 			return {
 				id: `similarity-rust-${m.source_id}-${m.target_id}`,
 				tool: "similarity",
 				filePath,
-				line: 1, // Rust gives us the function source_id; line resolution is TODO
+				line: source.line,
 				column: 1,
-				message: `Function '${funcName}' has ${similarityPct}% similarity to '${targetName}()' in ${targetFile}. Consider reusing the existing utility.`,
+				message: `Function '${source.name}' has ${similarityPct}% similarity to '${target.name}()' at ${target.file}:${target.line}. Consider reusing it if behavior is equivalent.`,
 				severity: "warning" as const,
 				semantic: "warning" as const,
 			};
