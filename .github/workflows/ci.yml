@@ -43,7 +43,6 @@ jobs:
       - name: Verify grammars were downloaded
         shell: bash
         run: |
-          # Find where npm installed pi-lens globally
           GLOBAL_MODULES=$(npm root -g)
           GRAMMARS_DIR="$GLOBAL_MODULES/pi-lens/node_modules/web-tree-sitter/grammars"
           echo "Checking grammars at: $GRAMMARS_DIR"
@@ -51,3 +50,9 @@ jobs:
           test -f "$GRAMMARS_DIR/tree-sitter-typescript.wasm" || \
             (echo "ERROR: tree-sitter-typescript.wasm not downloaded" && exit 1)
           echo "All grammar checks passed"
+
+      - name: Load each extension entry point (catches missing files)
+        shell: bash
+        run: |
+          INSTALL_DIR=$(npm root -g)/pi-lens
+          node --experimental-strip-types scripts/check-extensions.mjs "$INSTALL_DIR"
