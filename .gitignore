@@ -28,7 +28,7 @@ test-files/
 test-lsp-files/
 test-filetime/
 test-projects/
-scripts/
+# scripts/ intentionally tracked
 test-*.ts
 test-*.js
 test-*.py
