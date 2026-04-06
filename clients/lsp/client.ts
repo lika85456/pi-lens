@@ -142,7 +142,7 @@ export interface LSPClientInfo {
 // --- Constants ---
 
 const DIAGNOSTICS_DEBOUNCE_MS = 150; // ms — waits for follow-up semantic diagnostics
-const INITIALIZE_TIMEOUT_MS = 120_000; // 2 minutes (was 45s) - allows time for npx to download packages
+const INITIALIZE_TIMEOUT_MS = 15_000; // 15s — npx downloads are handled by ensureTool, not here
 
 // --- Client Factory ---
 
