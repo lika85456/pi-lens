@@ -3,14 +3,13 @@
  *
  * Executes all loaded tree-sitter query files from rules/tree-sitter-queries/
  * for fast AST-based pattern matching.
- * Updated: ast-grep-napi test
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { RuleCache } from "../../cache/rule-cache.js";
-import { normalizeMapKey } from "../../path-utils.js";
 import { TreeSitterClient } from "../../tree-sitter-client.js";
+import { classifyDefect } from "../diagnostic-taxonomy.js";
 import {
 	queryLoader,
 	type TreeSitterQuery,
@@ -27,93 +26,46 @@ import type {
 // WASM pointer) — concurrent writes race on _ts_init() and corrupt shared WASM state → crash.
 let _sharedClient: TreeSitterClient | null = null;
 
+const SILENT_ERROR_QUERY_IDS = new Set([
+	"empty-catch",
+	"python-empty-except",
+	"ruby-empty-rescue",
+	"go-bare-error",
+	"no-discarded-error",
+]);
+
+function defaultFixSuggestion(defectClass: string, ruleId: string): string {
+	if (defectClass === "silent-error") {
+		return "Handle the error path explicitly: add logging/telemetry and rethrow or return a typed error result.";
+	}
+	if (defectClass === "secrets") {
+		return "Move secret material to environment/secret manager and read it at runtime.";
+	}
+	if (defectClass === "injection") {
+		return "Replace dynamic execution/string interpolation with parameterized or allowlisted operations.";
+	}
+	if (defectClass === "async-misuse") {
+		return "Restructure async flow to handle errors and sequencing deterministically (await/try-catch or explicit concurrency control).";
+	}
+	if (ruleId.includes("unwrap")) {
+		return "Replace unwrap() with explicit error handling (match/if-let) or propagate with ?.";
+	}
+	return "Refactor this pattern to a safer, explicit form matching project conventions.";
+}
+
+function isLineInModifiedRanges(
+	line: number,
+	ranges: ReadonlyArray<{ start: number; end: number }> | undefined,
+): boolean {
+	if (!ranges || ranges.length === 0) return true;
+	return ranges.some((r) => line >= r.start && line <= r.end);
+}
+
 function getSharedClient(): TreeSitterClient {
 	if (!_sharedClient) {
 		_sharedClient = new TreeSitterClient();
 	}
 	return _sharedClient;
-}
-
-/**
- * Check if a code block is effectively empty (ignoring comments and whitespace)
- */
-function isEmptyBlock(blockContent: string): boolean {
-	// Remove comments, whitespace, and check if anything remains
-	const cleaned = blockContent
-		.replace(/\/\/.*$/gm, "") // Remove single-line comments
-		.replace(/\/\*[\s\S]*?\*\//g, "") // Remove multi-line comments
-		.replace(/\s+/g, "") // Remove all whitespace
-		.trim();
-	return cleaned.length === 0 || cleaned === "{}";
-}
-
-/**
- * Extract parameter count from match text
- */
-function countParameters(matchText: string): number {
-	// Count commas in parameter list, or check for non-empty params
-	// Simple heuristic: count commas + 1, or 0 if empty
-	const paramsMatch = matchText.match(/\((.*)\)/);
-	if (!paramsMatch) return 0;
-	const params = paramsMatch[1].trim();
-	if (!params) return 0;
-	return params.split(",").length;
-}
-
-/**
- * Apply post-filter to determine if a match should be reported
- */
-function applyPostFilter(
-	query: TreeSitterQuery,
-	captures: Record<string, string>,
-): boolean {
-	if (!query.post_filter) return true; // No filter = always include
-
-	switch (query.post_filter) {
-		case "empty_body": {
-			// Check if the BODY capture is effectively empty
-			const body = captures.BODY || captures.body || "";
-			return isEmptyBlock(body);
-		}
-
-		case "count_params": {
-			// Check if parameter count meets minimum
-			const minParams = query.post_filter_params?.min_params || 6;
-			// Get PARAMS capture which contains the parameter list like "(a, b, c)"
-			const params = captures.PARAMS || captures.params || captures.PARAM || "";
-			const paramCount = countParameters(params);
-			return paramCount >= minParams;
-		}
-
-		case "not_dbg_method":
-			// Exclude debug methods (for console-statement)
-			return !/\b(dbg|debug|logDebug)\b/i.test(captures.METHOD || "");
-
-		default:
-			// Unknown filter - include by default (safer than excluding)
-			return true;
-	}
-}
-
-/**
- * Check if variable name matches secret patterns
- * This handles the #match? predicate from tree-sitter queries
- */
-function matchesSecretPattern(varName: string): boolean {
-	const secretPatterns = [
-		/api[_-]?key/i,
-		/api[_-]?secret/i,
-		/password/i,
-		/secret/i,
-		/token/i,
-		/auth/i,
-		/private[_-]?key/i,
-		/access[_-]?token/i,
-		/credentials/i,
-		/aws[_-]?secret/i,
-		/github[_-]?token/i,
-	];
-	return secretPatterns.some((pattern) => pattern.test(varName));
 }
 
 const treeSitterRunner: RunnerDefinition = {
@@ -159,7 +111,7 @@ const treeSitterRunner: RunnerDefinition = {
 
 		// Try cache first, fall back to loading from disk
 		let languageQueries: TreeSitterQuery[] = [];
-		const cache = new RuleCache(languageId);
+		const cache = new RuleCache(languageId, ctx.cwd);
 
 		// Get all rule files for this language (use ctx.cwd for project root)
 		const rulesDir = path.join(
@@ -192,9 +144,7 @@ const treeSitterRunner: RunnerDefinition = {
 			);
 		} else {
 			// Load from disk
-			if (!queryLoader.getAllQueries().length) {
-				await queryLoader.loadQueries();
-			}
+			await queryLoader.loadQueries(ctx.cwd);
 
 			const allQueries = queryLoader.getAllQueries();
 			languageQueries = allQueries.filter(
@@ -216,6 +166,8 @@ const treeSitterRunner: RunnerDefinition = {
 					metavars: q.metavars,
 					post_filter: q.post_filter,
 					post_filter_params: q.post_filter_params,
+					defect_class: q.defect_class,
+					inline_tier: q.inline_tier,
 				})),
 			);
 		}
@@ -224,43 +176,36 @@ const treeSitterRunner: RunnerDefinition = {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
+		const effectiveQueries = ctx.blockingOnly
+			? languageQueries.filter(
+					(q) =>
+						q.inline_tier !== "review" &&
+						(q.severity === "error" ||
+							q.inline_tier === "blocking" ||
+							SILENT_ERROR_QUERY_IDS.has(q.id)),
+				)
+			: languageQueries;
+
 		const diagnostics: Diagnostic[] = [];
 
 		// Run each query against the file
-		for (const query of languageQueries) {
+		for (const query of effectiveQueries) {
 			try {
-				// Extract directory from file path (use path.dirname for cross-platform)
-				const rootDir = path.dirname(filePath);
-
-				const matches = await client.structuralSearch(
-					query.id, // Use query ID as pattern (findMatchingQuery will resolve it)
-					languageId,
-					rootDir,
-					{
-						maxResults: 10,
-						fileFilter: (f) => normalizeMapKey(f) === normalizeMapKey(filePath),
-					},
-				);
+				const matches = await client.runQueryOnFile(query, filePath, languageId, {
+					maxResults: 10,
+				});
 
 				for (const match of matches) {
-					// Apply post-filter if defined (pass captures for proper filtering)
-					if (!applyPostFilter(query, match.captures)) {
-						continue; // Skip this match - filter didn't pass
-					}
-
-					// check_secret_pattern post-filter is handled in tree-sitter-client.ts
-					// Legacy: hardcoded-secrets id check (kept for backward compat)
-					if (query.id === "hardcoded-secrets" && !query.post_filter) {
-						// Extract variable name from captures
-						const varName = match.captures?.VARNAME || "";
-						if (!varName || !matchesSecretPattern(varName)) {
-							continue; // Skip - no variable name or doesn't match secret patterns
-						}
-					}
-
 					// Get line/column from match (already 0-indexed from tree-sitter)
 					const line = match.line;
 					const column = match.column;
+
+					if (
+						ctx.blockingOnly &&
+						!isLineInModifiedRanges(line + 1, ctx.modifiedRanges)
+					) {
+						continue;
+					}
 
 					// Map severity to semantic
 					const semantic =
@@ -269,6 +214,15 @@ const treeSitterRunner: RunnerDefinition = {
 							: query.severity === "warning"
 								? "warning"
 								: "none";
+					const defectClass =
+						(query.defect_class as any) ??
+						classifyDefect(query.id, "tree-sitter", query.message);
+					const suggestion =
+						query.has_fix && query.fix_action
+							? `${query.fix_action} this statement`
+							: semantic === "blocking"
+								? defaultFixSuggestion(defectClass, query.id)
+								: undefined;
 
 					diagnostics.push({
 						id: `tree-sitter:${query.id}:${line}`,
@@ -280,13 +234,11 @@ const treeSitterRunner: RunnerDefinition = {
 						semantic,
 						tool: "tree-sitter",
 						rule: query.id,
+						defectClass,
 						// Surface fix intent to agent — tree-sitter never auto-applies;
 						// linters (biome/ruff/eslint) own the autofix phase.
 						fixable: query.has_fix,
-						fixSuggestion:
-							query.has_fix && query.fix_action
-								? `${query.fix_action} this statement`
-								: undefined,
+						fixSuggestion: suggestion,
 					});
 				}
 			} catch (err) {
@@ -311,4 +263,3 @@ const treeSitterRunner: RunnerDefinition = {
 };
 
 export default treeSitterRunner;
-// test ast-grep-napi re-enable

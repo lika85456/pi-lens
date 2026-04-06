@@ -2,6 +2,8 @@ id: python-unsafe-regex
 name: Unsafe Dynamic Regex
 severity: error
 category: security
+defect_class: injection
+inline_tier: blocking
 language: python
 
 message: "re.{{FUNC}}() with variable pattern — ReDoS risk if pattern is user-controlled"

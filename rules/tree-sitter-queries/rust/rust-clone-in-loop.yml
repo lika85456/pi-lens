@@ -4,6 +4,8 @@ id: rust-clone-in-loop
 name: Clone in Hot Loop
 severity: info
 category: performance
+defect_class: safety
+inline_tier: warning
 language: rust
 
 message: "clone() in loop may hurt performance — consider borrowing or moving"

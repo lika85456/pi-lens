@@ -2,6 +2,8 @@ id: python-raise-string
 name: Raise String Instead of Exception
 severity: error
 category: reliability
+defect_class: correctness
+inline_tier: blocking
 language: python
 
 message: "raise with string literal — Python 3 requires exception instances"

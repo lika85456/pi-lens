@@ -2,6 +2,8 @@ id: python-print-statement
 name: Print Statement in Production
 severity: warning
 category: debugging
+defect_class: safety
+inline_tier: warning
 language: python
 
 message: "print() — remove debug output before committing"

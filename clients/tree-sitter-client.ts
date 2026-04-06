@@ -101,7 +101,6 @@ export class TreeSitterClient {
 	// biome-ignore lint/suspicious/noExplicitAny: Compiled query cache by language+pattern hash
 	private queryCache = new Map<string, any>();
 	private queryLoader = new TreeSitterQueryLoader();
-	private queriesLoaded = false;
 	private verbose: boolean;
 
 	constructor(verbose = false) {
@@ -197,18 +196,6 @@ export class TreeSitterClient {
 					return fullPath;
 				},
 			});
-			// Load queries after initialization
-			if (!this.queriesLoaded) {
-				try {
-					await this.queryLoader.loadQueries();
-					this.queriesLoaded = true;
-					this.dbg(`Queries loaded successfully`);
-				} catch (err) {
-					this.dbg(`Failed to load queries: ${err}`);
-					// Continue anyway - fallbacks will work
-				}
-			}
-
 			this.initialized = true;
 			return true;
 		} catch (err) {
@@ -424,6 +411,12 @@ export class TreeSitterClient {
 			if (!ok) return [];
 		}
 
+		try {
+			await this.queryLoader.loadQueries(rootDir);
+		} catch (err) {
+			this.dbg(`Failed to load queries for ${rootDir}: ${err}`);
+		}
+
 		// Compile pattern into tree-sitter query
 		this.dbg(`Compiling pattern: ${pattern.slice(0, 50)}...`);
 		const compiled = await this.compileQuery(pattern, languageId);
@@ -455,6 +448,46 @@ export class TreeSitterClient {
 			matches.push(...fileMatches);
 		}
 
+		return matches.slice(0, maxResults);
+	}
+
+	/**
+	 * Run a preloaded query definition against a single file.
+	 *
+	 * Optimized for dispatch runner usage to avoid per-query directory scans.
+	 */
+	async runQueryOnFile(
+		queryDef: TreeSitterQuery,
+		filePath: string,
+		languageId: string,
+		options: { maxResults?: number } = {},
+	): Promise<StructuralMatch[]> {
+		if (!this.initialized) {
+			const ok = await this.init();
+			if (!ok) return [];
+		}
+
+		const compiled = await this.compileRawQuery(
+			queryDef.id,
+			queryDef.query,
+			queryDef.metavars,
+			queryDef.language || languageId,
+			queryDef.post_filter,
+			queryDef.post_filter_params,
+		);
+		if (!compiled) return [];
+
+		const matches = await this.searchFileWithQuery(
+			filePath,
+			compiled.query,
+			compiled.metavars,
+			languageId,
+			queryDef.id,
+			compiled.postFilter,
+			compiled.postFilterParams,
+		);
+
+		const maxResults = options.maxResults ?? 50;
 		return matches.slice(0, maxResults);
 	}
 
@@ -634,6 +667,43 @@ export class TreeSitterClient {
 			return result;
 		} catch (err) {
 			this.dbg(`Query compilation failed: ${err}`);
+			return null;
+		}
+	}
+
+	/** Compile a raw tree-sitter query string with caching */
+	private async compileRawQuery(
+		queryId: string,
+		queryStr: string,
+		metavars: string[],
+		languageId: string,
+		postFilter?: string,
+		postFilterParams?: unknown,
+	): Promise<{
+		query: any;
+		metavars: string[];
+		postFilter?: string;
+		postFilterParams?: unknown;
+	} | null> {
+		const cacheKey = this.getQueryCacheKey(`raw:${queryId}:${queryStr}`, languageId);
+
+		if (this.queryCache.has(cacheKey)) {
+			return this.queryCache.get(cacheKey);
+		}
+
+		const language = await this.loadLanguage(languageId);
+		if (!language) return null;
+
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: Query constructor from web-tree-sitter
+			const Query = (await import("web-tree-sitter")).Query;
+			// biome-ignore lint/suspicious/noExplicitAny: Language type compatibility
+			const query = new Query(language as any, queryStr);
+			const result = { query, metavars, postFilter, postFilterParams };
+			this.queryCache.set(cacheKey, result);
+			return result;
+		} catch (err) {
+			this.dbg(`Raw query compilation failed (${queryId}): ${err}`);
 			return null;
 		}
 	}

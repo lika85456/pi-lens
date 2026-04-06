@@ -2,6 +2,8 @@ id: python-mutable-class-attr
 name: Mutable Class Attribute
 severity: error
 category: reliability
+defect_class: correctness
+inline_tier: blocking
 language: python
 
 message: "Class attribute '{{VARNAME}}' is mutable — shared across all instances"

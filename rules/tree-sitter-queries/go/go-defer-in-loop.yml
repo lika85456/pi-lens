@@ -4,6 +4,8 @@ id: go-defer-in-loop
 name: Defer Inside Loop
 severity: error
 category: resource-management
+defect_class: async-misuse
+inline_tier: blocking
 language: go
 
 message: "defer in loop can cause resource exhaustion — move outside loop or use function"

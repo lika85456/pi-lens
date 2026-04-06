@@ -2,6 +2,8 @@ id: ruby-unsafe-regex
 name: Unsafe Dynamic Regex
 severity: error
 category: security
+defect_class: injection
+inline_tier: blocking
 language: ruby
 
 message: "Regexp.new with variable — ReDoS risk if pattern is user-controlled"

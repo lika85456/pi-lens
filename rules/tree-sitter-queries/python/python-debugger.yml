@@ -2,6 +2,8 @@ id: python-debugger
 name: Debugger Statement
 severity: error
 category: debugging
+defect_class: safety
+inline_tier: blocking
 language: python
 
 message: "Debugger call '{{FUNC}}' — remove before committing"

@@ -4,6 +4,8 @@ id: constructor-super
 name: Missing super() call in derived class constructor
 severity: error
 category: correctness
+defect_class: correctness
+inline_tier: blocking
 language: typescript
 
 message: "Constructor of derived class must call super() before accessing 'this'"

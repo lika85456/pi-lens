@@ -21,6 +21,7 @@
 		"rust:build": "cargo build --manifest-path rust/Cargo.toml --release",
 		"rust:build:debug": "cargo build --manifest-path rust/Cargo.toml",
 		"check": "node scripts/check-extensions.mjs",
+		"audit:tree-sitter": "node scripts/audit-tree-sitter-rules.mjs",
 		"download-grammars": "node scripts/download-grammars.js",
 		"postinstall": "node scripts/download-grammars.js"
 	},
@@ -43,12 +44,14 @@
 	"license": "MIT",
 	"files": [
 		"index.ts",
+		"config/",
 		"clients/**/*.ts",
 		"commands/**/*.ts",
 		"rules/",
 		"skills/",
 		"scripts/download-grammars.js",
 		"scripts/check-extensions.mjs",
+		"scripts/audit-tree-sitter-rules.mjs",
 		"rust/src/",
 		"rust/Cargo.toml",
 		"default-architect.yaml",

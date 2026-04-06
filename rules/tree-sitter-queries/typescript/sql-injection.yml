@@ -4,6 +4,8 @@ id: sql-injection
 name: SQL Injection Risk
 severity: error
 category: security
+defect_class: injection
+inline_tier: blocking
 language: typescript
 
 message: "SQL injection risk — use parameterized queries, never interpolate into SQL"

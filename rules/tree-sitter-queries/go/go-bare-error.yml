@@ -4,6 +4,8 @@ id: go-bare-error
 name: Bare Error Return
 severity: warning
 category: error-handling
+defect_class: silent-error
+inline_tier: blocking
 language: go
 
 message: "Error returned without handling — check err value"

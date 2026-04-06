@@ -4,6 +4,8 @@ id: no-dupe-class-members
 name: Duplicate class member
 severity: error
 category: correctness
+defect_class: correctness
+inline_tier: blocking
 language: typescript
 
 message: "Duplicate class member '$NAME' - previous declaration will be overwritten"

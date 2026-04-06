@@ -2,6 +2,8 @@ id: python-empty-except
 name: Empty Except Block
 severity: error
 category: reliability
+defect_class: silent-error
+inline_tier: blocking
 language: python
 
 message: "Except block only contains 'pass' — handle or re-raise the exception"

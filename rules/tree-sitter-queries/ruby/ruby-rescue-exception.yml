@@ -2,6 +2,8 @@ id: ruby-rescue-exception
 name: Rescue Exception Base Class
 severity: error
 category: reliability
+defect_class: correctness
+inline_tier: blocking
 language: ruby
 
 message: "rescue Exception catches SystemExit and Interrupt — use StandardError"

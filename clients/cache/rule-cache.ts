@@ -9,7 +9,6 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const CACHE_DIR = path.join(process.cwd(), ".pi-lens", "cache");
 const CACHE_VERSION = "v1";
 
 export interface QueryCacheEntry {
@@ -32,17 +31,19 @@ export interface QueryCacheEntry {
 
 export class RuleCache {
 	private cacheFile: string;
+	private cacheDir: string;
 
-	constructor(language: string) {
+	constructor(language: string, rootDir = process.cwd()) {
+		this.cacheDir = path.join(rootDir, ".pi-lens", "cache");
 		this.cacheFile = path.join(
-			CACHE_DIR,
+			this.cacheDir,
 			`${language}-rules-${CACHE_VERSION}.json`,
 		);
 	}
 
 	private ensureCacheDir(): void {
-		if (!fs.existsSync(CACHE_DIR)) {
-			fs.mkdirSync(CACHE_DIR, { recursive: true });
+		if (!fs.existsSync(this.cacheDir)) {
+			fs.mkdirSync(this.cacheDir, { recursive: true });
 		}
 	}
 

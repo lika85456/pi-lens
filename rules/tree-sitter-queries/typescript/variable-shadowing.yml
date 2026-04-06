@@ -4,6 +4,8 @@ id: variable-shadowing
 name: Variable Shadowing
 severity: warning
 category: maintainability
+defect_class: safety
+inline_tier: review
 language: typescript
 
 message: "Variable '{{NAME}}' shadows a parameter — use a distinct name"

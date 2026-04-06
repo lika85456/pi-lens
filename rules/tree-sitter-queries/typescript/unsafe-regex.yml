@@ -4,6 +4,8 @@ id: unsafe-regex
 name: Dynamic Regex Construction
 severity: error
 category: security
+defect_class: injection
+inline_tier: blocking
 language: typescript
 
 message: "Dynamic regex from user input — can cause ReDoS (Regular Expression Denial of Service)"

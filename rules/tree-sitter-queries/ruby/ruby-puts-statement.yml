@@ -2,6 +2,8 @@ id: ruby-puts-statement
 name: Debug Output in Production
 severity: warning
 category: debugging
+defect_class: safety
+inline_tier: warning
 language: ruby
 
 message: "{{METHOD}} — remove debug output before committing"

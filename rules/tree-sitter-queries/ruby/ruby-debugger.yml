@@ -2,6 +2,8 @@ id: ruby-debugger
 name: Debugger Call
 severity: error
 category: debugging
+defect_class: safety
+inline_tier: blocking
 language: ruby
 
 message: "Debugger call '{{METHOD}}' — remove before committing"

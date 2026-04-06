@@ -4,6 +4,8 @@ id: ruby-open-struct
 name: OpenStruct Usage
 severity: warning
 category: best-practices
+defect_class: safety
+inline_tier: warning
 language: ruby
 
 message: "OpenStruct is slow and makes debugging hard — use a plain class or Struct"

@@ -4,6 +4,8 @@ id: no-console-in-tests
 name: Console Statement in Test
 severity: warning
 category: testing
+defect_class: safety
+inline_tier: warning
 language: typescript
 
 message: "console.{{METHOD}} in test block — use proper assertions or logging"

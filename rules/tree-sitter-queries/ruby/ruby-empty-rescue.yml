@@ -2,6 +2,8 @@ id: ruby-empty-rescue
 name: Empty Rescue Block
 severity: error
 category: reliability
+defect_class: silent-error
+inline_tier: blocking
 language: ruby
 
 message: "Empty rescue block — handle or re-raise the exception"

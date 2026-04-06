@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolvePackagePath } from "../../package-root.js";
+import { classifyDefect } from "../diagnostic-taxonomy.js";
 import type {
 	Diagnostic,
 	DispatchContext,
@@ -60,6 +61,82 @@ const TREE_SITTER_OVERLAP = new Set([
 	"nested-ternary",
 	"no-dupe-class-members",
 ]);
+
+/**
+ * Rules commonly covered by ESLint/Biome correctness checks.
+ * We can suppress these from ast-grep in lint-enabled projects to reduce noise.
+ */
+const LINTER_OVERLAP = new Set([
+	"getter-return",
+	"no-array-constructor",
+	"no-async-promise-executor",
+	"no-await-in-loop",
+	"no-case-declarations",
+	"no-compare-neg-zero",
+	"no-cond-assign",
+	"no-constant-condition",
+	"no-constructor-return",
+	"no-dupe-args",
+	"no-dupe-keys",
+	"no-extra-boolean-cast",
+	"no-new-symbol",
+	"no-new-wrappers",
+	"no-prototype-builtins",
+]);
+
+const NON_SUPPRESSIBLE = new Set([
+	"empty-catch",
+	"no-discarded-error",
+	"unchecked-throwing-call",
+]);
+
+function defaultFixSuggestion(defectClass: string, ruleId: string): string {
+	if (defectClass === "silent-error") {
+		return "Handle the error path explicitly: log context and rethrow or return a typed error result.";
+	}
+	if (defectClass === "secrets") {
+		return "Remove hardcoded secret material and load values from env/secret manager.";
+	}
+	if (defectClass === "injection") {
+		return "Avoid dynamic execution/interpolation here; use parameterized APIs or strict allowlists.";
+	}
+	if (defectClass === "async-misuse") {
+		return "Make async flow explicit: await consistently and handle rejection/error paths.";
+	}
+	if (ruleId.includes("unsafe") || ruleId.includes("security")) {
+		return "Refactor to a safer API usage with explicit validation and bounded behavior.";
+	}
+	return "Refactor this pattern to the safer equivalent used in the codebase.";
+}
+
+const ESLINT_CONFIGS = [
+	".eslintrc",
+	".eslintrc.js",
+	".eslintrc.cjs",
+	".eslintrc.json",
+	".eslintrc.yaml",
+	".eslintrc.yml",
+	"eslint.config.js",
+	"eslint.config.mjs",
+	"eslint.config.cjs",
+];
+
+function hasEslintConfig(cwd: string): boolean {
+	for (const cfg of ESLINT_CONFIGS) {
+		if (fs.existsSync(path.join(cwd, cfg))) return true;
+	}
+	try {
+		const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf-8"));
+		if (pkg.eslintConfig) return true;
+	} catch {
+		// ignore invalid or missing package.json
+	}
+	return false;
+}
+
+function normalizeRuleId(ruleId: string): string {
+	return ruleId.replace(/-js$/, "");
+}
 
 /** Maximum AST depth to traverse to prevent stack overflow on deeply nested files */
 const MAX_AST_DEPTH = 50;
@@ -310,6 +387,10 @@ const astGrepNapiRunner: RunnerDefinition = {
 	skipTestFiles: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
+		if (ctx.pi.getFlag("no-ast-grep")) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
 		if (!canHandle(ctx.filePath)) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
@@ -355,6 +436,12 @@ const astGrepNapiRunner: RunnerDefinition = {
 		}
 
 		const diagnostics: Diagnostic[] = [];
+		const seenRuleIds = new Set<string>();
+		const suppressLinterOverlap =
+			ctx.kind === "jsts" &&
+			(hasEslintConfig(ctx.cwd) ||
+				!!ctx.pi.getFlag("lens-eslint-core") ||
+				!ctx.pi.getFlag("no-biome"));
 
 		const ruleDirs = [
 			path.join(process.cwd(), "rules", "ast-grep-rules", "rules"),
@@ -372,6 +459,19 @@ const astGrepNapiRunner: RunnerDefinition = {
 			}
 
 			for (const rule of rules) {
+				// If the same rule id is loaded from multiple directories
+				// (workspace + bundled), prefer the first one to avoid duplicates.
+				if (seenRuleIds.has(rule.id)) continue;
+				seenRuleIds.add(rule.id);
+
+				if (
+					suppressLinterOverlap &&
+					LINTER_OVERLAP.has(normalizeRuleId(rule.id)) &&
+					!NON_SUPPRESSIBLE.has(normalizeRuleId(rule.id))
+				) {
+					continue;
+				}
+
 				// Skip rules already handled by tree-sitter runner (priority 14)
 				if (TREE_SITTER_OVERLAP.has(rule.id)) continue;
 
@@ -430,6 +530,12 @@ const astGrepNapiRunner: RunnerDefinition = {
 						};
 						const range = node.range();
 						const severity = rule.severity === "error" ? "error" : "warning";
+						const semantic = severity === "error" ? "blocking" : "warning";
+						const defectClass = classifyDefect(
+							rule.id,
+							"ast-grep-napi",
+							rule.message || rule.id,
+						);
 
 						diagnostics.push({
 							id: `ast-grep-napi-${range.start.line}-${rule.id}`,
@@ -438,10 +544,15 @@ const astGrepNapiRunner: RunnerDefinition = {
 							line: range.start.line + 1,
 							column: range.start.column + 1,
 							severity,
-							semantic: severity === "error" ? "blocking" : "warning",
+							semantic,
 							tool: "ast-grep-napi",
 							rule: rule.id,
+							defectClass,
 							fixable: false,
+							fixSuggestion:
+								semantic === "blocking"
+									? defaultFixSuggestion(defectClass, rule.id)
+									: undefined,
 						});
 					}
 

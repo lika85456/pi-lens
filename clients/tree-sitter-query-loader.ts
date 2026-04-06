@@ -32,6 +32,8 @@ export interface TreeSitterQuery {
 		value: string | string[];
 	}>;
 	tags?: string[];
+	defect_class?: string;
+	inline_tier?: "blocking" | "warning" | "review";
 	has_fix: boolean;
 	fix_action?: string;
 	examples?: {
@@ -44,6 +46,7 @@ export interface TreeSitterQuery {
 export class TreeSitterQueryLoader {
 	private queries: Map<string, TreeSitterQuery[]> = new Map();
 	private loaded = false;
+	private loadedRoot: string | null = null;
 	private verbose: boolean;
 
 	constructor(verbose = false) {
@@ -60,13 +63,19 @@ export class TreeSitterQueryLoader {
 	/**
 	 * Load all queries from the rules/tree-sitter-queries directory
 	 */
-	async loadQueries(): Promise<Map<string, TreeSitterQuery[]>> {
-		if (this.loaded) return this.queries;
+	async loadQueries(rootDir = process.cwd()): Promise<Map<string, TreeSitterQuery[]>> {
+		const resolvedRoot = path.resolve(rootDir);
+		if (this.loaded && this.loadedRoot === resolvedRoot) return this.queries;
+
+		if (this.loadedRoot !== resolvedRoot) {
+			this.queries.clear();
+			this.loaded = false;
+		}
 
 		// Load from user's project rules AND package built-in rules (coexist)
 		const queryDirs = [
 			...new Set([
-				path.join(process.cwd(), "rules", "tree-sitter-queries"),
+				path.join(resolvedRoot, "rules", "tree-sitter-queries"),
 				resolvePackagePath(import.meta.url, "rules", "tree-sitter-queries"),
 			]),
 		];
@@ -106,6 +115,7 @@ export class TreeSitterQueryLoader {
 		}
 
 		this.loaded = true;
+		this.loadedRoot = resolvedRoot;
 		return this.queries;
 	}
 
@@ -147,6 +157,12 @@ export class TreeSitterQueryLoader {
 					: undefined,
 				// biome-ignore lint/suspicious/noExplicitAny: Post filter params
 				post_filter_params: parsed.post_filter_params as any,
+				defect_class: parsed.defect_class
+					? String(parsed.defect_class)
+					: undefined,
+				inline_tier: parsed.inline_tier
+					? (String(parsed.inline_tier) as "blocking" | "warning" | "review")
+					: undefined,
 				// Parse predicates if present
 				predicates: Array.isArray(parsed.predicates)
 					? parsed.predicates.map((p: any) => ({

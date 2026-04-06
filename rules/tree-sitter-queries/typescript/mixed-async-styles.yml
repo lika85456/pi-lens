@@ -4,6 +4,8 @@ id: mixed-async-styles
 name: Mixed Async/Await and Promise Chains
 severity: warning
 category: style
+defect_class: async-misuse
+inline_tier: warning
 language: typescript
 
 message: "Mixed async/await + promise chains — use consistent async style"

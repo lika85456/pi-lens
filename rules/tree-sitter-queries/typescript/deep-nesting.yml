@@ -4,6 +4,8 @@ id: deep-nesting
 name: Deep Nesting
 severity: warning
 category: complexity
+defect_class: safety
+inline_tier: review
 language: typescript
 
 message: "Deep nesting (3+ levels) — consider early returns or extract functions"

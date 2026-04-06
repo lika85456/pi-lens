@@ -4,6 +4,8 @@ id: deep-promise-chain
 name: Deep Promise Chain (4+ levels)
 severity: warning
 category: complexity
+defect_class: async-misuse
+inline_tier: warning
 language: typescript
 
 message: "Promise chain {{M1}} → {{M2}} → {{M3}} → {{M4}} — consider async/await"

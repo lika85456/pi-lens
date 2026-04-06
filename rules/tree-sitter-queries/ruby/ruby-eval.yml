@@ -4,6 +4,8 @@ id: ruby-eval
 name: Dangerous eval() Usage
 severity: error
 category: security
+defect_class: injection
+inline_tier: blocking
 language: ruby
 
 message: "eval() executes arbitrary code — security risk, avoid if possible"
