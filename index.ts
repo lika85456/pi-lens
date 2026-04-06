@@ -518,7 +518,7 @@ pi.on("tool_call", async (event, _ctx) => {
 					?.map((e) => e.newText ?? "")
 					.join("\n");
 		if (newContent) {
-			const INLINE_SIMILARITY_THRESHOLD = 0.88;
+			const INLINE_SIMILARITY_THRESHOLD = 0.9;
 			const dupeWarnings: string[] = [];
 			const exportRe =
 				/export\s+(?:async\s+)?(?:function|class|const|let|type|interface)\s+(\w+)/g;
