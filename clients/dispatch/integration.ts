@@ -6,6 +6,7 @@
  */
 
 import { detectFileKind } from "../file-kinds.js";
+import type { FileKind } from "../file-kinds.js";
 import {
 	clearLatencyReports,
 	createBaselineStore,
@@ -23,6 +24,7 @@ import type {
 	DispatchResult,
 	ModifiedRange,
 	PiAgentAPI,
+	RunnerGroup,
 } from "./types.js";
 
 export type { DispatchLatencyReport, RunnerLatency };
@@ -38,6 +40,31 @@ import "./runners/index.js";
 // store, so baselines.get() always returns undefined and every issue
 // looks "new" every time.
 const sessionBaselines: BaselineStore = createBaselineStore();
+
+function withPrimaryLspGroup(
+	kind: keyof typeof TOOL_PLANS,
+	groups: RunnerGroup[],
+	pi: PiAgentAPI,
+): RunnerGroup[] {
+	if (!pi.getFlag("lens-lsp")) return groups;
+
+	const alreadyHasLsp = groups.some((g) => g.runnerIds.includes("lsp"));
+	if (alreadyHasLsp) return groups;
+
+	return [
+		{ mode: "all", runnerIds: ["lsp"], filterKinds: [kind as FileKind] },
+		...groups,
+	];
+}
+
+export function getDispatchGroupsForKind(
+	kind: keyof typeof TOOL_PLANS,
+	pi: PiAgentAPI,
+): RunnerGroup[] {
+	const plan = TOOL_PLANS[kind];
+	if (!plan) return [];
+	return withPrimaryLspGroup(kind, plan.groups, pi);
+}
 
 /**
  * Reset baselines — call on session_start so a new session
@@ -76,10 +103,10 @@ export async function dispatchLint(
 	const kind = ctx.kind;
 	if (!kind) return "";
 
-	const plan = TOOL_PLANS[kind];
-	if (!plan) return "";
+	const groups = getDispatchGroupsForKind(kind, pi);
+	if (groups.length === 0) return "";
 
-	const result = await dispatchForFile(ctx, plan.groups);
+	const result = await dispatchForFile(ctx, groups);
 	return result.output;
 }
 
@@ -115,8 +142,8 @@ export async function dispatchLintWithResult(
 		};
 	}
 
-	const plan = TOOL_PLANS[kind];
-	if (!plan) {
+	const groups = getDispatchGroupsForKind(kind, pi);
+	if (groups.length === 0) {
 		return {
 			diagnostics: [],
 			blockers: [],
@@ -129,7 +156,7 @@ export async function dispatchLintWithResult(
 		};
 	}
 
-	return dispatchForFile(ctx, plan.groups);
+	return dispatchForFile(ctx, groups);
 }
 
 /**

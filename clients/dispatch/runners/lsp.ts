@@ -28,7 +28,20 @@ const LSP_MAX_FILE_LINES = RUNTIME_CONFIG.pipeline.lspMaxFileLines;
 
 const lspRunner: RunnerDefinition = {
 	id: "lsp",
-	appliesTo: ["jsts", "python", "go", "rust"], // Core LSP languages
+	appliesTo: [
+		"jsts",
+		"python",
+		"go",
+		"rust",
+		"ruby",
+		"cxx",
+		"cmake",
+		"shell",
+		"json",
+		"markdown",
+		"css",
+		"yaml",
+	],
 	priority: 4, // Run before everything (even ts-lsp was priority 5)
 	enabledByDefault: true,
 
