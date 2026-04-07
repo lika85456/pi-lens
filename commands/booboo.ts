@@ -86,7 +86,12 @@ export async function handleBooboo(
 	},
 	pi: ExtensionAPI,
 ) {
-	const targetPath = args.trim() || ctx.cwd || process.cwd();
+	const requestedPath = args.trim() || ctx.cwd || process.cwd();
+	const targetPath = path.resolve(requestedPath);
+	const reviewRoot = targetPath;
+
+	const categoryKey = (name: string) =>
+		name.toLowerCase().replace(/\s+/g, "-");
 
 	// Detect project metadata for richer reporting
 	const projectMeta = detectProjectMetadata(targetPath);
@@ -130,7 +135,7 @@ export async function handleBooboo(
 	const availableCommands = getAvailableCommands(projectMeta);
 
 	// Load false positives from fix session to filter them out
-	const sessionFile = path.join(process.cwd(), ".pi-lens", "fix-session.json");
+	const sessionFile = path.join(reviewRoot, ".pi-lens", "fix-session.json");
 	let falsePositives: string[] = [];
 	try {
 		const sessionData = JSON.parse(
@@ -165,7 +170,7 @@ export async function handleBooboo(
 	}[] = [];
 	const fullReport: string[] = [];
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-	const reviewDir = path.join(process.cwd(), ".pi-lens", "reviews");
+	const reviewDir = path.join(reviewRoot, ".pi-lens", "reviews");
 
 	// Initialize runner tracker (no per-runner progress to avoid UI overwriting)
 	const tracker = new RunnerTracker();
@@ -176,7 +181,7 @@ export async function handleBooboo(
 
 	// Runner 1: Design smells via ast-grep
 	await tracker.run("ast-grep (design smells)", async () => {
-		if (!clients.astGrep.isAvailable()) {
+		if (!(await clients.astGrep.ensureAvailable())) {
 			return { findings: 0, status: "skipped" };
 		}
 
@@ -275,7 +280,7 @@ export async function handleBooboo(
 				}
 
 				const filteredIssues = issues.filter(
-					(issue) => !isFalsePositive("ast_issues", issue.file, issue.line),
+					(issue) => !isFalsePositive(categoryKey("ast-grep"), issue.file, issue.line),
 				);
 
 				if (filteredIssues.length > 0) {
@@ -320,7 +325,7 @@ export async function handleBooboo(
 
 	// Runner 2: Similar functions
 	await tracker.run("ast-grep (similar functions)", async () => {
-		if (!clients.astGrep.isAvailable()) {
+		if (!(await clients.astGrep.ensureAvailable())) {
 			return { findings: 0, status: "skipped" };
 		}
 
@@ -598,7 +603,7 @@ export async function handleBooboo(
 		}> = [];
 
 		// Only run basic patterns if ast-grep is NOT available (avoid duplication)
-		const astGrepAvailable = clients.astGrep.isAvailable();
+		const astGrepAvailable = await clients.astGrep.ensureAvailable();
 
 		if (!astGrepAvailable) {
 			// Fallback: console.log detection (ast-grep normally handles this)
@@ -829,7 +834,7 @@ export async function handleBooboo(
 
 	// Runner 7: Duplicate code
 	await tracker.run("duplicate code (jscpd)", async () => {
-		if (!clients.jscpd.isAvailable()) {
+		if (!(await clients.jscpd.ensureAvailable())) {
 			return { findings: 0, status: "skipped" };
 		}
 
@@ -920,7 +925,7 @@ export async function handleBooboo(
 
 	// Runner 9: Circular deps
 	await tracker.run("circular deps (Madge)", async () => {
-		if (pi.getFlag("no-madge") || !clients.depChecker.isAvailable()) {
+		if (pi.getFlag("no-madge") || !(await clients.depChecker.ensureAvailable())) {
 			return { findings: 0, status: "skipped" };
 		}
 
@@ -954,7 +959,7 @@ export async function handleBooboo(
 	// Runner 10: Arch rules
 	await tracker.run("architectural rules", async () => {
 		if (!clients.architect.hasConfig()) {
-			clients.architect.loadConfig(process.cwd());
+			clients.architect.loadConfig(targetPath);
 		}
 
 		if (!clients.architect.hasConfig()) {
@@ -1074,7 +1079,7 @@ export async function handleBooboo(
 
 	// --- Create structured JSON report ---
 	nodeFs.mkdirSync(reviewDir, { recursive: true });
-	const projectName = path.basename(process.cwd());
+	const projectName = path.basename(reviewRoot);
 
 	const totalIssues = summaryItems.reduce((sum, s) => sum + s.count, 0);
 	const fixableCount = summaryItems
@@ -1136,7 +1141,7 @@ export async function handleBooboo(
 					count: item.count,
 					severity: item.severity,
 					fixable: item.fixable,
-					falsePositivePrefix: `${item.category.toLowerCase().replace(/\s+/g, "-")}:`,
+					falsePositivePrefix: `${categoryKey(item.category)}:`,
 				};
 				return acc;
 			},
@@ -1158,7 +1163,7 @@ export async function handleBooboo(
 				"// oxlint-disable-next-line no-console",
 			],
 		},
-		sessionFile: path.join(process.cwd(), ".pi-lens", "fix-session.json"),
+		sessionFile: path.join(reviewRoot, ".pi-lens", "fix-session.json"),
 		details: fullReport.join("\n"),
 	};
 
