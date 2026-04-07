@@ -35,7 +35,7 @@ const oxlintRunner: RunnerDefinition = {
 
 		// Run oxlint on the file
 		const result = await safeSpawnAsync(
-			oxlint.getCommand()!,
+			oxlint.getCommand(cwd)!,
 			["--format", "unix", ctx.filePath],
 			{
 				timeout: 30000,

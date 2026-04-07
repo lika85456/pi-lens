@@ -174,7 +174,7 @@ const shellcheckRunner: RunnerDefinition = {
 
 		args.push(ctx.filePath);
 
-		const result = safeSpawn(shellcheck.getCommand()!, args, {
+		const result = safeSpawn(shellcheck.getCommand(ctx.cwd || process.cwd())!, args, {
 			timeout: 15000,
 		});
 

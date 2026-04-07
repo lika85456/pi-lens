@@ -68,19 +68,27 @@ export function createAvailabilityChecker(
 	windowsExt = "",
 ): {
 	isAvailable: (cwd?: string) => boolean;
-	getCommand: () => string | null;
+	getCommand: (cwd?: string) => string | null;
 } {
-	const cache: AvailabilityCache = {
-		available: null,
-		command: null,
-	};
+	const cacheByCwd = new Map<string, AvailabilityCache>();
 
 	const findCommand = createVenvFinder(command, windowsExt, true);
 
+	function getCache(cwd: string): AvailabilityCache {
+		const key = path.resolve(cwd || process.cwd());
+		const existing = cacheByCwd.get(key);
+		if (existing) return existing;
+		const created: AvailabilityCache = { available: null, command: null };
+		cacheByCwd.set(key, created);
+		return created;
+	}
+
 	function isAvailable(cwd?: string): boolean {
+		const resolvedCwd = cwd || process.cwd();
+		const cache = getCache(resolvedCwd);
 		if (cache.available !== null) return cache.available;
 
-		const cmd = findCommand(cwd || process.cwd());
+		const cmd = findCommand(resolvedCwd);
 		const result = safeSpawn(cmd, ["--version"], {
 			timeout: 5000,
 		});
@@ -92,7 +100,8 @@ export function createAvailabilityChecker(
 		return cache.available;
 	}
 
-	function getCommand(): string | null {
+	function getCommand(cwd?: string): string | null {
+		const cache = getCache(cwd || process.cwd());
 		return cache.command;
 	}
 

@@ -44,7 +44,7 @@ const pyrightRunner: RunnerDefinition = {
 
 		// Strategy 1: Check cached availability (fast path)
 		if (pyright.isAvailable(cwd)) {
-			cmd = pyright.getCommand();
+			cmd = pyright.getCommand(cwd);
 		}
 
 		// Strategy 2: Try to find pyright via ensureTool (installs if needed)

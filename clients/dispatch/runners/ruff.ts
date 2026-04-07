@@ -26,13 +26,21 @@ const ruffRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const cwd = ctx.cwd || process.cwd();
+		let cmd: string | null = null;
 
 		// Auto-install ruff if not available (it's one of the 4 auto-install tools)
-		if (!ruff.isAvailable(cwd)) {
+		if (ruff.isAvailable(cwd)) {
+			cmd = ruff.getCommand(cwd);
+		} else {
 			const installed = await ensureTool("ruff");
 			if (!installed) {
 				return { status: "skipped", diagnostics: [], semantic: "none" };
 			}
+			cmd = installed;
+		}
+
+		if (!cmd) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		// No --fix here: dispatch runners report issues for agent understanding,
@@ -41,7 +49,7 @@ const ruffRunner: RunnerDefinition = {
 		// Silently rewriting here would leave the agent's context window stale.
 		const args = ["check", ctx.filePath];
 
-		const result = await safeSpawnAsync(ruff.getCommand()!, args, {
+		const result = await safeSpawnAsync(cmd, args, {
 			timeout: 30000,
 		});
 

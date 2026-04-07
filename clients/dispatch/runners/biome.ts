@@ -20,14 +20,20 @@ const biomeRunner: RunnerDefinition = {
 	enabledByDefault: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
+		const cwd = ctx.cwd || process.cwd();
 		// Check if biome is available (via PATH, venv, or npx)
-		let cmd = biome.getCommand();
+		let cmd: string | null = null;
 		let useNpx = false;
 
-		if (!cmd || !biome.isAvailable(ctx.cwd)) {
+		if (biome.isAvailable(cwd)) {
+			cmd = biome.getCommand(cwd);
+		}
+
+		if (!cmd) {
 			// Try npx as fallback
 			const npxCheck = await safeSpawnAsync("npx", ["biome", "--version"], {
 				timeout: 5000,
+				cwd,
 			});
 			if (!npxCheck.error && npxCheck.status === 0) {
 				cmd = "npx";
@@ -47,6 +53,7 @@ const biomeRunner: RunnerDefinition = {
 
 		const result = await safeSpawnAsync(cmd, args, {
 			timeout: 30000,
+			cwd,
 		});
 
 		const output = result.stdout + result.stderr;
