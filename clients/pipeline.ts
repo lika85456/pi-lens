@@ -18,24 +18,30 @@ import type { BiomeClient } from "./biome-client.js";
 import { getDiagnosticLogger } from "./diagnostic-logger.js";
 import { getDiagnosticTracker } from "./diagnostic-tracker.js";
 import { dispatchLintWithResult } from "./dispatch/integration.js";
+import {
+	resolveRunnerPath,
+	toRunnerDisplayPath,
+} from "./dispatch/runner-context.js";
 import type { PiAgentAPI } from "./dispatch/types.js";
 import { detectFileKind, getFileKindLabel } from "./file-kinds.js";
 import type { FormatService } from "./format-service.js";
 import { logLatency } from "./latency-logger.js";
 import { getLSPService } from "./lsp/index.js";
 import type { MetricsClient } from "./metrics-client.js";
+import { normalizeMapKey } from "./path-utils.js";
 import type { RuffClient } from "./ruff-client.js";
 import { RUNTIME_CONFIG } from "./runtime-config.js";
 import { safeSpawnAsync } from "./safe-spawn.js";
 import { formatSecrets, scanForSecrets } from "./secrets-scanner.js";
 import type { TestRunnerClient } from "./test-runner-client.js";
-import { normalizeMapKey } from "./path-utils.js";
-import { resolveRunnerPath, toRunnerDisplayPath } from "./dispatch/runner-context.js";
 
 const LSP_MAX_FILE_BYTES = RUNTIME_CONFIG.pipeline.lspMaxFileBytes;
 const LSP_MAX_FILE_LINES = RUNTIME_CONFIG.pipeline.lspMaxFileLines;
 
-function exceedsLspSyncLimits(filePath: string, content: string): {
+function exceedsLspSyncLimits(
+	filePath: string,
+	content: string,
+): {
 	tooLarge: boolean;
 	reason: string;
 } {
@@ -140,6 +146,8 @@ function createPhaseTracker(toolName: string, filePath: string): PhaseTracker {
 
 // --- ESLint autofix helpers ---
 
+const BIOME_CONFIGS = ["biome.json", "biome.jsonc"];
+
 const ESLINT_CONFIGS = [
 	".eslintrc",
 	".eslintrc.js",
@@ -158,6 +166,19 @@ function isJsTs(filePath: string): boolean {
 	return JSTS_EXTS.has(path.extname(filePath).toLowerCase());
 }
 
+function hasBiomeConfig(cwd: string): boolean {
+	for (const cfg of BIOME_CONFIGS) {
+		if (nodeFs.existsSync(path.join(cwd, cfg))) return true;
+	}
+	try {
+		const pkg = JSON.parse(
+			nodeFs.readFileSync(path.join(cwd, "package.json"), "utf-8"),
+		);
+		if (pkg.devDependencies?.["@biomejs/biome"]) return true;
+	} catch {}
+	return false;
+}
+
 function hasEslintConfig(cwd: string): boolean {
 	for (const cfg of ESLINT_CONFIGS) {
 		if (nodeFs.existsSync(path.join(cwd, cfg))) return true;
@@ -171,7 +192,10 @@ function hasEslintConfig(cwd: string): boolean {
 	return false;
 }
 
-const _eslintCache = new Map<string, { available: boolean; bin: string | null }>();
+const _eslintCache = new Map<
+	string,
+	{ available: boolean; bin: string | null }
+>();
 
 function findEslintBin(cwd: string): string {
 	const isWin = process.platform === "win32";
@@ -331,7 +355,7 @@ export async function runPipeline(
 		const deferLspSync =
 			!getFlag("no-autofix") &&
 			(ruffClient.isPythonFile(filePath) ||
-				biomeClient.isSupportedFile(filePath) ||
+				(biomeClient.isSupportedFile(filePath) && hasBiomeConfig(cwd)) ||
 				isJsTs(filePath));
 
 		if (deferLspSync) {
@@ -386,7 +410,9 @@ export async function runPipeline(
 			!noAutofixRuff && ruffClient.isPythonFile(filePath)
 				? ruffClient.ensureAvailable()
 				: Promise.resolve(false),
-			!noAutofixBiome && biomeClient.isSupportedFile(filePath)
+			!noAutofixBiome &&
+			biomeClient.isSupportedFile(filePath) &&
+			hasBiomeConfig(cwd)
 				? biomeClient.ensureAvailable()
 				: Promise.resolve(false),
 		]);
@@ -494,12 +520,16 @@ export async function runPipeline(
 		);
 		for (const d of dispatchResult.diagnostics) {
 			const shownInline = inlineKeys.has(toKey(d));
-			logger.logCaught(d, {
-				model: ctx.telemetry?.model ?? "unknown",
-				sessionId: ctx.telemetry?.sessionId ?? "unknown",
-				turnIndex: ctx.telemetry?.turnIndex ?? 0,
-				writeIndex: ctx.telemetry?.writeIndex ?? 0,
-			}, shownInline);
+			logger.logCaught(
+				d,
+				{
+					model: ctx.telemetry?.model ?? "unknown",
+					sessionId: ctx.telemetry?.sessionId ?? "unknown",
+					turnIndex: ctx.telemetry?.turnIndex ?? 0,
+					writeIndex: ctx.telemetry?.writeIndex ?? 0,
+				},
+				shownInline,
+			);
 		}
 	}
 
@@ -552,34 +582,34 @@ export async function runPipeline(
 				target.runner,
 				target.config,
 			);
-				const testDuration = Date.now() - testStart;
-				logLatency({
-					type: "phase",
-					toolName,
-					filePath,
-					phase: "test_runner",
-					durationMs: testDuration,
-					metadata: {
-						testFile: target.testFile,
-						runner: target.runner,
-						strategy: target.strategy,
-						success: !testResult?.error,
-					},
-				});
-				if (testResult && !testResult.error) {
-					testSummary = {
-						passed: testResult.passed,
-						total: testResult.passed + testResult.failed + testResult.skipped,
-						failed: testResult.failed,
-					};
-					if (testSummary.failed > 0) {
-						hasBlockers = true;
-					}
-					const testOutput = testRunnerClient.formatResult(testResult);
-					if (testOutput) {
-						output += `\n\n${testOutput}`;
-					}
+			const testDuration = Date.now() - testStart;
+			logLatency({
+				type: "phase",
+				toolName,
+				filePath,
+				phase: "test_runner",
+				durationMs: testDuration,
+				metadata: {
+					testFile: target.testFile,
+					runner: target.runner,
+					strategy: target.strategy,
+					success: !testResult?.error,
+				},
+			});
+			if (testResult && !testResult.error) {
+				testSummary = {
+					passed: testResult.passed,
+					total: testResult.passed + testResult.failed + testResult.skipped,
+					failed: testResult.failed,
+				};
+				if (testSummary.failed > 0) {
+					hasBlockers = true;
 				}
+				const testOutput = testRunnerClient.formatResult(testResult);
+				if (testOutput) {
+					output += `\n\n${testOutput}`;
+				}
+			}
 		}
 	}
 	phase.end("test_runner", { found: testInfoFound, ran: testRunnerRan });
@@ -608,7 +638,8 @@ export async function runPipeline(
 
 			for (const [diagPath, diags] of allDiags) {
 				const normalizedDiagPath = resolveRunnerPath(cwd, diagPath);
-				if (normalizeMapKey(normalizedDiagPath) === normalizedEditedPath) continue;
+				if (normalizeMapKey(normalizedDiagPath) === normalizedEditedPath)
+					continue;
 
 				if (!nodeFs.existsSync(normalizedDiagPath)) {
 					stalePathsSkipped++;
