@@ -3,13 +3,23 @@ import { getDispatchGroupsForKind } from "../../../clients/dispatch/integration.
 
 	describe("dispatch integration groups", () => {
 	it("prepends lsp group when lens-lsp is enabled and plan lacks lsp", () => {
-		const groups = getDispatchGroupsForKind("cxx", {
+		const groups = getDispatchGroupsForKind("css", {
 			getFlag: (name: string) => name === "lens-lsp",
 		});
 
 		expect(groups.length).toBeGreaterThan(0);
 		expect(groups[0].runnerIds).toEqual(["lsp"]);
-		expect(groups[0].filterKinds).toEqual(["cxx"]);
+		expect(groups[0].filterKinds).toEqual(["css"]);
+	});
+
+	it("prepends lsp group for yaml when no explicit plan exists", () => {
+		const groups = getDispatchGroupsForKind("yaml", {
+			getFlag: (name: string) => name === "lens-lsp",
+		});
+
+		expect(groups).toHaveLength(1);
+		expect(groups[0].runnerIds).toEqual(["lsp"]);
+		expect(groups[0].filterKinds).toEqual(["yaml"]);
 	});
 
 	it("does not duplicate lsp group when plan already includes lsp", () => {
@@ -22,7 +32,7 @@ import { getDispatchGroupsForKind } from "../../../clients/dispatch/integration.
 	});
 
 	it("keeps original groups when lens-lsp is disabled", () => {
-		const groups = getDispatchGroupsForKind("cxx", {
+		const groups = getDispatchGroupsForKind("css", {
 			getFlag: () => false,
 		});
 

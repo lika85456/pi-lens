@@ -40,6 +40,20 @@ import "./runners/index.js";
 // store, so baselines.get() always returns undefined and every issue
 // looks "new" every time.
 const sessionBaselines: BaselineStore = createBaselineStore();
+const LSP_CAPABLE_KINDS = new Set<FileKind>([
+	"jsts",
+	"python",
+	"go",
+	"rust",
+	"ruby",
+	"cxx",
+	"cmake",
+	"shell",
+	"json",
+	"markdown",
+	"css",
+	"yaml",
+]);
 
 function withPrimaryLspGroup(
 	kind: keyof typeof TOOL_PLANS,
@@ -62,7 +76,16 @@ export function getDispatchGroupsForKind(
 	pi: PiAgentAPI,
 ): RunnerGroup[] {
 	const plan = TOOL_PLANS[kind];
-	if (!plan) return [];
+	if (!plan) {
+		if (
+			pi.getFlag("lens-lsp") &&
+			!pi.getFlag("no-lsp") &&
+			LSP_CAPABLE_KINDS.has(kind as FileKind)
+		) {
+			return [{ mode: "all", runnerIds: ["lsp"], filterKinds: [kind as FileKind] }];
+		}
+		return [];
+	}
 	return withPrimaryLspGroup(kind, plan.groups, pi);
 }
 

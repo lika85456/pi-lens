@@ -31,8 +31,8 @@ const pyrightRunner: RunnerDefinition = {
 		// But if LSP is unavailable for this file, keep pyright CLI fallback.
 		if (ctx.pi.getFlag("lens-lsp") && !ctx.pi.getFlag("no-lsp")) {
 			const lspService = getLSPService();
-			const hasLSP = await lspService.hasLSP(ctx.filePath);
-			if (hasLSP) {
+			const spawned = await lspService.getClientForFile(ctx.filePath);
+			if (spawned) {
 				return { status: "skipped", diagnostics: [], semantic: "none" };
 			}
 		}

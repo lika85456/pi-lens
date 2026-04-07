@@ -221,6 +221,7 @@ function dedupeOverlappingDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
 }
 
 function suppressLintOverlapsWithLsp(diagnostics: Diagnostic[]): Diagnostic[] {
+	const lspBySpanClass = new Set<string>();
 	const lspByLine = new Set<string>();
 	const isLintTool = (tool: string): boolean => {
 		const t = tool.toLowerCase();
@@ -241,6 +242,8 @@ function suppressLintOverlapsWithLsp(diagnostics: Diagnostic[]): Diagnostic[] {
 	for (const d of diagnostics) {
 		if (d.tool !== "lsp" && d.tool !== "ts-lsp") continue;
 		const line = d.line ?? 1;
+		const defectClass = d.defectClass ?? classifyDiagnostic(d);
+		lspBySpanClass.add(`${d.filePath}:${line}:${defectClass}`);
 		lspByLine.add(`${d.filePath}:${line}`);
 	}
 
@@ -252,8 +255,16 @@ function suppressLintOverlapsWithLsp(diagnostics: Diagnostic[]): Diagnostic[] {
 		if (d.semantic === "blocking" || d.severity === "error") return true;
 
 		const line = d.line ?? 1;
-		const key = `${d.filePath}:${line}`;
-		return !lspByLine.has(key);
+		const defectClass = d.defectClass ?? classifyDiagnostic(d);
+		const key = `${d.filePath}:${line}:${defectClass}`;
+		if (lspBySpanClass.has(key)) return false;
+
+		// Conservative fallback for unclassified overlap at same line.
+		if (defectClass === "unknown") {
+			return !lspByLine.has(`${d.filePath}:${line}`);
+		}
+
+		return true;
 	});
 }
 

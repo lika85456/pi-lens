@@ -118,7 +118,20 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 				for (const clone of filtered.slice(0, 5)) {
 					const displayA = toRunnerDisplayPath(cwd, clone.fileA);
 					const displayB = toRunnerDisplayPath(cwd, clone.fileB);
-					if (!firstPath) firstPath = displayA;
+
+					if (!firstPath) {
+						const resolvedA = resolveRunnerPath(cwd, clone.fileA);
+						const resolvedB = resolveRunnerPath(cwd, clone.fileB);
+						const stateA = cacheManager.getTurnFileState(resolvedA, cwd);
+						const stateB = cacheManager.getTurnFileState(resolvedB, cwd);
+						const matchA =
+							!!stateA &&
+							cacheManager.isLineInModifiedRange(clone.startA, stateA.modifiedRanges);
+						const matchB =
+							!!stateB &&
+							cacheManager.isLineInModifiedRange(clone.startB, stateB.modifiedRanges);
+						firstPath = matchB && !matchA ? displayB : displayA;
+					}
 					report += `  ${displayA}:${clone.startA} ↔ ${displayB}:${clone.startB} (${clone.lines} lines)\n`;
 				}
 				if (firstPath) {

@@ -60,53 +60,38 @@ const lspRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// Prefer already-synced diagnostics from pipeline to avoid duplicate didOpen
-		// traffic on each write. If nothing is available yet, we fall back to a
-		// single open+diagnostics cycle.
+		// Always sync current file content before reading diagnostics so dispatch
+		// does not operate on stale LSP snapshots.
 		let lspDiags: import("../../lsp/client.js").LSPDiagnostic[] = [];
 		let serverFailed = false;
 		let failureReason = "";
-
-		try {
-			lspDiags = await lspService.getDiagnostics(ctx.filePath);
-		} catch {
-			// fall through to open+diagnostics path below
+		const content = readFileContent(ctx.filePath);
+		if (!content) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		if (lspDiags.length === 0) {
-			const content = readFileContent(ctx.filePath);
-			if (!content) {
-				return { status: "skipped", diagnostics: [], semantic: "none" };
-			}
+		const sizeBytes = Buffer.byteLength(content, "utf-8");
+		const lineCount = content.split("\n").length;
+		if (sizeBytes > LSP_MAX_FILE_BYTES || lineCount > LSP_MAX_FILE_LINES) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
 
-			const sizeBytes = Buffer.byteLength(content, "utf-8");
-			const lineCount = content.split("\n").length;
-			if (sizeBytes > LSP_MAX_FILE_BYTES || lineCount > LSP_MAX_FILE_LINES) {
-				return { status: "skipped", diagnostics: [], semantic: "none" };
-			}
-
-			// Try to open file in LSP and get diagnostics
-			// If the server fails to spawn or crashes, this will be caught
-			try {
-				await lspService.openFile(ctx.filePath, content);
-				// getDiagnostics() internally calls waitForDiagnostics() with bus
-				// subscription + 150ms debounce + 3s timeout
-				lspDiags = await lspService.getDiagnostics(ctx.filePath);
-			} catch (err) {
-				serverFailed = true;
-				failureReason = err instanceof Error ? err.message : String(err);
-				// Check if this is a server spawn/connection error
-				if (
-					failureReason.includes("spawn") ||
-					failureReason.includes("exited") ||
-					failureReason.includes("connection") ||
-					failureReason.includes("JSON RPC")
-				) {
-					// Mark this server as broken so we don't keep trying
-					console.error(
-						`[lsp-runner] LSP server failed for ${diagnosticPath}: ${failureReason}`,
-					);
-				}
+		try {
+			await lspService.openFile(ctx.filePath, content);
+			// getDiagnostics() internally waits for published diagnostics.
+			lspDiags = await lspService.getDiagnostics(ctx.filePath);
+		} catch (err) {
+			serverFailed = true;
+			failureReason = err instanceof Error ? err.message : String(err);
+			if (
+				failureReason.includes("spawn") ||
+				failureReason.includes("exited") ||
+				failureReason.includes("connection") ||
+				failureReason.includes("JSON RPC")
+			) {
+				console.error(
+					`[lsp-runner] LSP server failed for ${diagnosticPath}: ${failureReason}`,
+				);
 			}
 		}
 
