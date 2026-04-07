@@ -71,12 +71,10 @@ pi --no-lsp
 Registered dispatch runners:
 
 - `lsp`, `ts-lsp`, `pyright`
-- `config-validation`
 - `biome-check-json`, `biome-lint`, `ruff-lint`, `eslint`, `oxlint`
 - `tree-sitter`, `ast-grep-napi`, `type-safety`, `similarity`
 - `architect`, `python-slop`, `shellcheck`, `spellcheck`
 - `go-vet`, `golangci-lint`, `rust-clippy`, `rubocop`
-- `ts-slop` (registered for compatibility; not primary)
 
 Some runners are language/config-gated and may skip when not applicable.
 

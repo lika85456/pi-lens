@@ -82,10 +82,11 @@ const rustClippyRunner: RunnerDefinition = {
 			};
 		}
 
+		const hasErrors = diagnostics.some((d) => d.semantic === "blocking");
 		return {
-			status: "failed",
+			status: hasErrors ? "failed" : "succeeded",
 			diagnostics,
-			semantic: "warning",
+			semantic: hasErrors ? "blocking" : "warning",
 		};
 	},
 };

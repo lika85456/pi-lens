@@ -139,7 +139,7 @@ const rubocopRunner: RunnerDefinition = {
 
 		const hasErrors = diagnostics.some((d) => d.semantic === "blocking");
 		return {
-			status: "failed",
+			status: hasErrors ? "failed" : "succeeded",
 			diagnostics,
 			semantic: hasErrors ? "blocking" : "warning",
 		};
