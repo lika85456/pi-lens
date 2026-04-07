@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { FULL_LINT_PLANS, TOOL_PLANS } from "../../../clients/dispatch/plan.js";
+import {
+	FULL_LINT_PLANS,
+	LANGUAGE_CAPABILITY_MATRIX,
+	TOOL_PLANS,
+} from "../../../clients/dispatch/plan.js";
 
 function flattenRunnerIds(plan: { groups: Array<{ runnerIds: string[] }> }): string[] {
 	return plan.groups.flatMap((g) => g.runnerIds);
@@ -34,5 +38,23 @@ describe("dispatch plan exposure", () => {
 		expect(pythonIds).toContain("ruff-lint");
 		expect(rubyIds).toContain("lsp");
 		expect(rubyIds).toContain("rubocop");
+	});
+
+	it("defines a capability matrix for supported main languages", () => {
+		expect(LANGUAGE_CAPABILITY_MATRIX.jsts.capabilities).toEqual(
+			expect.arrayContaining(["types", "security", "smells", "lint"]),
+		);
+		expect(LANGUAGE_CAPABILITY_MATRIX.python.capabilities).toEqual(
+			expect.arrayContaining(["types", "lint", "architecture"]),
+		);
+		expect(LANGUAGE_CAPABILITY_MATRIX.go.capabilities).toEqual(
+			expect.arrayContaining(["types", "lint"]),
+		);
+		expect(LANGUAGE_CAPABILITY_MATRIX.rust.capabilities).toEqual(
+			expect.arrayContaining(["types", "lint"]),
+		);
+		expect(LANGUAGE_CAPABILITY_MATRIX.ruby.capabilities).toEqual(
+			expect.arrayContaining(["types", "lint"]),
+		);
 	});
 });

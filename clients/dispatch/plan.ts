@@ -1,225 +1,177 @@
-/**
- * Tool execution plan for pi-lens
- *
- * Defines which tools run for each file kind and in what order.
- * This is the declarative alternative to the if/else chains in index.ts.
- *
- * Modes:
- * - "all": Run all runners in the group
- * - "fallback": Run first available runner
- * - "first-success": Run until one succeeds
- */
-
 import type { FileKind } from "../file-kinds.js";
-import type { ToolPlan } from "./types.js";
+import type { RunnerGroup, ToolPlan } from "./types.js";
 
-/**
- * Tool plans organized by purpose
- *
- * CORE PRINCIPLE: File write only runs BLOCKING tools
- * - Type checking (LSP) - blocking errors
- * - Security/correctness lint - blocking errors
- * - Auto-format/auto-fix handled by direct calls in index.ts (not here)
- *
- * Warning-only tools run on /lens-booboo command only
- */
-export const TOOL_PLANS: Record<string, ToolPlan> = {
-	/**
-	 * Linting tools for JS/TS files
-	 */
+type CapabilityDimension =
+	| "types"
+	| "security"
+	| "smells"
+	| "format"
+	| "lint"
+	| "architecture"
+	| "docs";
+
+interface CapabilityMatrixEntry {
+	name: string;
+	capabilities: CapabilityDimension[];
+	writeGroups: RunnerGroup[];
+	fullOnlyGroups?: RunnerGroup[];
+}
+
+export const LANGUAGE_CAPABILITY_MATRIX: Record<FileKind, CapabilityMatrixEntry> = {
 	jsts: {
 		name: "JavaScript/TypeScript Linting",
-		groups: [
-			// Type checking with fallback chain:
-			// 1) unified LSP when available, 2) built-in ts fallback when LSP unavailable.
+		capabilities: ["types", "security", "smells", "format", "lint", "architecture"],
+		writeGroups: [
 			{ mode: "fallback", runnerIds: ["lsp", "ts-lsp"], filterKinds: ["jsts"] },
-			// Biome check with JSON diagnostic capture - priority 9, runs before tree-sitter
-			// Captures Biome diagnostics, shows to agent, then auto-fixes
 			{ mode: "all", runnerIds: ["biome-check-json"], filterKinds: ["jsts"] },
-			// Tree-sitter native structural analysis (blocking rules: constructor-super, dangerouslySetInnerHTML, etc.)
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["jsts"] },
-			// AST structural analysis (blocking: no-dupe-keys, no-hardcoded-secrets, jwt-no-verify, etc.)
-			// Only error-severity rules fire inline (blockingOnly=true). Warnings are booboo-only.
 			{ mode: "all", runnerIds: ["ast-grep-napi"], filterKinds: ["jsts"] },
-			// Type safety checks (has some blocking errors)
 			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
-			// Similarity detection — warns about duplicated/reusable code
 			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
-			// ESLint: only fires when project has eslint config (skips Biome/OxLint projects)
 			{ mode: "fallback", runnerIds: ["eslint"], filterKinds: ["jsts"] },
-			// Architectural rules: warning-only, fast (pure regex). Needed per-write so the
-			// all-clear signal can report "N warnings -> /lens-booboo" accurately.
 			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["jsts"] },
-			// Note: ast-grep CLI kept for ast_grep_search/ast_grep_replace tools only
-			// Note: biome, oxlint handled by direct auto-fix calls in index.ts (not in dispatch)
+		],
+		fullOnlyGroups: [
+			{ mode: "fallback", runnerIds: ["biome-lint", "oxlint"], filterKinds: ["jsts"] },
 		],
 	},
-
-	/**
-	 * Python linting tools
-	 */
 	python: {
 		name: "Python Linting",
-		groups: [
-			// Type checking with fallback chain:
-			// 1) unified LSP when available, 2) pyright CLI fallback.
+		capabilities: ["types", "lint", "architecture", "smells"],
+		writeGroups: [
 			{ mode: "fallback", runnerIds: ["lsp", "pyright"], filterKinds: ["python"] },
-			// Ruff lint checks (formatting remains in formatter pipeline)
 			{ mode: "fallback", runnerIds: ["ruff-lint"], filterKinds: ["python"] },
 			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["python"] },
-			// Note: ruff handled by direct auto-fix calls in index.ts (not in dispatch)
+		],
+		fullOnlyGroups: [
+			{ mode: "fallback", runnerIds: ["python-slop"], filterKinds: ["python"] },
 		],
 	},
-
-	/**
-	 * Go linting tools
-	 */
 	go: {
 		name: "Go Linting",
-		groups: [
-			// LSP type checking (gopls)
+		capabilities: ["types", "lint", "smells"],
+		writeGroups: [
 			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["go"] },
-			// Go vet for additional checks
 			{ mode: "fallback", runnerIds: ["go-vet"], filterKinds: ["go"] },
-			// golangci-lint: only fires when project has .golangci.yml config
 			{ mode: "fallback", runnerIds: ["golangci-lint"], filterKinds: ["go"] },
-			// Structural analysis
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["go"] },
 		],
 	},
-
-	/**
-	 * Rust linting tools
-	 */
 	rust: {
 		name: "Rust Linting",
-		groups: [
-			// LSP type checking (rust-analyzer)
+		capabilities: ["types", "lint", "smells"],
+		writeGroups: [
 			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["rust"] },
-			// Cargo clippy for additional checks
 			{ mode: "fallback", runnerIds: ["rust-clippy"], filterKinds: ["rust"] },
-			// Structural analysis
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["rust"] },
 		],
 	},
-
-	/**
-	 * Ruby linting
-	 */
 	ruby: {
 		name: "Ruby Linting",
-		groups: [
-			// LSP type checking (Ruby LSP/Solargraph when available)
+		capabilities: ["types", "lint", "smells"],
+		writeGroups: [
 			{ mode: "all", runnerIds: ["lsp"], filterKinds: ["ruby"] },
 			{ mode: "fallback", runnerIds: ["rubocop"], filterKinds: ["ruby"] },
-			// Structural analysis
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["ruby"] },
 		],
 	},
-
-	/**
-	 * C/C++ linting tools
-	 */
 	cxx: {
 		name: "C/C++ Linting",
-		groups: [
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
-		],
+		capabilities: ["types", "lint"],
+		writeGroups: [],
 	},
-
-	/**
-	 * JSON/JSONC files
-	 */
-	json: {
-		name: "JSON Processing",
-		groups: [
-			// Note: Biome handles JSON formatting via direct call in index.ts
-			// No additional linting needed for JSON
-		],
-	},
-
-	/**
-	 * Markdown files
-	 */
-	markdown: {
-		name: "Markdown Processing",
-		groups: [
-			// Spellcheck for typos (warning only, but useful)
-			{ mode: "fallback", runnerIds: ["spellcheck"] },
-		],
-	},
-
-	/**
-	 * Shell scripts
-	 */
-	shell: {
-		name: "Shell Script Linting",
-		groups: [
-			// Shellcheck for bash/sh/zsh linting (has blocking errors for syntax)
-			{ mode: "fallback", runnerIds: ["shellcheck"] },
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
-		],
-	},
-
-	/**
-	 * CMake files
-	 */
 	cmake: {
 		name: "CMake Processing",
-		groups: [
-			// Architectural rules (guidance only, not blocking) - runs via /lens-booboo only
-		],
+		capabilities: ["lint"],
+		writeGroups: [],
+	},
+	shell: {
+		name: "Shell Script Linting",
+		capabilities: ["lint", "security"],
+		writeGroups: [{ mode: "fallback", runnerIds: ["shellcheck"] }],
+	},
+	json: {
+		name: "JSON Processing",
+		capabilities: ["format"],
+		writeGroups: [],
+	},
+	markdown: {
+		name: "Markdown Processing",
+		capabilities: ["docs"],
+		writeGroups: [{ mode: "fallback", runnerIds: ["spellcheck"] }],
+	},
+	css: {
+		name: "CSS Processing",
+		capabilities: ["format", "lint"],
+		writeGroups: [],
+	},
+	yaml: {
+		name: "YAML Processing",
+		capabilities: ["format", "lint"],
+		writeGroups: [],
 	},
 };
 
-/**
- * Get the tool plan for a specific file kind
- */
+function toWritePlan(entry: CapabilityMatrixEntry): ToolPlan {
+	return {
+		name: entry.name,
+		groups: [...entry.writeGroups],
+	};
+}
+
+function toFullPlan(kind: FileKind, entry: CapabilityMatrixEntry): ToolPlan {
+	if (kind === "jsts") {
+		return {
+			name: "JavaScript/TypeScript Full Lint",
+			groups: [
+				{ mode: "fallback", runnerIds: ["lsp", "ts-lsp"], filterKinds: ["jsts"] },
+				{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["jsts"] },
+				{ mode: "all", runnerIds: ["ast-grep-napi"], filterKinds: ["jsts"] },
+				...(entry.fullOnlyGroups ?? []),
+				{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
+				{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
+				{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["jsts"] },
+				{ mode: "fallback", runnerIds: ["eslint"], filterKinds: ["jsts"] },
+			],
+		};
+	}
+
+	if (kind === "python") {
+		return {
+			name: "Python Full Lint",
+			groups: [
+				{ mode: "fallback", runnerIds: ["lsp", "pyright"], filterKinds: ["python"] },
+				{ mode: "fallback", runnerIds: ["ruff-lint"], filterKinds: ["python"] },
+				...(entry.fullOnlyGroups ?? []),
+				{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["python"] },
+			],
+		};
+	}
+
+	return {
+		name: entry.name,
+		groups: [...entry.writeGroups, ...(entry.fullOnlyGroups ?? [])],
+	};
+}
+
+export const TOOL_PLANS: Record<string, ToolPlan> = Object.fromEntries(
+	Object.entries(LANGUAGE_CAPABILITY_MATRIX).map(([kind, entry]) => [
+		kind,
+		toWritePlan(entry),
+	]),
+) as Record<string, ToolPlan>;
+
 export function getToolPlan(kind: FileKind): ToolPlan | undefined {
 	return TOOL_PLANS[kind];
 }
 
-/**
- * Get all registered tool plans
- */
 export function getAllToolPlans(): Record<string, ToolPlan> {
 	return TOOL_PLANS;
 }
 
-/**
- * Full lint plan for /lens-booboo command (includes warning-only tools)
- * This includes ALL runners for comprehensive analysis
- */
-export const FULL_LINT_PLANS: Record<string, ToolPlan> = {
-	...TOOL_PLANS,
-	// Override jsts to include warning-only tools
-	jsts: {
-		name: "JavaScript/TypeScript Full Lint",
-		groups: [
-			{ mode: "fallback", runnerIds: ["lsp", "ts-lsp"], filterKinds: ["jsts"] },
-			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["jsts"] },
-			{ mode: "all", runnerIds: ["ast-grep-napi"], filterKinds: ["jsts"] },
-			// Warning-only tools (for full lint, not file write)
-			{
-				mode: "fallback",
-				runnerIds: ["biome-lint", "oxlint"],
-				filterKinds: ["jsts"],
-			},
-			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
-			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
-			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["jsts"] },
-			{ mode: "fallback", runnerIds: ["eslint"], filterKinds: ["jsts"] },
-		],
-	},
-	// Override python to include warning-only tools
-	python: {
-		name: "Python Full Lint",
-		groups: [
-			{ mode: "fallback", runnerIds: ["lsp", "pyright"], filterKinds: ["python"] },
-			// Warning-only tools
-			{ mode: "fallback", runnerIds: ["ruff-lint"], filterKinds: ["python"] },
-			{ mode: "fallback", runnerIds: ["python-slop"], filterKinds: ["python"] },
-			{ mode: "fallback", runnerIds: ["architect"], filterKinds: ["python"] },
-		],
-	},
-};
+export const FULL_LINT_PLANS: Record<string, ToolPlan> = Object.fromEntries(
+	Object.entries(LANGUAGE_CAPABILITY_MATRIX).map(([kind, entry]) => [
+		kind,
+		toFullPlan(kind as FileKind, entry),
+	]),
+) as Record<string, ToolPlan>;

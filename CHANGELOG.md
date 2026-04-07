@@ -2,6 +2,15 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.13] - 2026-04-07
+
+### Changed
+- **Centralized capability matrix** — dispatch planning now derives from `LANGUAGE_CAPABILITY_MATRIX`, which defines per-language capability dimensions and write/full runner groups in one place.
+- **Plan generation simplified** — `TOOL_PLANS` (write path) and `FULL_LINT_PLANS` (full scans) are generated from matrix entries instead of duplicated hand-maintained plan objects.
+
+### Tests
+- Extended dispatch plan exposure coverage to assert capability dimensions for main languages (`jsts`, `python`, `go`, `rust`, `ruby`) in `tests/clients/dispatch/plan-exposure.test.ts`.
+
 ## [3.8.12] - 2026-04-07
 
 ### Changed
