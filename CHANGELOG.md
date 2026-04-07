@@ -2,6 +2,13 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.15] - 2026-04-07
+
+### Added
+- **Security rule: no global eval** — added ast-grep rule to block `eval(...)`, `Function(...)`, and string-based `setTimeout`/`setInterval` execution.
+- **Security rule: no blank target** — added ast-grep rule to warn on `<a target="_blank">` without `rel=...`.
+- **Performance rule: no accumulating spread** — added ast-grep rule to warn on reduce patterns that repeatedly spread accumulators.
+
 ## [3.8.14] - 2026-04-07
 
 ### Added
