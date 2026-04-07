@@ -2,6 +2,11 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.19] - 2026-04-07
+
+### Fixed
+- **Biome autofix gating** — Biome autofix/auto-install now runs only when the project has Biome configuration (`biome.json`/`biome.jsonc`) or `@biomejs/biome` in `devDependencies`, preventing unwanted Biome installs in non-Biome JS/TS projects.
+
 ## [3.8.18] - 2026-04-07
 
 ### Changed
