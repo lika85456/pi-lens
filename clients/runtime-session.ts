@@ -93,6 +93,13 @@ export async function handleSessionStart(deps: SessionStartDeps): Promise<void> 
 		dbg("session_start: LSP service reset");
 	}
 
+	if (getFlag("auto-install")) {
+		process.env.PI_LENS_AUTO_INSTALL = "1";
+		dbg("session_start: LSP auto-install enabled (PI_LENS_AUTO_INSTALL=1)");
+	} else {
+		delete process.env.PI_LENS_AUTO_INSTALL;
+	}
+
 	const tools: string[] = [];
 	tools.push("TypeScript LSP");
 	if (biomeClient.isAvailable()) tools.push("Biome");
