@@ -598,6 +598,37 @@ export async function dispatchForFile(
 /** Maximum wall-clock time a single runner may take before we abort it. */
 const RUNNER_TIMEOUT_MS = RUNTIME_CONFIG.dispatch.runnerTimeoutMs;
 
+function looksLikeDiagnosticCodePath(value: string): boolean {
+	if (!value) return false;
+	const text = value.trim();
+	if (!text) return false;
+	const base = path.basename(text.replace(/\\/g, "/"));
+	if (/^lsp:\d+(?::\d+)?$/i.test(text) || /^lsp:\d+(?::\d+)?$/i.test(base)) {
+		return true;
+	}
+	if (/^similarity[-:]/i.test(text) || /^similarity[-:]/i.test(base)) {
+		return true;
+	}
+	if (
+		/^[a-z-]+:\d+(?::\d+)?$/i.test(text) ||
+		/^[a-z-]+:\d+(?::\d+)?$/i.test(base)
+	) {
+		return true;
+	}
+	return false;
+}
+
+function normalizeDiagnosticFilePath(ctx: DispatchContext, rawPath?: string): string {
+	if (typeof rawPath === "string" && looksLikeDiagnosticCodePath(rawPath)) {
+		ctx.log(
+			`runner path normalization: ignored diagnostic code-like path '${rawPath}', using current file`,
+		);
+		return resolveRunnerPath(ctx.cwd, ctx.filePath);
+	}
+
+	return resolveRunnerPath(ctx.cwd, rawPath || ctx.filePath);
+}
+
 async function runRunner(
 	ctx: DispatchContext,
 	runner: RunnerDefinition,
@@ -621,7 +652,7 @@ async function runRunner(
 
 		const diagnostics = result.diagnostics.map((d) => ({
 			...d,
-			filePath: resolveRunnerPath(ctx.cwd, d.filePath || ctx.filePath),
+			filePath: normalizeDiagnosticFilePath(ctx, d.filePath),
 		}));
 
 		return {

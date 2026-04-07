@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { RUNTIME_CONFIG } from "./runtime-config.js";
 import { resolveRunnerPath, toRunnerDisplayPath } from "./dispatch/runner-context.js";
@@ -87,6 +88,10 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 			);
 			const filtered = result.clones.filter((clone) => {
 				const resolvedA = resolveRunnerPath(cwd, clone.fileA);
+				const resolvedB = resolveRunnerPath(cwd, clone.fileB);
+				if (!fs.existsSync(resolvedA) || !fs.existsSync(resolvedB)) {
+					return false;
+				}
 				if (!jscpdFileSet.has(resolvedA)) return false;
 				const state = cacheManager.getTurnFileState(resolvedA, cwd);
 				if (!state) return false;

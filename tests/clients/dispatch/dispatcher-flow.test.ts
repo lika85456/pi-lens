@@ -191,6 +191,38 @@ describe("Dispatch Flow", () => {
 			expect(result.diagnostics).toHaveLength(0);
 		});
 
+		it("normalizes code-like diagnostic file paths to current file", async () => {
+			registerRunner({
+				id: "code-path",
+				appliesTo: ["jsts"],
+				priority: 10,
+				enabledByDefault: true,
+				async run() {
+					return {
+						status: "succeeded",
+						diagnostics: [
+							{
+								id: "diag-1",
+								message: "code-like path should be normalized",
+								filePath: "lsp:80007",
+								severity: "warning",
+								semantic: "warning",
+								tool: "code-path",
+							},
+						],
+						semantic: "warning",
+					};
+				},
+			});
+
+			const ctx = createMockContext("src/main.ts");
+			const groups: RunnerGroup[] = [{ mode: "all", runnerIds: ["code-path"] }];
+			const result = await dispatchForFile(ctx, groups);
+
+			expect(result.diagnostics).toHaveLength(1);
+			expect(result.diagnostics[0].filePath).toContain("src/main.ts");
+		});
+
 		it("fallback mode should continue after failed runner and use next success", async () => {
 			const calls: string[] = [];
 			registerRunner({
