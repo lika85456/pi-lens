@@ -36,9 +36,10 @@ const USE_RUST = true;
 // ============================================================================
 
 const CONFIG = {
-	SIMILARITY_THRESHOLD: 0.9, // 90% minimum similarity — below this false positives dominate
-	MIN_TRANSITIONS: 30, // Skip small functions with weak structural signal
+	SIMILARITY_THRESHOLD: 0.96, // align with booboo: stricter to reduce boilerplate false positives
+	MIN_TRANSITIONS: 40, // stronger signal floor for structural comparisons
 	MIN_FUNCTION_LINES: 8, // Ignore tiny helpers/wrappers
+	MAX_TRANSITION_RATIO: 1.8, // Skip pairs with highly mismatched complexity/size
 	MAX_SUGGESTIONS: 3, // Max 3 suggestions per file
 	MAX_PER_TARGET_NAME: 1, // Avoid one-to-many spam for the same target utility
 };
@@ -177,6 +178,13 @@ const similarityRunner: RunnerDefinition = {
 			// Create diagnostic for each match
 			for (const match of matches) {
 				if (match.targetTransitionCount < CONFIG.MIN_TRANSITIONS) {
+					continue;
+				}
+
+				const maxTransitions = Math.max(func.transitionCount, match.targetTransitionCount);
+				const minTransitions = Math.min(func.transitionCount, match.targetTransitionCount);
+				if (minTransitions <= 0) continue;
+				if (maxTransitions / minTransitions > CONFIG.MAX_TRANSITION_RATIO) {
 					continue;
 				}
 

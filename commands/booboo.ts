@@ -408,7 +408,7 @@ export async function handleBooboo(
 				});
 
 				let fullSection = `## Semantic Duplicates (Amain Algorithm)\n\n`;
-				fullSection += `**${topPairs.length} pair(s) with >90% semantic similarity**\n\n`;
+				fullSection += `**${topPairs.length} pair(s) with >=${(SEMANTIC_SIMILARITY_THRESHOLD * 100).toFixed(0)}% semantic similarity**\n\n`;
 				fullSection +=
 					"Functions with different names/variables but similar logic structures.\n\n";
 
@@ -601,6 +601,35 @@ export async function handleBooboo(
 			fixable: boolean;
 			note?: string;
 		}> = [];
+		const seenStructuralIssueKeys = new Set<string>();
+
+		const normalizeMatchedText = (text: string): string =>
+			text.replace(/\s+/g, " ").replace(/["'`][^"'`]{0,80}["'`]/g, "STR").trim();
+
+		const pushStructuralIssue = (
+			match: { file: string; line: number; matchedText: string },
+			issue: {
+				pattern: string;
+				severity: string;
+				fixable: boolean;
+				note?: string;
+			},
+		) => {
+			const scopeKey = normalizeMatchedText(match.matchedText || "").slice(0, 260);
+			const key = `${match.file}:${issue.pattern}:${scopeKey}`;
+			if (seenStructuralIssueKeys.has(key)) return;
+			seenStructuralIssueKeys.add(key);
+
+			structuralIssues.push({
+				file: match.file,
+				line: match.line,
+				pattern: issue.pattern,
+				severity: issue.severity,
+				fixable: issue.fixable,
+				note: issue.note,
+			});
+			findings++;
+		};
 
 		// Only run basic patterns if ast-grep is NOT available (avoid duplication)
 		const astGrepAvailable = await clients.astGrep.ensureAvailable();
@@ -617,9 +646,7 @@ export async function handleBooboo(
 			for (const match of consoleLogs) {
 				const method = match.captures.METHOD || "log";
 				if (["log", "debug", "info", "warn"].includes(method)) {
-					structuralIssues.push({
-						file: match.file,
-						line: match.line,
+					pushStructuralIssue(match, {
 						pattern: `console.${method}()`,
 						severity: "🟡",
 						fixable: true,
@@ -627,7 +654,6 @@ export async function handleBooboo(
 							? undefined
 							: "(fallback - ast-grep not available)",
 					});
-					findings++;
 				}
 			}
 		}
@@ -642,15 +668,12 @@ export async function handleBooboo(
 		);
 
 		for (const match of promiseChains) {
-			structuralIssues.push({
-				file: match.file,
-				line: match.line,
+			pushStructuralIssue(match, {
 				pattern: "deep promise chain (3+ levels)",
 				severity: "🟡",
 				fixable: true,
 				note: "Consider converting to async/await for readability",
 			});
-			findings++;
 		}
 
 		// Pattern 2: Callback pyramids (error-first callbacks nested 3+ levels)
@@ -669,15 +692,12 @@ export async function handleBooboo(
 		});
 
 		for (const match of nestedCallbacks.slice(0, 10)) {
-			structuralIssues.push({
-				file: match.file,
-				line: match.line,
+			pushStructuralIssue(match, {
 				pattern: "callback pyramid (error-first pattern)",
 				severity: "🟡",
 				fixable: true,
 				note: "Consider promisify + async/await",
 			});
-			findings++;
 		}
 
 		// Pattern 3: Mixed async patterns (async function + .then() + callback)
@@ -696,15 +716,12 @@ export async function handleBooboo(
 			const hasThen = body.match(/\.\s*then\s*\(/);
 
 			if (hasAwait && hasThen) {
-				structuralIssues.push({
-					file: match.file,
-					line: match.line,
+				pushStructuralIssue(match, {
 					pattern: "mixed async/await + promise chains",
 					severity: "🟡",
 					fixable: true,
 					note: "Use consistent async style (prefer await)",
 				});
-				findings++;
 			}
 		}
 
@@ -717,15 +734,12 @@ export async function handleBooboo(
 		);
 
 		for (const match of deepIfs) {
-			structuralIssues.push({
-				file: match.file,
-				line: match.line,
+			pushStructuralIssue(match, {
 				pattern: "deeply nested conditionals (3+ levels)",
 				severity: "🟡",
 				fixable: true,
 				note: "Consider early returns or guard clauses",
 			});
-			findings++;
 		}
 
 		// Add to summary if issues found
@@ -1255,6 +1269,10 @@ interface SimilarPair {
 	similarity: number;
 }
 
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.96;
+const MIN_SIMILARITY_TRANSITIONS = 40;
+const MAX_TRANSITION_RATIO = 1.8;
+
 /**
  * Find top N most similar function pairs in the project index
  * Uses canonical pair ordering to avoid duplicates (A,B) vs (B,A)
@@ -1275,9 +1293,24 @@ function findTopSimilarPairs(
 			// Skip if same file (we want cross-file duplicates)
 			if (entry1.filePath === entry2.filePath) continue;
 
+			// Skip low-signal functions where matrix noise dominates.
+			if (
+				entry1.transitionCount < MIN_SIMILARITY_TRANSITIONS ||
+				entry2.transitionCount < MIN_SIMILARITY_TRANSITIONS
+			) {
+				continue;
+			}
+
+			// Skip pairs with very different complexity/size; these are often
+			// boilerplate-wrapper false positives (shared try/catch/logging shell).
+			const maxTransitions = Math.max(entry1.transitionCount, entry2.transitionCount);
+			const minTransitions = Math.min(entry1.transitionCount, entry2.transitionCount);
+			if (minTransitions <= 0) continue;
+			if (maxTransitions / minTransitions > MAX_TRANSITION_RATIO) continue;
+
 			const similarity = calculateSimilarity(entry1.matrix, entry2.matrix);
 
-			if (similarity >= 0.9) {
+			if (similarity >= SEMANTIC_SIMILARITY_THRESHOLD) {
 				// Canonical pair key (sorted to avoid duplicates)
 				const pairKey = [entry1.id, entry2.id].sort().join("::");
 				if (seenPairs.has(pairKey)) continue;

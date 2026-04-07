@@ -2,6 +2,16 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.18] - 2026-04-07
+
+### Changed
+- **Similarity calibration tightened** — raised semantic similarity threshold to `0.96`, raised minimum transition signal to `40`, and added transition-ratio filtering to reduce boilerplate-wrapper false positives.
+- **Dispatch + booboo alignment** — similarity guardrails are now aligned between `/lens-booboo` reporting and the dispatch `similarity` runner.
+- **Tree-sitter structural dedupe in booboo** — advanced structural findings now dedupe repeated line-level matches by normalized matched scope so deep nesting/promise chain reports collapse to one representative issue.
+
+### Tests
+- Added similarity runner guardrail assertions in `tests/clients/similarity-runner.test.ts`.
+
 ## [3.8.17] - 2026-04-07
 
 ### Changed
