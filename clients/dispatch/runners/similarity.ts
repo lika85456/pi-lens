@@ -39,8 +39,54 @@ const CONFIG = {
 	SIMILARITY_THRESHOLD: 0.9, // 90% minimum similarity — below this false positives dominate
 	MIN_TRANSITIONS: 20, // Skip functions with <20 AST transitions
 	MAX_SUGGESTIONS: 3, // Max 3 suggestions per file
-	USAGE_THRESHOLD: 2, // Only suggest utilities with 2+ uses (placeholder)
+	MAX_PER_TARGET_NAME: 1, // Avoid one-to-many spam for the same target utility
 };
+
+const GENERIC_NAME_TOKENS = new Set([
+	"get",
+	"set",
+	"create",
+	"build",
+	"make",
+	"run",
+	"do",
+	"handle",
+	"process",
+	"check",
+	"load",
+	"save",
+	"fetch",
+	"update",
+	"register",
+	"init",
+	"compute",
+	"calc",
+	"helper",
+	"util",
+	"function",
+]);
+
+export function tokenizeFunctionName(name: string): string[] {
+	return name
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.replace(/[_\-]+/g, " ")
+		.toLowerCase()
+		.split(/\s+/)
+		.filter((t) => t.length >= 3);
+}
+
+export function hasMeaningfulNameOverlap(sourceName: string, targetName: string): boolean {
+	const source = new Set(tokenizeFunctionName(sourceName));
+	const target = new Set(tokenizeFunctionName(targetName));
+	const shared = [...source].filter((token) => target.has(token));
+	if (shared.length === 0) return false;
+
+	const specificShared = shared.filter((token) => !GENERIC_NAME_TOKENS.has(token));
+	if (specificShared.length > 0) return true;
+
+	// Fallback: allow overlap if there are at least two shared generic tokens.
+	return shared.length >= 2;
+}
 
 // ============================================================================
 // Runner Implementation
@@ -108,6 +154,7 @@ const similarityRunner: RunnerDefinition = {
 		const newFunctions = extractFunctions(sourceFile, content);
 
 		const diagnostics: Diagnostic[] = [];
+		const seenTargets = new Map<string, number>();
 
 		for (const func of newFunctions) {
 			// Guardrail: Skip tiny functions
@@ -125,6 +172,17 @@ const similarityRunner: RunnerDefinition = {
 
 			// Create diagnostic for each match
 			for (const match of matches) {
+				if (!hasMeaningfulNameOverlap(func.name, match.targetName)) {
+					continue;
+				}
+
+				const targetKey = `${match.targetName}@${match.targetLocation}`;
+				const seenForTarget = seenTargets.get(targetKey) ?? 0;
+				if (seenForTarget >= CONFIG.MAX_PER_TARGET_NAME) {
+					continue;
+				}
+				seenTargets.set(targetKey, seenForTarget + 1);
+
 				const targetPath = extractLocationPath(match.targetLocation);
 				if (targetPath) {
 					const resolvedTarget = path.isAbsolute(targetPath)
@@ -347,6 +405,7 @@ async function runWithRust(
 
 	// 4. Convert to Diagnostics.
 	const diagnostics: Diagnostic[] = [];
+	const seenTargets = new Map<string, number>();
 	for (const m of matches.slice(0, maxSuggestions)) {
 			const similarityPct = Math.round(m.similarity * 100);
 			// source_id / target_id format: "path/to/file.ts::funcName@line"
@@ -361,6 +420,15 @@ async function runWithRust(
 			};
 			const source = parseId(m.source_id);
 			const target = parseId(m.target_id);
+			if (!hasMeaningfulNameOverlap(source.name, target.name)) {
+				continue;
+			}
+			const targetKey = `${target.name}@${target.file}:${target.line}`;
+			const seenForTarget = seenTargets.get(targetKey) ?? 0;
+			if (seenForTarget >= CONFIG.MAX_PER_TARGET_NAME) {
+				continue;
+			}
+			seenTargets.set(targetKey, seenForTarget + 1);
 			const resolvedTarget = path.isAbsolute(target.file)
 				? target.file
 				: path.join(projectRoot, target.file);
