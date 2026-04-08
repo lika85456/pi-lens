@@ -70,19 +70,24 @@ function getLanguageInstallHints(
 	languageProfile: ReturnType<typeof detectProjectLanguageProfile>,
 ): string[] {
 	const hints: string[] = [];
+	const hasStrongSignal = (
+		kind: "go" | "rust" | "ruby",
+		minCount = 3,
+	): boolean => {
+		if (!hasLanguage(languageProfile, kind)) return false;
+		if (isLanguageConfigured(languageProfile, kind)) return true;
+		return (languageProfile.counts[kind] ?? 0) >= minCount;
+	};
 
-	if (hasLanguage(languageProfile, "go") && !isCommandAvailable("gopls")) {
+	if (hasStrongSignal("go") && !isCommandAvailable("gopls")) {
 		hints.push("Go detected: install gopls (`go install golang.org/x/tools/gopls@latest`).");
 	}
-	if (
-		hasLanguage(languageProfile, "rust") &&
-		!isCommandAvailable("rust-analyzer")
-	) {
+	if (hasStrongSignal("rust") && !isCommandAvailable("rust-analyzer")) {
 		hints.push(
 			"Rust detected: install rust-analyzer (`rustup component add rust-analyzer`).",
 		);
 	}
-	if (hasLanguage(languageProfile, "ruby") && !isCommandAvailable("ruby-lsp")) {
+	if (hasStrongSignal("ruby") && !isCommandAvailable("ruby-lsp")) {
 		hints.push("Ruby detected: install ruby-lsp (`gem install ruby-lsp`).");
 	}
 
