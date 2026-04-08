@@ -239,6 +239,14 @@ export async function getToolPath(toolId: string): Promise<string | undefined> {
 		return tool.checkCommand;
 	}
 
+	// For pip tools, also probe user-level script locations
+	if (tool.installStrategy === "pip") {
+		const pipPath = await findPipUserToolPath(tool.binaryName || tool.id);
+		if (pipPath) {
+			return pipPath;
+		}
+	}
+
 	// Check local
 	const localPath = path.join(
 		TOOLS_DIR,
@@ -254,6 +262,101 @@ export async function getToolPath(toolId: string): Promise<string | undefined> {
 	}
 }
 
+async function findPipUserToolPath(
+	binaryName: string,
+): Promise<string | undefined> {
+	const isWindows = process.platform === "win32";
+	const userBaseCandidates = await getPythonUserBaseCandidates();
+
+	for (const userBase of userBaseCandidates) {
+		const scriptDirs: string[] = [
+			path.join(userBase, isWindows ? "Scripts" : "bin"),
+		];
+
+		if (isWindows) {
+			try {
+				const children = await fs.readdir(userBase, { withFileTypes: true });
+				for (const entry of children) {
+					if (!entry.isDirectory()) continue;
+					if (!/^python\d+$/i.test(entry.name)) continue;
+					scriptDirs.push(path.join(userBase, entry.name, "Scripts"));
+				}
+			} catch {
+				// ignore
+			}
+		}
+
+		for (const dir of scriptDirs) {
+			const candidates = isWindows
+				? [
+						path.join(dir, `${binaryName}.exe`),
+						path.join(dir, `${binaryName}.cmd`),
+						path.join(dir, binaryName),
+					]
+				: [path.join(dir, binaryName)];
+
+			for (const candidate of candidates) {
+				try {
+					await fs.access(candidate);
+					if (await verifyToolBinary(candidate)) {
+						return candidate;
+					}
+				} catch {
+					// continue
+				}
+			}
+		}
+	}
+
+	return undefined;
+}
+
+async function getPythonUserBaseCandidates(): Promise<string[]> {
+	const candidates: string[] = [];
+	const seen = new Set<string>();
+
+	const add = (value: string | undefined): void => {
+		if (!value) return;
+		const normalized = value.trim();
+		if (!normalized) return;
+		if (seen.has(normalized)) return;
+		seen.add(normalized);
+		candidates.push(normalized);
+	};
+
+	if (process.platform === "win32") {
+		add(path.join(process.env.APPDATA || "", "Python"));
+	}
+
+	const probes: Array<{ command: string; args: string[] }> =
+		process.platform === "win32"
+			? [
+					{ command: "py", args: ["-m", "site", "--user-base"] },
+					{ command: "python", args: ["-m", "site", "--user-base"] },
+				]
+			: [
+					{ command: "python3", args: ["-m", "site", "--user-base"] },
+					{ command: "python", args: ["-m", "site", "--user-base"] },
+				];
+
+	for (const probe of probes) {
+		const userBase = await new Promise<string>((resolve) => {
+			const proc = spawn(probe.command, probe.args, {
+				stdio: ["ignore", "pipe", "pipe"],
+				shell: process.platform === "win32",
+			});
+
+			let stdout = "";
+			proc.stdout?.on("data", (data: Buffer | string) => (stdout += data));
+			proc.on("exit", (code) => resolve(code === 0 ? stdout.trim() : ""));
+			proc.on("error", () => resolve(""));
+		});
+		add(userBase);
+	}
+
+	return candidates;
+}
+
 // --- Verification Functions
 
 /**
@@ -264,8 +367,9 @@ async function verifyToolBinary(binPath: string): Promise<boolean> {
 	return new Promise((resolve) => {
 		// Add .cmd extension on Windows for the actual binary
 		const isWindows = process.platform === "win32";
+		const hasKnownWindowsExt = /\.(cmd|exe|ps1)$/i.test(binPath);
 		const execPath =
-			isWindows && !binPath.endsWith(".cmd") ? `${binPath}.cmd` : binPath;
+			isWindows && !hasKnownWindowsExt ? `${binPath}.cmd` : binPath;
 
 		const proc = spawn(execPath, ["--version"], {
 			timeout: 10000, // 10 second timeout for verification
