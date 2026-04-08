@@ -55,21 +55,45 @@ interface SessionStartDeps {
 }
 
 const TS_JS_FILE_PATTERN = /\.(?:ts|tsx|cts|mts|js|jsx|cjs|mjs)$/i;
+const PYTHON_FILE_PATTERN = /\.(?:py|pyi)$/i;
 const TS_JS_MARKER_FILES = ["package.json", "tsconfig.json", "jsconfig.json"];
 
-function shouldPreinstallTypeScriptLsp(projectRoot: string): boolean {
+interface ProjectLanguageProfile {
+	hasJsTs: boolean;
+	hasPython: boolean;
+}
+
+function detectProjectLanguageProfile(projectRoot: string): ProjectLanguageProfile {
+	const profile: ProjectLanguageProfile = {
+		hasJsTs: false,
+		hasPython: false,
+	};
+
 	for (const marker of TS_JS_MARKER_FILES) {
 		if (nodeFs.existsSync(path.join(projectRoot, marker))) {
-			return true;
+			profile.hasJsTs = true;
+			break;
 		}
 	}
 
+	let sourceFiles: string[] = [];
 	try {
-		const sourceFiles = getSourceFiles(projectRoot, true);
-		return sourceFiles.some((file) => TS_JS_FILE_PATTERN.test(file));
+		sourceFiles = getSourceFiles(projectRoot, true);
 	} catch {
-		return false;
+		return profile;
 	}
+
+	for (const file of sourceFiles) {
+		if (!profile.hasJsTs && TS_JS_FILE_PATTERN.test(file)) {
+			profile.hasJsTs = true;
+		}
+		if (!profile.hasPython && PYTHON_FILE_PATTERN.test(file)) {
+			profile.hasPython = true;
+		}
+		if (profile.hasJsTs && profile.hasPython) break;
+	}
+
+	return profile;
 }
 
 export async function handleSessionStart(
@@ -151,16 +175,20 @@ export async function handleSessionStart(
 	const scanRoot = startupScan.projectRoot ?? cwd;
 	const analysisRoot = scanRoot;
 	runtime.projectRoot = scanRoot;
+	const languageProfile = detectProjectLanguageProfile(analysisRoot);
 	dbg(`session_start cwd: ${cwd}`);
 	dbg(
 		`session_start scan root: ${scanRoot} (warmCaches=${startupScan.canWarmCaches}${startupScan.reason ? `, reason=${startupScan.reason}` : ""})`,
+	);
+	dbg(
+		`session_start language profile: js_ts=${languageProfile.hasJsTs}, python=${languageProfile.hasPython}`,
 	);
 	if (analysisRoot !== cwd) {
 		dbg(`session_start: monorepo analysis root override -> ${analysisRoot}`);
 	}
 
 	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
-		if (shouldPreinstallTypeScriptLsp(analysisRoot)) {
+		if (languageProfile.hasJsTs) {
 			dbg("session_start: pre-installing TypeScript LSP...");
 			ensureTool("typescript-language-server")
 				.then((toolPath) => {
@@ -258,8 +286,12 @@ export async function handleSessionStart(
 		);
 		dbg(`session_start: skipping TODO scan (${startupScan.reason ?? "unknown"})`);
 	} else {
+		const scanNames = ["todo"];
+		if (languageProfile.hasJsTs) {
+			scanNames.push("knip", "jscpd", "ast-grep exports", "project index");
+		}
 		dbg(
-			"session_start: launching background scans (todo, knip, jscpd, ast-grep exports, project index)",
+			`session_start: launching background scans (${scanNames.join(", ")})`,
 		);
 
 		runStartupTask("todo", async () => {
@@ -276,113 +308,117 @@ export async function handleSessionStart(
 			);
 		});
 
-		// Knip — dead code / unused exports
-		runStartupTask("knip", async () => {
-			if (await knipClient.ensureAvailable()) {
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				const cached = cacheManager.readCache<
-					ReturnType<KnipClient["analyze"]>
-				>("knip", analysisRoot);
-				if (cached) {
+		if (!languageProfile.hasJsTs) {
+			dbg("session_start: skipping JS/TS startup scans (no JS/TS files detected)");
+		} else {
+			// Knip — dead code / unused exports
+			runStartupTask("knip", async () => {
+				if (await knipClient.ensureAvailable()) {
 					if (!runtime.isCurrentSession(sessionGeneration)) return;
-					dbg(
-						`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
-					);
+					const cached = cacheManager.readCache<
+						ReturnType<KnipClient["analyze"]>
+					>("knip", analysisRoot);
+					if (cached) {
+						if (!runtime.isCurrentSession(sessionGeneration)) return;
+						dbg(
+							`session_start Knip: cache hit (${Math.round((Date.now() - new Date(cached.meta.timestamp).getTime()) / 1000)}s ago)`,
+						);
+					} else {
+						const startMs = Date.now();
+						const knipResult = knipClient.analyze(
+							analysisRoot,
+							getKnipIgnorePatterns(),
+						);
+						if (!runtime.isCurrentSession(sessionGeneration)) return;
+						cacheManager.writeCache("knip", knipResult, analysisRoot, {
+							scanDurationMs: Date.now() - startMs,
+						});
+						dbg(`session_start Knip scan done (${Date.now() - startMs}ms)`);
+					}
 				} else {
-					const startMs = Date.now();
-					const knipResult = knipClient.analyze(
+					if (!runtime.isCurrentSession(sessionGeneration)) return;
+					dbg("session_start Knip: not available");
+				}
+			});
+
+			// jscpd — duplicate code detection
+			runStartupTask("jscpd", async () => {
+				if (await jscpdClient.ensureAvailable()) {
+					if (!runtime.isCurrentSession(sessionGeneration)) return;
+					const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
+						"jscpd",
 						analysisRoot,
-						getKnipIgnorePatterns(),
 					);
-					if (!runtime.isCurrentSession(sessionGeneration)) return;
-					cacheManager.writeCache("knip", knipResult, analysisRoot, {
-						scanDurationMs: Date.now() - startMs,
-					});
-					dbg(`session_start Knip scan done (${Date.now() - startMs}ms)`);
-				}
-			} else {
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				dbg("session_start Knip: not available");
-			}
-		});
-
-		// jscpd — duplicate code detection
-		runStartupTask("jscpd", async () => {
-			if (await jscpdClient.ensureAvailable()) {
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				const cached = cacheManager.readCache<ReturnType<JscpdClient["scan"]>>(
-					"jscpd",
-					analysisRoot,
-				);
-				if (cached) {
-					if (!runtime.isCurrentSession(sessionGeneration)) return;
-					dbg("session_start jscpd: cache hit");
+					if (cached) {
+						if (!runtime.isCurrentSession(sessionGeneration)) return;
+						dbg("session_start jscpd: cache hit");
+					} else {
+						const startMs = Date.now();
+						const jscpdResult = jscpdClient.scan(analysisRoot);
+						if (!runtime.isCurrentSession(sessionGeneration)) return;
+						cacheManager.writeCache("jscpd", jscpdResult, analysisRoot, {
+							scanDurationMs: Date.now() - startMs,
+						});
+						dbg(`session_start jscpd scan done (${Date.now() - startMs}ms)`);
+					}
 				} else {
-					const startMs = Date.now();
-					const jscpdResult = jscpdClient.scan(analysisRoot);
 					if (!runtime.isCurrentSession(sessionGeneration)) return;
-					cacheManager.writeCache("jscpd", jscpdResult, analysisRoot, {
-						scanDurationMs: Date.now() - startMs,
-					});
-					dbg(`session_start jscpd scan done (${Date.now() - startMs}ms)`);
+					dbg("session_start jscpd: not available");
 				}
-			} else {
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				dbg("session_start jscpd: not available");
-			}
-		});
+			});
 
-		// ast-grep — export scan for duplicate detection
-		runStartupTask("ast-grep-exports", async () => {
-			if (await astGrepClient.ensureAvailable()) {
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				const exports = await astGrepClient.scanExports(
-					analysisRoot,
-					"typescript",
-				);
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				dbg(`session_start exports scan: ${exports.size} functions found`);
-				for (const [name, file] of exports) {
-					runtime.cachedExports.set(name, file);
-				}
-			}
-		});
-
-		// Project index — structural similarity detection
-		runStartupTask("project-index", async () => {
-			const existing = await loadIndex(analysisRoot);
-			if (!runtime.isCurrentSession(sessionGeneration)) return;
-			if (
-				existing &&
-				existing.entries.size > 0 &&
-				(await isIndexFresh(analysisRoot))
-			) {
-				if (!runtime.isCurrentSession(sessionGeneration)) return;
-				runtime.cachedProjectIndex = existing;
-				dbg(
-					`session_start: loaded fresh project index (${existing.entries.size} entries)`,
-				);
-			} else {
-				const sourceFiles = getSourceFiles(analysisRoot, true);
-				const tsFiles = sourceFiles.filter(
-					(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
-				);
-				if (tsFiles.length > 0 && tsFiles.length <= 500) {
-					runtime.cachedProjectIndex = await buildProjectIndex(
+			// ast-grep — export scan for duplicate detection
+			runStartupTask("ast-grep-exports", async () => {
+				if (await astGrepClient.ensureAvailable()) {
+					if (!runtime.isCurrentSession(sessionGeneration)) return;
+					const exports = await astGrepClient.scanExports(
 						analysisRoot,
-						tsFiles,
+						"typescript",
 					);
 					if (!runtime.isCurrentSession(sessionGeneration)) return;
-					await saveIndex(runtime.cachedProjectIndex, analysisRoot);
+					dbg(`session_start exports scan: ${exports.size} functions found`);
+					for (const [name, file] of exports) {
+						runtime.cachedExports.set(name, file);
+					}
+				}
+			});
+
+			// Project index — structural similarity detection
+			runStartupTask("project-index", async () => {
+				const existing = await loadIndex(analysisRoot);
+				if (!runtime.isCurrentSession(sessionGeneration)) return;
+				if (
+					existing &&
+					existing.entries.size > 0 &&
+					(await isIndexFresh(analysisRoot))
+				) {
+					if (!runtime.isCurrentSession(sessionGeneration)) return;
+					runtime.cachedProjectIndex = existing;
 					dbg(
-						`session_start: built project index (${runtime.cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+						`session_start: loaded fresh project index (${existing.entries.size} entries)`,
 					);
 				} else {
-					if (!runtime.isCurrentSession(sessionGeneration)) return;
-					dbg(`session_start: skipped project index (${tsFiles.length} files)`);
+					const sourceFiles = getSourceFiles(analysisRoot, true);
+					const tsFiles = sourceFiles.filter(
+						(f) => f.endsWith(".ts") || f.endsWith(".tsx"),
+					);
+					if (tsFiles.length > 0 && tsFiles.length <= 500) {
+						runtime.cachedProjectIndex = await buildProjectIndex(
+							analysisRoot,
+							tsFiles,
+						);
+						if (!runtime.isCurrentSession(sessionGeneration)) return;
+						await saveIndex(runtime.cachedProjectIndex, analysisRoot);
+						dbg(
+							`session_start: built project index (${runtime.cachedProjectIndex.entries.size} entries from ${tsFiles.length} files)`,
+						);
+					} else {
+						if (!runtime.isCurrentSession(sessionGeneration)) return;
+						dbg(`session_start: skipped project index (${tsFiles.length} files)`);
+					}
 				}
-			}
-		});
+			});
+		}
 	}
 
 	dbg(
