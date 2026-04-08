@@ -63,6 +63,44 @@ async function launchViaPackageManagerWithPolicy(
 	return launchViaPackageManager(packageName, args, options);
 }
 
+function nodeBinCandidates(root: string, baseName: string): string[] {
+	const localBase = path.join(root, "node_modules", ".bin", baseName);
+	if (process.platform === "win32") {
+		return [
+			`${localBase}.cmd`,
+			`${localBase}.ps1`,
+			`${localBase}.exe`,
+			localBase,
+			baseName,
+		];
+	}
+	return [localBase, baseName];
+}
+
+async function launchWithDirectOrPackageManager(
+	directCommands: string[],
+	packageName: string,
+	args: string[],
+	options: { cwd: string; env?: NodeJS.ProcessEnv },
+): Promise<{ process: LSPProcess; source: "direct" | "package-manager" } | undefined> {
+	for (const command of directCommands) {
+		try {
+			const process = await launchLSP(command, args, options);
+			return { process, source: "direct" };
+		} catch (error) {
+			if (!isCommandNotFoundError(error)) {
+				throw error;
+			}
+		}
+	}
+
+	const process = await launchViaPackageManagerWithPolicy(packageName, args, {
+		cwd: options.cwd,
+	});
+	if (!process) return undefined;
+	return { process, source: "package-manager" };
+}
+
 export function PriorityRoot(
 	markerGroups: string[][],
 	excludePatterns?: string[],
@@ -530,17 +568,18 @@ export const RubyServer: LSPServerInfo = {
 				try {
 					return await launchLSP("ruby-lsp", [], { cwd: root });
 				} catch {
-					const fallback = await launchViaPackageManagerWithPolicy(
+					const fallback = await launchWithDirectOrPackageManager(
+						nodeBinCandidates(root, "solargraph"),
 						"solargraph",
 						["stdio"],
 						{ cwd: root },
 					);
 					if (!fallback) throw new Error("ENOENT: command not found");
-					return fallback;
+					return fallback.process;
 				}
 			},
 		);
-		return proc ? { process: proc, source: "package-manager" } : undefined;
+		return proc ? { process: proc, source: "interactive" } : undefined;
 	},
 };
 
@@ -551,14 +590,16 @@ export const PHPServer: LSPServerInfo = {
 	extensions: [".php"],
 	root: createRootDetector(["composer.json", "composer.lock"]),
 	async spawn(root) {
-		const proc = await launchViaPackageManagerWithPolicy(
+		const launched = await launchWithDirectOrPackageManager(
+			nodeBinCandidates(root, "intelephense"),
 			"intelephense",
 			["--stdio"],
 			{ cwd: root },
 		);
-		if (!proc) return undefined;
+		if (!launched) return undefined;
 		return {
-			process: proc,
+			process: launched.process,
+			source: launched.source,
 			initialization: { storagePath: path.join(__dirname, ".intelephense") },
 		};
 	},
@@ -578,7 +619,7 @@ export const CSharpServer: LSPServerInfo = {
 			{ cwd: root },
 			async () => await launchLSP("csharp-ls", [], { cwd: root }),
 		);
-		return proc ? { process: proc, source: "package-manager" } : undefined;
+		return proc ? { process: proc, source: "interactive" } : undefined;
 	},
 };
 
@@ -886,14 +927,14 @@ export const DockerServer: LSPServerInfo = {
 	extensions: [".dockerfile", "Dockerfile"],
 	root: async () => process.cwd(),
 	async spawn() {
-		// Use npx since it's not auto-installed
-		const proc = await launchViaPackageManagerWithPolicy(
+		const launched = await launchWithDirectOrPackageManager(
+			nodeBinCandidates(process.cwd(), "docker-langserver"),
 			"dockerfile-language-server-nodejs",
 			["--stdio"],
 			{ cwd: process.cwd() },
 		);
-		if (!proc) return undefined;
-		return { process: proc };
+		if (!launched) return undefined;
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -943,14 +984,14 @@ export const PrismaServer: LSPServerInfo = {
 	extensions: [".prisma"],
 	root: createRootDetector(["prisma/schema.prisma"]),
 	async spawn(root) {
-		// Use npx since it's not auto-installed
-		const proc = await launchViaPackageManagerWithPolicy(
+		const launched = await launchWithDirectOrPackageManager(
+			nodeBinCandidates(root, "prisma-language-server"),
 			"@prisma/language-server",
 			["--stdio"],
 			{ cwd: root },
 		);
-		if (!proc) return undefined;
-		return { process: proc };
+		if (!launched) return undefined;
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -969,25 +1010,14 @@ export const VueServer: LSPServerInfo = {
 		"yarn.lock",
 	]),
 	async spawn(root) {
-		let proc: LSPProcess | undefined;
-		let source: "direct" | "package-manager" = "direct";
-		try {
-			proc = await launchLSP("vue-language-server", ["--stdio"], {
-				cwd: root,
-			});
-		} catch (error) {
-			if (!isCommandNotFoundError(error)) {
-				throw error;
-			}
-			proc = await launchViaPackageManagerWithPolicy(
-				"@vue/language-server",
-				["--stdio"],
-				{ cwd: root },
-			);
-			source = "package-manager";
-		}
-		if (!proc) return undefined;
-		return { process: proc, source };
+		const launched = await launchWithDirectOrPackageManager(
+			nodeBinCandidates(root, "vue-language-server"),
+			"@vue/language-server",
+			["--stdio"],
+			{ cwd: root },
+		);
+		if (!launched) return undefined;
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1004,25 +1034,14 @@ export const SvelteServer: LSPServerInfo = {
 		"yarn.lock",
 	]),
 	async spawn(root) {
-		let proc: LSPProcess | undefined;
-		let source: "direct" | "package-manager" = "direct";
-		try {
-			proc = await launchLSP("svelteserver", ["--stdio"], {
-				cwd: root,
-			});
-		} catch (error) {
-			if (!isCommandNotFoundError(error)) {
-				throw error;
-			}
-			proc = await launchViaPackageManagerWithPolicy(
-				"svelte-language-server",
-				["--stdio"],
-				{ cwd: root },
-			);
-			source = "package-manager";
-		}
-		if (!proc) return undefined;
-		return { process: proc, source };
+		const launched = await launchWithDirectOrPackageManager(
+			[...nodeBinCandidates(root, "svelteserver"), ...nodeBinCandidates(root, "svelte-language-server")],
+			"svelte-language-server",
+			["--stdio"],
+			{ cwd: root },
+		);
+		if (!launched) return undefined;
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1042,13 +1061,14 @@ export const ESLintServer: LSPServerInfo = {
 	async spawn(root) {
 		// Try via package manager (npx) since it's not auto-installed
 		try {
-			const proc = await launchViaPackageManagerWithPolicy(
+			const launched = await launchWithDirectOrPackageManager(
+				nodeBinCandidates(root, "vscode-eslint-language-server"),
 				"vscode-eslint-language-server",
 				["--stdio"],
 				{ cwd: root },
 			);
-			if (!proc) return undefined;
-			return { process: proc, source: "package-manager" };
+			if (!launched) return undefined;
+			return { process: launched.process, source: launched.source };
 		} catch {
 			// Fall back to global install message
 			console.error(
@@ -1066,14 +1086,14 @@ export const CssServer: LSPServerInfo = {
 	extensions: [".css", ".scss", ".sass", ".less"],
 	root: async () => process.cwd(),
 	async spawn() {
-		// Use npx since it's not auto-installed
-		const proc = await launchViaPackageManagerWithPolicy(
+		const launched = await launchWithDirectOrPackageManager(
+			nodeBinCandidates(process.cwd(), "vscode-css-language-server"),
 			"vscode-css-languageserver",
 			["--stdio"],
 			{ cwd: process.cwd() },
 		);
-		if (!proc) return undefined;
-		return { process: proc, source: "package-manager" };
+		if (!launched) return undefined;
+		return { process: launched.process, source: launched.source };
 	},
 };
 
