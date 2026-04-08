@@ -12,7 +12,9 @@ import type { JscpdClient } from "./jscpd-client.js";
 import type { KnipClient } from "./knip-client.js";
 import {
 	detectProjectLanguageProfile,
+	getDefaultStartupTools,
 	hasLanguage,
+	isLanguageConfigured,
 } from "./language-profile.js";
 import type { MetricsClient } from "./metrics-client.js";
 import {
@@ -149,23 +151,37 @@ export async function handleSessionStart(
 		dbg(`session_start: monorepo analysis root override -> ${analysisRoot}`);
 	}
 
-	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
-		if (hasLanguage(languageProfile, "jsts")) {
-			dbg("session_start: pre-installing TypeScript LSP...");
-			ensureTool("typescript-language-server")
+	const lensLspEnabled = !!getFlag("lens-lsp") && !getFlag("no-lsp");
+	const startupDefaults = getDefaultStartupTools(languageProfile).filter((tool) => {
+		if (
+			(tool === "typescript-language-server" || tool === "pyright") &&
+			!lensLspEnabled
+		) {
+			return false;
+		}
+		if (tool === "ruff" && getFlag("no-autofix-ruff")) {
+			return false;
+		}
+		return true;
+	});
+
+	if (startupDefaults.length > 0) {
+		dbg(`session_start: pre-install defaults -> ${startupDefaults.join(", ")}`);
+		for (const tool of startupDefaults) {
+			ensureTool(tool)
 				.then((toolPath) => {
 					if (toolPath) {
-						dbg(`session_start: TypeScript LSP ready at ${toolPath}`);
+						dbg(`session_start: ${tool} ready at ${toolPath}`);
 					} else {
-						console.error("[lens] TypeScript LSP installation failed");
+						dbg(`session_start: ${tool} installation unavailable`);
 					}
 				})
 				.catch((err) => {
-					console.error("[lens] TypeScript LSP pre-install error:", err);
+					dbg(`session_start: ${tool} pre-install error: ${err}`);
 				});
-		} else {
-			dbg("session_start: skipping TypeScript LSP pre-install (no JS/TS markers)");
 		}
+	} else {
+		dbg("session_start: no language defaults selected for pre-install");
 	}
 
 	{
@@ -248,8 +264,11 @@ export async function handleSessionStart(
 		);
 		dbg(`session_start: skipping TODO scan (${startupScan.reason ?? "unknown"})`);
 	} else {
+		const canRunJsTsHeavyScans =
+			hasLanguage(languageProfile, "jsts") &&
+			isLanguageConfigured(languageProfile, "jsts");
 		const scanNames = ["todo"];
-		if (hasLanguage(languageProfile, "jsts")) {
+		if (canRunJsTsHeavyScans) {
 			scanNames.push("knip", "jscpd", "ast-grep exports", "project index");
 		}
 		dbg(
@@ -270,8 +289,10 @@ export async function handleSessionStart(
 			);
 		});
 
-		if (!hasLanguage(languageProfile, "jsts")) {
-			dbg("session_start: skipping JS/TS startup scans (no JS/TS files detected)");
+		if (!canRunJsTsHeavyScans) {
+			dbg(
+				"session_start: skipping JS/TS startup scans (requires JS/TS language + project config)",
+			);
 		} else {
 			// Knip — dead code / unused exports
 			runStartupTask("knip", async () => {

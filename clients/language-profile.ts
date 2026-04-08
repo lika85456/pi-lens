@@ -40,10 +40,13 @@ const PROJECT_MARKERS_BY_KIND: Partial<Record<FileKind, readonly string[]>> = {
 	go: ["go.mod"],
 	rust: ["Cargo.toml"],
 	ruby: ["Gemfile", "Rakefile"],
+	yaml: [".yamllint", "yamllint.yaml", "yamllint.yml", "pyproject.toml"],
+	sql: [".sqlfluff", "pyproject.toml"],
 };
 
 export interface ProjectLanguageProfile {
 	present: Record<FileKind, boolean>;
+	configured: Partial<Record<FileKind, boolean>>;
 	counts: Partial<Record<FileKind, number>>;
 	detectedKinds: FileKind[];
 }
@@ -56,12 +59,14 @@ export function detectProjectLanguageProfile(
 		SUPPORTED_FILE_KINDS.map((kind) => [kind, false]),
 	) as Record<FileKind, boolean>;
 	const counts: Partial<Record<FileKind, number>> = {};
+	const configured: Partial<Record<FileKind, boolean>> = {};
 
 	for (const [kind, markers] of Object.entries(PROJECT_MARKERS_BY_KIND)) {
 		if (!markers) continue;
 		for (const marker of markers) {
 			if (fs.existsSync(path.join(projectRoot, marker))) {
 				present[kind as FileKind] = true;
+				configured[kind as FileKind] = true;
 				break;
 			}
 		}
@@ -87,6 +92,7 @@ export function detectProjectLanguageProfile(
 
 	return {
 		present,
+		configured,
 		counts,
 		detectedKinds,
 	};
@@ -104,4 +110,36 @@ export function hasAnyLanguage(
 	kinds: readonly FileKind[],
 ): boolean {
 	return kinds.some((kind) => hasLanguage(profile, kind));
+}
+
+export function isLanguageConfigured(
+	profile: ProjectLanguageProfile,
+	kind: FileKind,
+): boolean {
+	return !!profile.configured[kind];
+}
+
+export function getDefaultStartupTools(
+	profile: ProjectLanguageProfile,
+): string[] {
+	const tools = new Set<string>();
+
+	if (hasLanguage(profile, "jsts")) {
+		tools.add("typescript-language-server");
+	}
+
+	if (hasLanguage(profile, "python")) {
+		tools.add("pyright");
+		tools.add("ruff");
+	}
+
+	if (hasLanguage(profile, "yaml") && isLanguageConfigured(profile, "yaml")) {
+		tools.add("yamllint");
+	}
+
+	if (hasLanguage(profile, "sql") && isLanguageConfigured(profile, "sql")) {
+		tools.add("sqlfluff");
+	}
+
+	return [...tools];
 }
