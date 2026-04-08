@@ -101,6 +101,50 @@ async function launchWithDirectOrPackageManager(
 	return { process, source: "package-manager" };
 }
 
+type InitializationConfig = Record<string, unknown>;
+
+interface InteractiveServerSpec {
+	id: string;
+	name: string;
+	extensions: string[];
+	root: RootFunction;
+	language: string;
+	command: string | ((root: string) => string);
+	args?: string[] | ((root: string) => string[]);
+	initialization?: InitializationConfig | ((root: string) => InitializationConfig);
+}
+
+function createInteractiveServer(spec: InteractiveServerSpec): LSPServerInfo {
+	return {
+		id: spec.id,
+		name: spec.name,
+		installPolicy: "interactive",
+		extensions: spec.extensions,
+		root: spec.root,
+		async spawn(root) {
+			const command =
+				typeof spec.command === "function" ? spec.command(root) : spec.command;
+			const args =
+				typeof spec.args === "function"
+					? spec.args(root)
+					: spec.args || [];
+			const proc = await spawnWithInteractiveInstall(
+				spec.language,
+				command,
+				args,
+				{ cwd: root },
+				async () => await launchLSP(command, args, { cwd: root }),
+			);
+			if (!proc) return undefined;
+			const initialization =
+				typeof spec.initialization === "function"
+					? spec.initialization(root)
+					: spec.initialization;
+			return { process: proc, source: "interactive", initialization };
+		},
+	};
+}
+
 export function PriorityRoot(
 	markerGroups: string[][],
 	excludePatterns?: string[],
@@ -605,138 +649,73 @@ export const PHPServer: LSPServerInfo = {
 	},
 };
 
-export const CSharpServer: LSPServerInfo = {
+export const CSharpServer = createInteractiveServer({
 	id: "csharp",
 	name: "csharp-ls",
-	installPolicy: "interactive",
 	extensions: [".cs"],
 	root: createRootDetector([".sln", ".csproj", ".slnx"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"csharp",
-			"csharp-ls",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("csharp-ls", [], { cwd: root }),
-		);
-		return proc ? { process: proc, source: "interactive" } : undefined;
-	},
-};
+	language: "csharp",
+	command: "csharp-ls",
+});
 
-export const FSharpServer: LSPServerInfo = {
+export const FSharpServer = createInteractiveServer({
 	id: "fsharp",
 	name: "FSAutocomplete",
-	installPolicy: "interactive",
 	extensions: [".fs", ".fsi", ".fsx"],
 	root: createRootDetector([".sln", ".fsproj"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"fsharp",
-			"fsautocomplete",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("fsautocomplete", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "fsharp",
+	command: "fsautocomplete",
+});
 
-export const JavaServer: LSPServerInfo = {
+export const JavaServer = createInteractiveServer({
 	id: "java",
 	name: "JDT Language Server",
-	installPolicy: "interactive",
 	extensions: [".java"],
 	root: createRootDetector(["pom.xml", "build.gradle", ".classpath"]),
-	async spawn(root) {
-		const jdtlsPath = process.env.JDTLS_PATH || "jdtls";
-		const proc = await spawnWithInteractiveInstall(
-			"java",
-			jdtlsPath,
-			[],
-			{ cwd: root },
-			async () => await launchLSP(jdtlsPath, [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "java",
+	command: () => process.env.JDTLS_PATH || "jdtls",
+});
 
-export const KotlinServer: LSPServerInfo = {
+export const KotlinServer = createInteractiveServer({
 	id: "kotlin",
 	name: "Kotlin Language Server",
-	installPolicy: "interactive",
 	extensions: [".kt", ".kts"],
 	root: createRootDetector(["build.gradle.kts", "build.gradle", "pom.xml"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"kotlin",
-			"kotlin-language-server",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("kotlin-language-server", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "kotlin",
+	command: "kotlin-language-server",
+});
 
-export const SwiftServer: LSPServerInfo = {
+export const SwiftServer = createInteractiveServer({
 	id: "swift",
 	name: "SourceKit-LSP",
-	installPolicy: "interactive",
 	extensions: [".swift"],
 	root: createRootDetector(["Package.swift"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"swift",
-			"sourcekit-lsp",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("sourcekit-lsp", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "swift",
+	command: "sourcekit-lsp",
+});
 
-export const DartServer: LSPServerInfo = {
+export const DartServer = createInteractiveServer({
 	id: "dart",
 	name: "Dart Analysis Server",
-	installPolicy: "interactive",
 	extensions: [".dart"],
 	root: createRootDetector(["pubspec.yaml"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"dart",
-			"dart",
-			["language-server", "--protocol=lsp"],
-			{ cwd: root },
-			async () =>
-				await launchLSP("dart", ["language-server", "--protocol=lsp"], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "dart",
+	command: "dart",
+	args: ["language-server", "--protocol=lsp"],
+});
 
-export const LuaServer: LSPServerInfo = {
+export const LuaServer = createInteractiveServer({
 	id: "lua",
 	name: "Lua Language Server",
-	installPolicy: "interactive",
 	extensions: [".lua"],
 	root: createRootDetector([".luarc.json", ".luacheckrc"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"lua",
-			"lua-language-server",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("lua-language-server", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "lua",
+	command: "lua-language-server",
+});
 
-export const CppServer: LSPServerInfo = {
+export const CppServer = createInteractiveServer({
 	id: "cpp",
 	name: "clangd",
-	installPolicy: "interactive",
 	extensions: [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"],
 	root: createRootDetector([
 		"compile_commands.json",
@@ -744,162 +723,85 @@ export const CppServer: LSPServerInfo = {
 		"CMakeLists.txt",
 		"Makefile",
 	]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"cpp",
-			"clangd",
-			["--background-index"],
-			{ cwd: root },
-			async () => await launchLSP("clangd", ["--background-index"], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "cpp",
+	command: "clangd",
+	args: ["--background-index"],
+});
 
-export const ZigServer: LSPServerInfo = {
+export const ZigServer = createInteractiveServer({
 	id: "zig",
 	name: "ZLS",
-	installPolicy: "interactive",
 	extensions: [".zig", ".zon"],
 	root: createRootDetector(["build.zig"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"zig",
-			"zls",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("zls", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "zig",
+	command: "zls",
+});
 
-export const HaskellServer: LSPServerInfo = {
+export const HaskellServer = createInteractiveServer({
 	id: "haskell",
 	name: "Haskell Language Server",
-	installPolicy: "interactive",
 	extensions: [".hs", ".lhs"],
 	root: createRootDetector(["stack.yaml", "cabal.project", "*.cabal"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"haskell",
-			"haskell-language-server-wrapper",
-			["--lsp"],
-			{ cwd: root },
-			async () =>
-				await launchLSP("haskell-language-server-wrapper", ["--lsp"], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "haskell",
+	command: "haskell-language-server-wrapper",
+	args: ["--lsp"],
+});
 
-export const ElixirServer: LSPServerInfo = {
+export const ElixirServer = createInteractiveServer({
 	id: "elixir",
 	name: "ElixirLS",
-	installPolicy: "interactive",
 	extensions: [".ex", ".exs"],
 	root: createRootDetector(["mix.exs"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"elixir",
-			"elixir-ls",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("elixir-ls", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "elixir",
+	command: "elixir-ls",
+});
 
-export const GleamServer: LSPServerInfo = {
+export const GleamServer = createInteractiveServer({
 	id: "gleam",
 	name: "Gleam LSP",
-	installPolicy: "interactive",
 	extensions: [".gleam"],
 	root: createRootDetector(["gleam.toml"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"gleam",
-			"gleam",
-			["lsp"],
-			{ cwd: root },
-			async () => await launchLSP("gleam", ["lsp"], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "gleam",
+	command: "gleam",
+	args: ["lsp"],
+});
 
-export const OCamlServer: LSPServerInfo = {
+export const OCamlServer = createInteractiveServer({
 	id: "ocaml",
 	name: "ocamllsp",
-	installPolicy: "interactive",
 	extensions: [".ml", ".mli"],
 	root: createRootDetector(["dune-project", "opam"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"ocaml",
-			"ocamllsp",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("ocamllsp", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "ocaml",
+	command: "ocamllsp",
+});
 
-export const ClojureServer: LSPServerInfo = {
+export const ClojureServer = createInteractiveServer({
 	id: "clojure",
 	name: "Clojure LSP",
-	installPolicy: "interactive",
 	extensions: [".clj", ".cljs", ".cljc", ".edn"],
 	root: createRootDetector(["deps.edn", "project.clj"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"clojure",
-			"clojure-lsp",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("clojure-lsp", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "clojure",
+	command: "clojure-lsp",
+});
 
-export const TerraformServer: LSPServerInfo = {
+export const TerraformServer = createInteractiveServer({
 	id: "terraform",
 	name: "Terraform LSP",
-	installPolicy: "interactive",
 	extensions: [".tf", ".tfvars"],
 	root: createRootDetector([".terraform.lock.hcl"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"terraform",
-			"terraform-ls",
-			["serve"],
-			{ cwd: root },
-			async () => await launchLSP("terraform-ls", ["serve"], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "terraform",
+	command: "terraform-ls",
+	args: ["serve"],
+});
 
-export const NixServer: LSPServerInfo = {
+export const NixServer = createInteractiveServer({
 	id: "nix",
 	name: "nixd",
-	installPolicy: "interactive",
 	extensions: [".nix"],
 	root: createRootDetector(["flake.nix"]),
-	async spawn(root) {
-		const proc = await spawnWithInteractiveInstall(
-			"nix",
-			"nixd",
-			[],
-			{ cwd: root },
-			async () => await launchLSP("nixd", [], { cwd: root }),
-		);
-		return proc ? { process: proc } : undefined;
-	},
-};
+	language: "nix",
+	command: "nixd",
+});
 
 export const BashServer: LSPServerInfo = {
 	id: "bash",
