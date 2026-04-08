@@ -17,6 +17,7 @@
 import * as path from "node:path";
 import type { FileKind } from "../file-kinds.js";
 import { detectFileKind } from "../file-kinds.js";
+import { getPrimaryDispatchGroup } from "../language-policy.js";
 import { resolveLanguageRootForFile } from "../language-profile.js";
 import { isTestFile } from "../file-utils.js";
 import { logLatency } from "../latency-logger.js";
@@ -328,6 +329,40 @@ export interface DispatchLatencyReport {
 	warnings: number;
 }
 
+function buildCoverageNotice(
+	ctx: DispatchContext,
+	runnerLatencies: RunnerLatency[],
+): Diagnostic | undefined {
+	if (!ctx.kind) return undefined;
+	const lspEnabled = !!ctx.pi.getFlag("lens-lsp") && !ctx.pi.getFlag("no-lsp");
+	const primary = getPrimaryDispatchGroup(ctx.kind, lspEnabled);
+	if (!primary || primary.runnerIds.length === 0) return undefined;
+
+	const relevant = runnerLatencies.filter((r) =>
+		primary.runnerIds.includes(r.runnerId),
+	);
+	if (relevant.length === 0) return undefined;
+
+	const hasCoverage = relevant.some(
+		(r) => r.status === "succeeded" || r.status === "failed",
+	);
+	if (hasCoverage) return undefined;
+
+	const allSkipped = relevant.every(
+		(r) => r.status === "skipped" || r.status === "when_skipped",
+	);
+	if (!allSkipped) return undefined;
+
+	return {
+		id: `coverage-unavailable:${ctx.kind}:${path.basename(ctx.filePath)}`,
+		message: `Pi-lens analysis unavailable. Tools for ${ctx.kind} not installed.`,
+		filePath: ctx.filePath,
+		severity: "warning",
+		semantic: "warning",
+		tool: "pi-lens",
+	};
+}
+
 const latencyReports: DispatchLatencyReport[] = [];
 
 export function getLatencyReports(): DispatchLatencyReport[] {
@@ -609,11 +644,16 @@ export async function dispatchForFile(
 	const fixedItems = visibleDiagnostics.filter((d) => d.semantic === "fixed");
 	const inlineBlockers = blockers.filter((d) => d.tool !== "similarity");
 	const inlineFixed = fixedItems.filter((d) => d.tool !== "similarity");
+	const coverageNotice = buildCoverageNotice(ctx, runnerLatencies);
 
 	// Format output — only blocking issues shown inline
 	// Warnings tracked but not shown (noise) — surfaced via /lens-booboo
 	let output = formatDiagnostics(inlineBlockers, "blocking");
 	output += formatDiagnostics(inlineFixed, "fixed");
+	if (coverageNotice) {
+		output += formatDiagnostics([coverageNotice], "warning", 1);
+		warnings.push(coverageNotice);
+	}
 
 	// Generate and store latency report
 	const overallEnd = Date.now();

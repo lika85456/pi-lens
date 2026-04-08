@@ -156,6 +156,57 @@ describe("Dispatch Flow", () => {
 			expect(result.blockers).toHaveLength(0);
 		});
 
+		it("shows non-blocking analysis-unavailable notice when semantic tools are missing", async () => {
+			registerRunner({
+				id: "lsp",
+				appliesTo: ["go"],
+				priority: 4,
+				enabledByDefault: true,
+				async run() {
+					return { status: "skipped", diagnostics: [], semantic: "none" };
+				},
+			});
+			registerRunner({
+				id: "go-vet",
+				appliesTo: ["go"],
+				priority: 12,
+				enabledByDefault: true,
+				async run() {
+					return { status: "skipped", diagnostics: [], semantic: "none" };
+				},
+			});
+			registerRunner({
+				id: "golangci-lint",
+				appliesTo: ["go"],
+				priority: 14,
+				enabledByDefault: true,
+				async run() {
+					return { status: "skipped", diagnostics: [], semantic: "none" };
+				},
+			});
+			registerRunner({
+				id: "tree-sitter",
+				appliesTo: ["go"],
+				priority: 20,
+				enabledByDefault: true,
+				async run() {
+					return { status: "succeeded", diagnostics: [], semantic: "none" };
+				},
+			});
+
+			const ctx = createMockContext("main.go");
+			const groups: RunnerGroup[] = [
+				{ mode: "all", runnerIds: ["lsp", "go-vet", "golangci-lint", "tree-sitter"] },
+			];
+
+			const result = await dispatchForFile(ctx, groups);
+
+			expect(result.hasBlockers).toBe(false);
+			expect(result.output).toContain(
+				"Pi-lens analysis unavailable. Tools for go not installed.",
+			);
+		});
+
 		it("should execute multiple runners in group", async () => {
 			registerRunner(createWarningRunner("runner-1"));
 			registerRunner(createFailingRunner("runner-2"));
