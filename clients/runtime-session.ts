@@ -54,6 +54,24 @@ interface SessionStartDeps {
 	resetLSPService: () => void;
 }
 
+const TS_JS_FILE_PATTERN = /\.(?:ts|tsx|cts|mts|js|jsx|cjs|mjs)$/i;
+const TS_JS_MARKER_FILES = ["package.json", "tsconfig.json", "jsconfig.json"];
+
+function shouldPreinstallTypeScriptLsp(projectRoot: string): boolean {
+	for (const marker of TS_JS_MARKER_FILES) {
+		if (nodeFs.existsSync(path.join(projectRoot, marker))) {
+			return true;
+		}
+	}
+
+	try {
+		const sourceFiles = getSourceFiles(projectRoot, true);
+		return sourceFiles.some((file) => TS_JS_FILE_PATTERN.test(file));
+	} catch {
+		return false;
+	}
+}
+
 export async function handleSessionStart(
 	deps: SessionStartDeps,
 ): Promise<void> {
@@ -128,21 +146,6 @@ export async function handleSessionStart(
 		}
 	}
 
-	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
-		dbg("session_start: pre-installing TypeScript LSP...");
-		ensureTool("typescript-language-server")
-			.then((toolPath) => {
-				if (toolPath) {
-					dbg(`session_start: TypeScript LSP ready at ${toolPath}`);
-				} else {
-					console.error("[lens] TypeScript LSP installation failed");
-				}
-			})
-			.catch((err) => {
-				console.error("[lens] TypeScript LSP pre-install error:", err);
-			});
-	}
-
 	const cwd = ctxCwd ?? process.cwd();
 	const startupScan = resolveStartupScanContext(cwd);
 	const scanRoot = startupScan.projectRoot ?? cwd;
@@ -154,6 +157,25 @@ export async function handleSessionStart(
 	);
 	if (analysisRoot !== cwd) {
 		dbg(`session_start: monorepo analysis root override -> ${analysisRoot}`);
+	}
+
+	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
+		if (shouldPreinstallTypeScriptLsp(analysisRoot)) {
+			dbg("session_start: pre-installing TypeScript LSP...");
+			ensureTool("typescript-language-server")
+				.then((toolPath) => {
+					if (toolPath) {
+						dbg(`session_start: TypeScript LSP ready at ${toolPath}`);
+					} else {
+						console.error("[lens] TypeScript LSP installation failed");
+					}
+				})
+				.catch((err) => {
+					console.error("[lens] TypeScript LSP pre-install error:", err);
+				});
+		} else {
+			dbg("session_start: skipping TypeScript LSP pre-install (no JS/TS markers)");
+		}
 	}
 
 	{
