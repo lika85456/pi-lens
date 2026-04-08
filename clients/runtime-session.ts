@@ -10,6 +10,10 @@ import { getKnipIgnorePatterns } from "./file-utils.js";
 import type { GoClient } from "./go-client.js";
 import type { JscpdClient } from "./jscpd-client.js";
 import type { KnipClient } from "./knip-client.js";
+import {
+	detectProjectLanguageProfile,
+	hasLanguage,
+} from "./language-profile.js";
 import type { MetricsClient } from "./metrics-client.js";
 import {
 	buildProjectIndex,
@@ -52,48 +56,6 @@ interface SessionStartDeps {
 	cleanStaleTsBuildInfo: (cwd: string) => string[];
 	resetDispatchBaselines: () => void;
 	resetLSPService: () => void;
-}
-
-const TS_JS_FILE_PATTERN = /\.(?:ts|tsx|cts|mts|js|jsx|cjs|mjs)$/i;
-const PYTHON_FILE_PATTERN = /\.(?:py|pyi)$/i;
-const TS_JS_MARKER_FILES = ["package.json", "tsconfig.json", "jsconfig.json"];
-
-interface ProjectLanguageProfile {
-	hasJsTs: boolean;
-	hasPython: boolean;
-}
-
-function detectProjectLanguageProfile(projectRoot: string): ProjectLanguageProfile {
-	const profile: ProjectLanguageProfile = {
-		hasJsTs: false,
-		hasPython: false,
-	};
-
-	for (const marker of TS_JS_MARKER_FILES) {
-		if (nodeFs.existsSync(path.join(projectRoot, marker))) {
-			profile.hasJsTs = true;
-			break;
-		}
-	}
-
-	let sourceFiles: string[] = [];
-	try {
-		sourceFiles = getSourceFiles(projectRoot, true);
-	} catch {
-		return profile;
-	}
-
-	for (const file of sourceFiles) {
-		if (!profile.hasJsTs && TS_JS_FILE_PATTERN.test(file)) {
-			profile.hasJsTs = true;
-		}
-		if (!profile.hasPython && PYTHON_FILE_PATTERN.test(file)) {
-			profile.hasPython = true;
-		}
-		if (profile.hasJsTs && profile.hasPython) break;
-	}
-
-	return profile;
 }
 
 export async function handleSessionStart(
@@ -181,14 +143,14 @@ export async function handleSessionStart(
 		`session_start scan root: ${scanRoot} (warmCaches=${startupScan.canWarmCaches}${startupScan.reason ? `, reason=${startupScan.reason}` : ""})`,
 	);
 	dbg(
-		`session_start language profile: js_ts=${languageProfile.hasJsTs}, python=${languageProfile.hasPython}`,
+		`session_start language profile: ${languageProfile.detectedKinds.join(", ") || "none"}`,
 	);
 	if (analysisRoot !== cwd) {
 		dbg(`session_start: monorepo analysis root override -> ${analysisRoot}`);
 	}
 
 	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
-		if (languageProfile.hasJsTs) {
+		if (hasLanguage(languageProfile, "jsts")) {
 			dbg("session_start: pre-installing TypeScript LSP...");
 			ensureTool("typescript-language-server")
 				.then((toolPath) => {
@@ -287,7 +249,7 @@ export async function handleSessionStart(
 		dbg(`session_start: skipping TODO scan (${startupScan.reason ?? "unknown"})`);
 	} else {
 		const scanNames = ["todo"];
-		if (languageProfile.hasJsTs) {
+		if (hasLanguage(languageProfile, "jsts")) {
 			scanNames.push("knip", "jscpd", "ast-grep exports", "project index");
 		}
 		dbg(
@@ -308,7 +270,7 @@ export async function handleSessionStart(
 			);
 		});
 
-		if (!languageProfile.hasJsTs) {
+		if (!hasLanguage(languageProfile, "jsts")) {
 			dbg("session_start: skipping JS/TS startup scans (no JS/TS files detected)");
 		} else {
 			// Knip — dead code / unused exports
