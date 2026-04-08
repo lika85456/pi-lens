@@ -163,6 +163,7 @@ export async function handleSessionStart(
 		}
 	}
 
+	const hasWorkspaceCwd = typeof ctxCwd === "string" && ctxCwd.length > 0;
 	const cwd = ctxCwd ?? process.cwd();
 	const startupScan = resolveStartupScanContext(cwd);
 	const scanRoot = startupScan.projectRoot ?? cwd;
@@ -274,9 +275,13 @@ export async function handleSessionStart(
 		dbg("session_start: no project rules found");
 	}
 
-	const installHints = getLanguageInstallHints(languageProfile);
-	if (installHints.length > 0) {
-		startupNotes.push(`🧰 Tooling hints: ${installHints.join(" ")}`);
+	if (hasWorkspaceCwd) {
+		const installHints = getLanguageInstallHints(languageProfile);
+		if (installHints.length > 0) {
+			startupNotes.push(`🧰 Tooling hints: ${installHints.join(" ")}`);
+		}
+	} else {
+		dbg("session_start: skipping tooling hints (workspace cwd unavailable)");
 	}
 
 	if (agentStartupGuidance.length > 0) {
