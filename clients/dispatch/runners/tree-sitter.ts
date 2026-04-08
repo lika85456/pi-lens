@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { RuleCache } from "../../cache/rule-cache.js";
 import { TreeSitterClient } from "../../tree-sitter-client.js";
+import { logTreeSitter } from "../../tree-sitter-logger.js";
 import { classifyDefect } from "../diagnostic-taxonomy.js";
 import {
 	queryLoader,
@@ -78,12 +79,25 @@ const treeSitterRunner: RunnerDefinition = {
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		// Use singleton client — WASM must never be re-initialized after first call
 		const client = getSharedClient();
+		logTreeSitter({ phase: "runner_start", filePath: ctx.filePath });
 		if (!client.isAvailable()) {
+			logTreeSitter({
+				phase: "runner_skip",
+				filePath: ctx.filePath,
+				reason: "client_unavailable",
+				status: "skipped",
+			});
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
 		const initialized = await client.init();
 		if (!initialized) {
+			logTreeSitter({
+				phase: "runner_skip",
+				filePath: ctx.filePath,
+				reason: "client_init_failed",
+				status: "skipped",
+			});
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
@@ -106,6 +120,12 @@ const treeSitterRunner: RunnerDefinition = {
 		};
 		const languageId = EXT_TO_LANG[ext];
 		if (!languageId) {
+			logTreeSitter({
+				phase: "runner_skip",
+				filePath: ctx.filePath,
+				reason: `unsupported_extension:${ext}`,
+				status: "skipped",
+			});
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
@@ -132,8 +152,10 @@ const treeSitterRunner: RunnerDefinition = {
 
 		// Try cache
 		const cached = cache.get(ruleFiles);
+		let cacheHit = false;
 		if (cached) {
 			// Use cached queries
+			cacheHit = true;
 			languageQueries = cached.queries.map(
 				(q) =>
 					({
@@ -173,6 +195,16 @@ const treeSitterRunner: RunnerDefinition = {
 		}
 
 		if (languageQueries.length === 0) {
+			logTreeSitter({
+				phase: "runner_complete",
+				filePath,
+				languageId,
+				status: "succeeded",
+				diagnostics: 0,
+				blocking: 0,
+				queryCount: 0,
+				effectiveQueryCount: 0,
+			});
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
@@ -185,6 +217,16 @@ const treeSitterRunner: RunnerDefinition = {
 							SILENT_ERROR_QUERY_IDS.has(q.id)),
 				)
 			: languageQueries;
+
+		logTreeSitter({
+			phase: "queries_loaded",
+			filePath,
+			languageId,
+			queryCount: languageQueries.length,
+			effectiveQueryCount: effectiveQueries.length,
+			cacheHit,
+			metadata: { blockingOnly: !!ctx.blockingOnly },
+		});
 
 		const diagnostics: Diagnostic[] = [];
 
@@ -244,15 +286,45 @@ const treeSitterRunner: RunnerDefinition = {
 			} catch (err) {
 				// Individual query failure shouldn't stop other queries
 				console.error(`[tree-sitter] Query ${query.id} failed:`, err);
+				logTreeSitter({
+					phase: "query_error",
+					filePath,
+					languageId,
+					queryId: query.id,
+					error: err instanceof Error ? err.message : String(err),
+				});
 			}
 		}
 
 		if (diagnostics.length === 0) {
+			logTreeSitter({
+				phase: "runner_complete",
+				filePath,
+				languageId,
+				status: "succeeded",
+				diagnostics: 0,
+				blocking: 0,
+				queryCount: languageQueries.length,
+				effectiveQueryCount: effectiveQueries.length,
+			});
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
 		// Check if any blocking issues
 		const hasBlocking = diagnostics.some((d) => d.semantic === "blocking");
+		const blockingCount = diagnostics.filter(
+			(d) => d.semantic === "blocking",
+		).length;
+		logTreeSitter({
+			phase: "runner_complete",
+			filePath,
+			languageId,
+			status: hasBlocking ? "failed" : "succeeded",
+			diagnostics: diagnostics.length,
+			blocking: blockingCount,
+			queryCount: languageQueries.length,
+			effectiveQueryCount: effectiveQueries.length,
+		});
 
 		return {
 			status: hasBlocking ? "failed" : "succeeded",
