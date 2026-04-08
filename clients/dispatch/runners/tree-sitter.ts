@@ -29,9 +29,14 @@ import type {
 let _sharedClient: TreeSitterClient | null = null;
 const entitySnapshotByFile = new Map<string, Map<string, string>>();
 const blastFileCache = new Map<string, { expiresAt: number; files: string[] }>();
+const blastCooldownByFile = new Map<string, number>();
 const BLAST_CACHE_TTL_MS = 30_000;
 const MAX_BLAST_FILES = 300;
 const MAX_BLAST_ENTITIES = 8;
+const BLAST_MAX_FILE_BYTES = 128 * 1024;
+const BLAST_MAX_TOTAL_BYTES = 2 * 1024 * 1024;
+const BLAST_MAX_ELAPSED_MS = 120;
+const BLAST_COOLDOWN_MS = 5_000;
 
 interface EntityQueryDef {
 	id: string;
@@ -226,9 +231,26 @@ function computeBlastRadius(
 	entityNames: string[],
 	filePath: string,
 	cwd: string,
-): Array<{ entity: string; dependentFiles: number; references: number }> {
+): {
+	entities: Array<{ entity: string; dependentFiles: number; references: number }>;
+	scannedFiles: number;
+	scannedBytes: number;
+	totalCandidates: number;
+	truncated: boolean;
+	elapsedMs: number;
+} {
+	const startedAt = Date.now();
 	const limited = entityNames.slice(0, MAX_BLAST_ENTITIES);
-	if (limited.length === 0) return [];
+	if (limited.length === 0) {
+		return {
+			entities: [],
+			scannedFiles: 0,
+			scannedBytes: 0,
+			totalCandidates: 0,
+			truncated: false,
+			elapsedMs: 0,
+		};
+	}
 
 	const regexByEntity = new Map(
 		limited.map((name) => [name, new RegExp(`\\b${escapeRegex(name)}\\b`, "g")]),
@@ -237,15 +259,37 @@ function computeBlastRadius(
 	const stats = new Map(
 		limited.map((name) => [name, { dependentFiles: 0, references: 0 }]),
 	);
+	let scannedFiles = 0;
+	let scannedBytes = 0;
+	let truncated = false;
 
 	for (const candidate of files) {
+		if (Date.now() - startedAt > BLAST_MAX_ELAPSED_MS) {
+			truncated = true;
+			break;
+		}
+
 		if (path.resolve(candidate) === path.resolve(filePath)) continue;
+		let size = 0;
+		try {
+			size = nodeFs.statSync(candidate).size;
+		} catch {
+			continue;
+		}
+		if (size > BLAST_MAX_FILE_BYTES) continue;
+		if (scannedBytes + size > BLAST_MAX_TOTAL_BYTES) {
+			truncated = true;
+			break;
+		}
+
 		let content = "";
 		try {
 			content = fs.readFileSync(candidate, "utf-8");
 		} catch {
 			continue;
 		}
+		scannedFiles += 1;
+		scannedBytes += size;
 
 		for (const [name, regex] of regexByEntity.entries()) {
 			const matches = content.match(regex);
@@ -257,10 +301,19 @@ function computeBlastRadius(
 		}
 	}
 
-	return limited
+	const entities = limited
 		.map((name) => ({ entity: name, ...stats.get(name)! }))
 		.sort((a, b) => b.dependentFiles - a.dependentFiles)
 		.slice(0, 5);
+
+	return {
+		entities,
+		scannedFiles,
+		scannedBytes,
+		totalCandidates: files.length,
+		truncated,
+		elapsedMs: Date.now() - startedAt,
+	};
 }
 
 const SILENT_ERROR_QUERY_IDS = new Set([
@@ -554,13 +607,29 @@ const treeSitterRunner: RunnerDefinition = {
 						},
 					});
 
-					const blastRadius = computeBlastRadius(changedNames, filePath, ctx.cwd);
-					if (blastRadius.length > 0) {
+					const lastBlast = blastCooldownByFile.get(filePath) ?? 0;
+					if (Date.now() - lastBlast < BLAST_COOLDOWN_MS) {
 						logTreeSitter({
 							phase: "blast_radius",
 							filePath,
 							languageId,
-							metadata: { entities: blastRadius, scannedFiles: getBlastFiles(ctx.cwd).length },
+							metadata: { skipped: "cooldown", cooldownMs: BLAST_COOLDOWN_MS },
+						});
+					} else {
+						blastCooldownByFile.set(filePath, Date.now());
+						const blastRadius = computeBlastRadius(changedNames, filePath, ctx.cwd);
+						logTreeSitter({
+							phase: "blast_radius",
+							filePath,
+							languageId,
+							metadata: {
+								entities: blastRadius.entities,
+								scannedFiles: blastRadius.scannedFiles,
+								scannedBytes: blastRadius.scannedBytes,
+								totalCandidates: blastRadius.totalCandidates,
+								truncated: blastRadius.truncated,
+								elapsedMs: blastRadius.elapsedMs,
+							},
 						});
 					}
 				}
@@ -605,14 +674,31 @@ const treeSitterRunner: RunnerDefinition = {
 					},
 				});
 
-				const blastRadius = computeBlastRadius(changedNames, filePath, ctx.cwd);
-				if (blastRadius.length > 0) {
+				const lastBlast = blastCooldownByFile.get(filePath) ?? 0;
+				if (Date.now() - lastBlast < BLAST_COOLDOWN_MS) {
 					logTreeSitter({
 						phase: "blast_radius",
 						filePath,
 						languageId,
-						metadata: { entities: blastRadius, scannedFiles: getBlastFiles(ctx.cwd).length },
+						metadata: { skipped: "cooldown", cooldownMs: BLAST_COOLDOWN_MS },
 					});
+				} else {
+					blastCooldownByFile.set(filePath, Date.now());
+					const blastRadius = computeBlastRadius(changedNames, filePath, ctx.cwd);
+					logTreeSitter({
+						phase: "blast_radius",
+						filePath,
+						languageId,
+						metadata: {
+							entities: blastRadius.entities,
+							scannedFiles: blastRadius.scannedFiles,
+							scannedBytes: blastRadius.scannedBytes,
+							totalCandidates: blastRadius.totalCandidates,
+							truncated: blastRadius.truncated,
+							elapsedMs: blastRadius.elapsedMs,
+						},
+					});
+				}
 				}
 			}
 		} catch {}
