@@ -173,13 +173,16 @@ export async function handleSessionStart(
 	const cwd = ctxCwd ?? process.cwd();
 	const startupScan = resolveStartupScanContext(cwd);
 	const scanRoot = startupScan.projectRoot ?? cwd;
-	const analysisRoot = scanRoot;
-	runtime.projectRoot = scanRoot;
+	const useScanRootForSignals =
+		startupScan.canWarmCaches || startupScan.reason === "too-many-source-files";
+	const analysisRoot = useScanRootForSignals ? scanRoot : cwd;
+	runtime.projectRoot = analysisRoot;
 	const languageProfile = detectProjectLanguageProfile(analysisRoot);
 	dbg(`session_start cwd: ${cwd}`);
 	dbg(
 		`session_start scan root: ${scanRoot} (warmCaches=${startupScan.canWarmCaches}${startupScan.reason ? `, reason=${startupScan.reason}` : ""})`,
 	);
+	dbg(`session_start analysis root: ${analysisRoot}`);
 	dbg(
 		`session_start language profile: ${languageProfile.detectedKinds.join(", ") || "none"}`,
 	);
@@ -187,7 +190,7 @@ export async function handleSessionStart(
 		`session_start language counts: ${JSON.stringify(languageProfile.counts)} configured=${JSON.stringify(languageProfile.configured)}`,
 	);
 	dbg(`session_start workspace cwd available: ${hasWorkspaceCwd}`);
-	if (analysisRoot !== cwd) {
+	if (useScanRootForSignals && analysisRoot !== cwd) {
 		dbg(`session_start: monorepo analysis root override -> ${analysisRoot}`);
 	}
 
