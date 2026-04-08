@@ -175,6 +175,8 @@ const TOOLS: ToolDefinition[] = [
 	},
 ];
 
+const ensureInFlight = new Map<string, Promise<string | undefined>>();
+
 // --- Check Functions ---
 
 /**
@@ -602,14 +604,26 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
 		return existingPath;
 	}
 
-	// Try to install
-	const installed = await installTool(toolId);
-	if (!installed) {
-		return undefined;
+	const inFlight = ensureInFlight.get(toolId);
+	if (inFlight) {
+		return inFlight;
 	}
 
-	// Return the path after installation
-	return getToolPath(toolId);
+	const installPromise = (async () => {
+		const installed = await installTool(toolId);
+		if (!installed) {
+			return undefined;
+		}
+
+		return getToolPath(toolId);
+	})();
+
+	ensureInFlight.set(toolId, installPromise);
+	try {
+		return await installPromise;
+	} finally {
+		ensureInFlight.delete(toolId);
+	}
 }
 
 // --- Integration Helpers ---
