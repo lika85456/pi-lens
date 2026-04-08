@@ -97,6 +97,7 @@ function getLanguageInstallHints(
 export async function handleSessionStart(
 	deps: SessionStartDeps,
 ): Promise<void> {
+	const sessionStartMs = Date.now();
 	const {
 		ctxCwd,
 		getFlag,
@@ -207,16 +208,27 @@ export async function handleSessionStart(
 	if (startupDefaults.length > 0) {
 		dbg(`session_start: pre-install defaults -> ${startupDefaults.join(", ")}`);
 		for (const tool of startupDefaults) {
+			const startedAt = Date.now();
+			dbg(`session_start preinstall ${tool}: start`);
 			ensureTool(tool)
 				.then((toolPath) => {
 					if (toolPath) {
 						dbg(`session_start: ${tool} ready at ${toolPath}`);
+						dbg(
+							`session_start preinstall ${tool}: success (${Date.now() - startedAt}ms)`,
+						);
 					} else {
 						dbg(`session_start: ${tool} installation unavailable`);
+						dbg(
+							`session_start preinstall ${tool}: unavailable (${Date.now() - startedAt}ms)`,
+						);
 					}
 				})
 				.catch((err) => {
 					dbg(`session_start: ${tool} pre-install error: ${err}`);
+					dbg(
+						`session_start preinstall ${tool}: error (${Date.now() - startedAt}ms)`,
+					);
 				});
 		}
 	} else {
@@ -304,11 +316,20 @@ export async function handleSessionStart(
 
 	const sessionGeneration = runtime.sessionGeneration;
 	const runStartupTask = (name: string, task: () => Promise<void>): void => {
+		const startedAt = Date.now();
+		dbg(`session_start task ${name}: start`);
 		runtime.markStartupScanInFlight(name, sessionGeneration);
 		void task()
-			.catch((err) => dbg(`session_start: ${name} background scan failed: ${err}`))
+			.then(() => {
+				dbg(`session_start task ${name}: success (${Date.now() - startedAt}ms)`);
+			})
+			.catch((err) => {
+				dbg(`session_start: ${name} background scan failed: ${err}`);
+				dbg(`session_start task ${name}: failed (${Date.now() - startedAt}ms)`);
+			})
 			.finally(() => {
 				runtime.clearStartupScanInFlight(name, sessionGeneration);
+				dbg(`session_start task ${name}: end`);
 			});
 	};
 
@@ -522,4 +543,6 @@ export async function handleSessionStart(
 	if (startupNotes.length > 0) {
 		notify(startupNotes.join("\n"), "info");
 	}
+
+	dbg(`session_start total: ${Date.now() - sessionStartMs}ms`);
 }

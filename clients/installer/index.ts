@@ -45,6 +45,8 @@ const TOOLS_DIR = path.join(os.homedir(), ".pi-lens", "tools");
 // Debug flag - set via PI_LENS_DEBUG=1 or --debug
 const DEBUG =
 	process.env.PI_LENS_DEBUG === "1" || process.argv.includes("--debug");
+const SESSIONSTART_LOG_DIR = path.join(os.homedir(), ".pi-lens");
+const SESSIONSTART_LOG = path.join(SESSIONSTART_LOG_DIR, "sessionstart.log");
 
 /**
  * Log debug messages only when DEBUG is enabled
@@ -53,6 +55,16 @@ function debugLog(...args: unknown[]): void {
 	if (DEBUG) {
 		console.error("[auto-install:debug]", ...args);
 	}
+}
+
+function logSessionStart(msg: string): void {
+	const line = `[${new Date().toISOString()}] ${msg}\n`;
+	void fs
+		.mkdir(SESSIONSTART_LOG_DIR, { recursive: true })
+		.then(() => fs.appendFile(SESSIONSTART_LOG, line))
+		.catch(() => {
+			// best-effort logging
+		});
 }
 
 // --- Tool Definitions ---
@@ -720,34 +732,51 @@ export async function installTool(toolId: string): Promise<boolean> {
 	const tool = TOOLS.find((t) => t.id === toolId);
 	if (!tool) {
 		console.error(`[auto-install] Unknown tool: ${toolId}`);
+		logSessionStart(`auto-install ${toolId}: unknown tool id`);
 		return false;
 	}
 
 	console.error(`[auto-install] Installing ${tool.name}...`);
+	const startedAt = Date.now();
+	logSessionStart(
+		`auto-install ${tool.id}: start strategy=${tool.installStrategy} package=${tool.packageName ?? "n/a"}`,
+	);
 
 	try {
 		switch (tool.installStrategy) {
 			case "npm": {
 				if (!tool.packageName || !tool.binaryName) return false;
 				const npmPath = await installNpmTool(tool.packageName, tool.binaryName);
-				return npmPath !== undefined;
+				const ok = npmPath !== undefined;
+				logSessionStart(
+					`auto-install ${tool.id}: ${ok ? "success" : "failed"} (${Date.now() - startedAt}ms)`,
+				);
+				return ok;
 			}
 
 			case "pip": {
 				if (!tool.packageName) return false;
 				const pipPath = await installPipTool(tool.packageName);
-				return pipPath !== undefined;
+				const ok = pipPath !== undefined;
+				logSessionStart(
+					`auto-install ${tool.id}: ${ok ? "success" : "failed"} (${Date.now() - startedAt}ms)`,
+				);
+				return ok;
 			}
 
 			default:
 				console.error(
 					`[auto-install] Unsupported strategy: ${tool.installStrategy}`,
 				);
+				logSessionStart(`auto-install ${tool.id}: unsupported strategy`);
 				return false;
 		}
 	} catch (err) {
 		console.error(
 			`[auto-install] Failed to install ${tool.name}: ${(err as Error).message}`,
+		);
+		logSessionStart(
+			`auto-install ${tool.id}: exception ${(err as Error).message} (${Date.now() - startedAt}ms)`,
 		);
 		debugLog("Full error:", err);
 		return false;
@@ -758,14 +787,20 @@ export async function installTool(toolId: string): Promise<boolean> {
  * Ensure a tool is installed (check first, install if missing)
  */
 export async function ensureTool(toolId: string): Promise<string | undefined> {
+	const ensureStartMs = Date.now();
+	logSessionStart(`auto-install ensure ${toolId}: start`);
 	// Check if already installed
 	const existingPath = await getToolPath(toolId);
 	if (existingPath) {
+		logSessionStart(
+			`auto-install ensure ${toolId}: already available at ${existingPath} (${Date.now() - ensureStartMs}ms)`,
+		);
 		return existingPath;
 	}
 
 	const inFlight = ensureInFlight.get(toolId);
 	if (inFlight) {
+		logSessionStart(`auto-install ensure ${toolId}: waiting for in-flight install`);
 		return inFlight;
 	}
 
@@ -780,7 +815,17 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
 
 	ensureInFlight.set(toolId, installPromise);
 	try {
-		return await installPromise;
+		const result = await installPromise;
+		if (result) {
+			logSessionStart(
+				`auto-install ensure ${toolId}: success at ${result} (${Date.now() - ensureStartMs}ms)`,
+			);
+		} else {
+			logSessionStart(
+				`auto-install ensure ${toolId}: unavailable (${Date.now() - ensureStartMs}ms)`,
+			);
+		}
+		return result;
 	} finally {
 		ensureInFlight.delete(toolId);
 	}
