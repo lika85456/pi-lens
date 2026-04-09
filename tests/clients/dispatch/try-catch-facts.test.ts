@@ -14,12 +14,13 @@ import { tryCatchFactProvider, type TryCatchSummary } from "../../../clients/dis
 import { errorObscuringRule } from "../../../clients/dispatch/rules/error-obscuring.js";
 import { errorSwallowingRule } from "../../../clients/dispatch/rules/error-swallowing.js";
 import type { DispatchContext } from "../../../clients/dispatch/types.js";
+import type { FileKind } from "../../../clients/file-kinds.js";
 
 function makeCtx(filePath: string, facts: FactStore): DispatchContext {
   return {
     filePath,
     cwd: "/tmp",
-    kind: "jsts" as any,
+    kind: "jsts" as FileKind,
     pi: { getFlag: () => undefined },
     autofix: false,
     deltaMode: false,
