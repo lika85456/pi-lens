@@ -334,6 +334,28 @@ export class LSPService {
 	}
 
 	/**
+	 * Capability snapshot for LSP operations.
+	 * If filePath is provided, probes that server; otherwise uses first active client.
+	 */
+	async getOperationSupport(filePath?: string): Promise<
+		import("./client.js").LSPOperationSupport | null
+	> {
+		if (filePath) {
+			const spawned = await this.getClientForFile(filePath);
+			if (!spawned) return null;
+			const getter = spawned.client.getOperationSupport;
+			if (typeof getter !== "function") return null;
+			return getter();
+		}
+
+		const first = this.state.clients.values().next().value;
+		if (!first) return null;
+		const getter = first.getOperationSupport;
+		if (typeof getter !== "function") return null;
+		return getter();
+	}
+
+	/**
 	 * Navigation: available code actions at position/range
 	 */
 	async codeAction(

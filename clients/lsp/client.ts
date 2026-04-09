@@ -83,6 +83,19 @@ export interface LSPWorkspaceDiagnosticsSupport {
 	diagnosticProviderKind: string;
 }
 
+export interface LSPOperationSupport {
+	definition: boolean;
+	references: boolean;
+	hover: boolean;
+	signatureHelp: boolean;
+	documentSymbol: boolean;
+	workspaceSymbol: boolean;
+	codeAction: boolean;
+	rename: boolean;
+	implementation: boolean;
+	callHierarchy: boolean;
+}
+
 export interface LSPSymbol {
 	name: string;
 	kind: number;
@@ -129,6 +142,8 @@ export interface LSPClientInfo {
 	getAllDiagnostics(): Map<string, LSPDiagnostic[]>;
 	/** Capability snapshot for workspace diagnostics support */
 	getWorkspaceDiagnosticsSupport(): LSPWorkspaceDiagnosticsSupport;
+	/** Capability snapshot for navigation/edit operations */
+	getOperationSupport(): LSPOperationSupport;
 	/** Go to definition — returns Location[] */
 	definition(
 		filePath: string,
@@ -395,6 +410,7 @@ export async function createLSPClient(options: {
 	}
 
 	const workspaceDiagnosticsSupport = detectWorkspaceDiagnosticsSupport(initResult);
+	const operationSupport = detectOperationSupport(initResult);
 
 	// Send initialized notification
 	await safeSendNotification(connection, "initialized", {});
@@ -508,6 +524,10 @@ export async function createLSPClient(options: {
 
 		getWorkspaceDiagnosticsSupport() {
 			return workspaceDiagnosticsSupport;
+		},
+
+		getOperationSupport() {
+			return operationSupport;
 		},
 
 		async waitForDiagnostics(filePath, timeoutMs = DIAGNOSTICS_WAIT_TIMEOUT_MS) {
@@ -899,5 +919,32 @@ function detectWorkspaceDiagnosticsSupport(
 		advertised: false,
 		mode: "push-only",
 		diagnosticProviderKind: typeof diagnosticProvider,
+	};
+}
+
+function detectOperationSupport(initResult: unknown): LSPOperationSupport {
+	const capabilities =
+		typeof initResult === "object" && initResult !== null
+			? (initResult as { capabilities?: Record<string, unknown> }).capabilities
+			: undefined;
+
+	const hasProvider = (key: string): boolean => {
+		const value = capabilities?.[key];
+		if (value === undefined || value === null) return false;
+		if (typeof value === "boolean") return value;
+		return true;
+	};
+
+	return {
+		definition: hasProvider("definitionProvider"),
+		references: hasProvider("referencesProvider"),
+		hover: hasProvider("hoverProvider"),
+		signatureHelp: hasProvider("signatureHelpProvider"),
+		documentSymbol: hasProvider("documentSymbolProvider"),
+		workspaceSymbol: hasProvider("workspaceSymbolProvider"),
+		codeAction: hasProvider("codeActionProvider"),
+		rename: hasProvider("renameProvider"),
+		implementation: hasProvider("implementationProvider"),
+		callHierarchy: hasProvider("callHierarchyProvider"),
 	};
 }

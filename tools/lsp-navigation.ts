@@ -54,9 +54,12 @@ export function createLspNavigationTool(
 				],
 				{ description: "LSP operation to perform" },
 			),
-			filePath: Type.String({
-				description: "Absolute or relative path to the file",
-			}),
+			filePath: Type.Optional(
+				Type.String({
+					description:
+						"Absolute or relative file path. Required for file-scoped operations; optional for workspaceSymbol/workspaceDiagnostics.",
+				}),
+			),
 			line: Type.Optional(
 				Type.Number({
 					description:
@@ -156,7 +159,7 @@ export function createLspNavigationTool(
 				query,
 			} = params as {
 				operation: string;
-				filePath: string;
+				filePath?: string;
 				line?: number;
 				character?: number;
 				endLine?: number;
@@ -165,13 +168,50 @@ export function createLspNavigationTool(
 				query?: string;
 			};
 
-			const filePath = path.isAbsolute(rawPath)
-				? rawPath
-				: path.resolve(ctx.cwd || ".", rawPath);
+			const needsFilePath =
+				operation !== "workspaceDiagnostics" && operation !== "workspaceSymbol";
+			if (needsFilePath && (!rawPath || rawPath.trim().length === 0)) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `filePath is required for ${operation}`,
+						},
+					],
+					isError: true,
+					details: {},
+				};
+			}
+
+			const filePath = rawPath
+				? path.isAbsolute(rawPath)
+					? rawPath
+					: path.resolve(ctx.cwd || ".", rawPath)
+				: "";
 
 			const lspService = getLSPService();
-			const hasLSP = await lspService.hasLSP(filePath);
-			if (!hasLSP) {
+			if (operation === "workspaceDiagnostics") {
+				const allDiagnostics = await lspService.getAllDiagnostics();
+				const result = Array.from(allDiagnostics.entries()).map(
+					([trackedFile, diags]) => ({
+						filePath: trackedFile,
+						diagnostics: diags,
+						count: diags.length,
+					}),
+				);
+				return {
+					content: [
+						{ type: "text" as const, text: JSON.stringify(result, null, 2) },
+					],
+					details: {
+						operation,
+						resultCount: result.length,
+					},
+				};
+			}
+
+			const hasLSP = filePath ? await lspService.hasLSP(filePath) : false;
+			if (needsFilePath && !hasLSP) {
 				return {
 					content: [
 						{
@@ -184,18 +224,48 @@ export function createLspNavigationTool(
 				};
 			}
 
-			// Ensure file is open in LSP before querying
-			let fileContent: string | undefined;
-			try {
-				fileContent = nodeFs.readFileSync(filePath, "utf-8");
-			} catch {
-				/* ignore */
-			}
-			if (fileContent) {
+			if (needsFilePath) {
+				const support = await lspService.getOperationSupport(filePath);
+				const unsupported =
+					(operation === "definition" && support?.definition === false) ||
+					(operation === "references" && support?.references === false) ||
+					(operation === "hover" && support?.hover === false) ||
+					(operation === "signatureHelp" && support?.signatureHelp === false) ||
+					(operation === "documentSymbol" && support?.documentSymbol === false) ||
+					(operation === "workspaceSymbol" && support?.workspaceSymbol === false) ||
+					(operation === "codeAction" && support?.codeAction === false) ||
+					(operation === "rename" && support?.rename === false) ||
+					(operation === "implementation" && support?.implementation === false) ||
+					((operation === "prepareCallHierarchy" ||
+						operation === "incomingCalls" ||
+						operation === "outgoingCalls") &&
+						support?.callHierarchy === false);
+				if (unsupported) {
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `LSP server for ${path.basename(filePath)} does not advertise support for ${operation}`,
+							},
+						],
+						isError: true,
+						details: {},
+					};
+				}
+
+				// Ensure file is open in LSP before querying
+				let fileContent: string | undefined;
 				try {
-					await lspService.openFile(filePath, fileContent);
+					fileContent = nodeFs.readFileSync(filePath, "utf-8");
 				} catch {
-					/* LSP server may not be ready yet — proceed anyway */
+					/* ignore */
+				}
+				if (fileContent) {
+					try {
+						await lspService.openFile(filePath, fileContent);
+					} catch {
+						/* LSP server may not be ready yet — proceed anyway */
+					}
 				}
 			}
 
@@ -224,6 +294,18 @@ export function createLspNavigationTool(
 						result = await lspService.documentSymbol(filePath);
 						break;
 					case "workspaceSymbol":
+						if (!query || query.trim().length === 0) {
+							return {
+								content: [
+									{
+										type: "text" as const,
+										text: "query parameter required for workspaceSymbol",
+									},
+								],
+								isError: true,
+								details: {},
+							};
+						}
 						result = await lspService.workspaceSymbol(query ?? "");
 						break;
 					case "codeAction":
@@ -296,17 +378,6 @@ export function createLspNavigationTool(
 							};
 						}
 						result = await lspService.outgoingCalls(callItem);
-						break;
-					}
-					case "workspaceDiagnostics": {
-						const allDiagnostics = await lspService.getAllDiagnostics();
-						result = Array.from(allDiagnostics.entries()).map(
-							([trackedFile, diags]) => ({
-								filePath: trackedFile,
-								diagnostics: diags,
-								count: diags.length,
-							}),
-						);
 						break;
 					}
 					default:
