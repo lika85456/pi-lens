@@ -205,8 +205,12 @@ export function createLspNavigationTool(
 				query?: string;
 			};
 
+			const isCallHierarchyTraversal =
+				operation === "incomingCalls" || operation === "outgoingCalls";
 			const needsFilePath =
-				operation !== "workspaceDiagnostics" && operation !== "workspaceSymbol";
+				operation !== "workspaceDiagnostics" &&
+				operation !== "workspaceSymbol" &&
+				!isCallHierarchyTraversal;
 			if (needsFilePath && (!rawPath || rawPath.trim().length === 0)) {
 				return {
 					content: [
@@ -459,9 +463,13 @@ export function createLspNavigationTool(
 			}
 
 			const isEmpty = !result || (Array.isArray(result) && result.length === 0);
-			const output = isEmpty
+			let output = isEmpty
 				? `No results for ${operation} at ${path.basename(filePath)}${line ? `:${line}:${character}` : ""}`
 				: JSON.stringify(result, null, 2);
+			if (isEmpty && operation === "workspaceSymbol" && !rawPath) {
+				output +=
+					"\nHint: provide filePath to scope workspaceSymbol to the active language server/root.";
+			}
 
 			return {
 				content: [{ type: "text" as const, text: output }],
