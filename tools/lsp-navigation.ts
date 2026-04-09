@@ -44,6 +44,24 @@ function emptyReasonForOperation(operation: string): string {
 	return "no-results";
 }
 
+async function openFileBestEffort(
+	lspService: ReturnType<typeof getLSPService>,
+	filePath: string,
+): Promise<void> {
+	let fileContent: string | undefined;
+	try {
+		fileContent = nodeFs.readFileSync(filePath, "utf-8");
+	} catch {
+		return;
+	}
+	if (!fileContent) return;
+	try {
+		await lspService.openFile(filePath, fileContent);
+	} catch {
+		/* LSP server may not be ready yet — proceed anyway */
+	}
+}
+
 export function createLspNavigationTool(
 	getFlag: (name: string) => boolean | string | undefined,
 ) {
@@ -296,20 +314,7 @@ export function createLspNavigationTool(
 					};
 				}
 
-				// Ensure file is open in LSP before querying
-				let fileContent: string | undefined;
-				try {
-					fileContent = nodeFs.readFileSync(filePath, "utf-8");
-				} catch {
-					/* ignore */
-				}
-				if (fileContent) {
-					try {
-						await lspService.openFile(filePath, fileContent);
-					} catch {
-						/* LSP server may not be ready yet — proceed anyway */
-					}
-				}
+				await openFileBestEffort(lspService, filePath);
 			}
 
 			// Convert 1-based editor coords to 0-based LSP coords
@@ -320,7 +325,7 @@ export function createLspNavigationTool(
 
 			let result: unknown;
 			try {
-					switch (operation) {
+				switch (operation) {
 					case "definition":
 						result = await lspService.definition(filePath, lspLine, lspChar);
 						break;
@@ -369,10 +374,24 @@ export function createLspNavigationTool(
 								details: {},
 							};
 						}
-						result = await lspService.workspaceSymbol(
-							query ?? "",
-							rawPath ? filePath : undefined,
-						);
+						if (rawPath) {
+							await openFileBestEffort(lspService, filePath);
+						}
+						try {
+							result = await lspService.workspaceSymbol(
+								query ?? "",
+								rawPath ? filePath : undefined,
+							);
+						} catch (err) {
+							const msg = err instanceof Error ? err.message : String(err);
+							if (rawPath && /No Project/i.test(msg)) {
+								await openFileBestEffort(lspService, filePath);
+								await new Promise((resolve) => setTimeout(resolve, 120));
+								result = await lspService.workspaceSymbol(query ?? "", filePath);
+							} else {
+								throw err;
+							}
+						}
 						break;
 					case "codeAction":
 						result = await lspService.codeAction(

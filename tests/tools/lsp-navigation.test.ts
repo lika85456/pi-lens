@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 const mocked = vi.hoisted(() => ({
 	service: null as unknown,
@@ -74,5 +77,68 @@ describe("lsp_navigation tool", () => {
 			"ReportProcessor",
 			undefined,
 		);
+	});
+
+	it("opens scoped file before workspaceSymbol query", async () => {
+		const tool = createLspNavigationTool((flag) => flag === "lens-lsp");
+		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-lsp-nav-"));
+		const filePath = path.join(tmpDir, "sample.ts");
+		fs.writeFileSync(filePath, "export const normalizeMapKey = (x: string) => x;\n");
+
+		try {
+			const result = await tool.execute(
+				"3",
+				{ operation: "workspaceSymbol", filePath, query: "normalizeMapKey" },
+				new AbortController().signal,
+				null,
+				{ cwd: "." },
+			);
+
+			expect(result.isError).toBeUndefined();
+			expect(
+				(mocked.service as { openFile: ReturnType<typeof vi.fn> }).openFile,
+			).toHaveBeenCalledWith(filePath, expect.stringContaining("normalizeMapKey"));
+			expect(
+				(mocked.service as { workspaceSymbol: ReturnType<typeof vi.fn> })
+					.workspaceSymbol,
+			).toHaveBeenCalledWith("normalizeMapKey", filePath);
+		} finally {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	it("retries workspaceSymbol once after No Project", async () => {
+		const tool = createLspNavigationTool((flag) => flag === "lens-lsp");
+		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-lsp-nav-"));
+		const filePath = path.join(tmpDir, "projected.ts");
+		fs.writeFileSync(filePath, "export const projected = 1;\n");
+
+		(
+			mocked.service as {
+				workspaceSymbol: ReturnType<typeof vi.fn>;
+			}
+		).workspaceSymbol = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("TypeScript Server Error: No Project"))
+			.mockResolvedValueOnce([{ name: "projected" }]);
+
+		try {
+			const result = await tool.execute(
+				"4",
+				{ operation: "workspaceSymbol", filePath, query: "projected" },
+				new AbortController().signal,
+				null,
+				{ cwd: "." },
+			);
+
+			expect(result.isError).toBeUndefined();
+			expect(result.details?.resultCount).toBe(1);
+			expect(
+				(mocked.service as { workspaceSymbol: ReturnType<typeof vi.fn> })
+					.workspaceSymbol,
+			).toHaveBeenCalledTimes(2);
+		} finally {
+			fs.rmSync(tmpDir, { recursive: true, force: true });
+		}
 	});
 });
