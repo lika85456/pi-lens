@@ -62,9 +62,25 @@ interface SessionStartDeps {
 	resetLSPService: () => void;
 }
 
+type StartupMode = "full" | "minimal" | "quick";
+
 function isCommandAvailable(command: string, args: string[] = ["--version"]): boolean {
 	const result = safeSpawn(command, args, { timeout: 5000 });
 	return !result.error && result.status === 0;
+}
+
+function resolveStartupMode(): StartupMode {
+	const envMode = (process.env.PI_LENS_STARTUP_MODE ?? "").trim().toLowerCase();
+	if (envMode === "full" || envMode === "minimal" || envMode === "quick") {
+		return envMode;
+	}
+
+	const argv = process.argv;
+	if (argv.includes("--print") || argv.includes("-p")) {
+		return "quick";
+	}
+
+	return "full";
 }
 
 function getLanguageInstallHints(
@@ -99,6 +115,9 @@ export async function handleSessionStart(
 	deps: SessionStartDeps,
 ): Promise<void> {
 	const sessionStartMs = Date.now();
+	const startupMode = resolveStartupMode();
+	const allowBootstrapTasks = startupMode === "full";
+	const quickMode = startupMode === "quick";
 	const {
 		ctxCwd,
 		getFlag,
@@ -131,6 +150,7 @@ export async function handleSessionStart(
 	runtime.complexityBaselines.clear();
 	resetDispatchBaselines();
 	runtime.resetForSession();
+	dbg(`session_start startup mode: ${startupMode}`);
 
 	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
 		resetLSPService();
@@ -169,7 +189,7 @@ export async function handleSessionStart(
 	log(`Active tools: ${tools.join(", ")}`);
 	dbg(`session_start tools: ${tools.join(", ")}`);
 
-	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
+	if (allowBootstrapTasks && getFlag("lens-lsp") && !getFlag("no-lsp")) {
 		const cleaned = cleanStaleTsBuildInfo(ctxCwd ?? process.cwd());
 		if (cleaned.length > 0) {
 			notify(
@@ -182,6 +202,15 @@ export async function handleSessionStart(
 
 	const hasWorkspaceCwd = typeof ctxCwd === "string" && ctxCwd.length > 0;
 	const cwd = ctxCwd ?? process.cwd();
+	if (quickMode) {
+		runtime.projectRoot = cwd;
+		dbg(
+			"session_start: quick mode active - skipping language profiling, preinstall, scans, and error debt baseline",
+		);
+		dbg(`session_start total: ${Date.now() - sessionStartMs}ms`);
+		return;
+	}
+
 	const startupScan = resolveStartupScanContext(cwd);
 	const scanRoot = startupScan.projectRoot ?? cwd;
 	const useScanRootForSignals =
@@ -220,7 +249,9 @@ export async function handleSessionStart(
 		return true;
 	});
 
-	if (startupDefaults.length > 0) {
+	if (!allowBootstrapTasks) {
+		dbg("session_start: skipping tool preinstall (startup mode)");
+	} else if (startupDefaults.length > 0) {
 		dbg(`session_start: pre-install defaults -> ${startupDefaults.join(", ")}`);
 		for (const tool of startupDefaults) {
 			const startedAt = Date.now();
@@ -250,7 +281,7 @@ export async function handleSessionStart(
 		dbg("session_start: no language defaults selected for pre-install");
 	}
 
-	{
+	if (allowBootstrapTasks) {
 		const pkgPath = path.join(analysisRoot, "package.json");
 		try {
 			const raw = await nodeFs.promises.readFile(pkgPath, "utf-8");
@@ -275,6 +306,8 @@ export async function handleSessionStart(
 		} catch {
 			// no package.json at cwd root
 		}
+	} else {
+		dbg("session_start: skipping prettier preinstall probe (startup mode)");
 	}
 
 	const hasArchitectRules = architectClient.loadConfig(analysisRoot);
@@ -352,7 +385,9 @@ export async function handleSessionStart(
 	// Each consumer already handles the "not ready yet" case gracefully
 	// (cachedExports.size > 0, cachedProjectIndex != null, cache miss paths).
 
-	if (!startupScan.canWarmCaches) {
+	if (!allowBootstrapTasks) {
+		dbg("session_start: skipping startup background scans (startup mode)");
+	} else if (!startupScan.canWarmCaches) {
 		dbg(
 			`session_start: skipping heavy scans (${startupScan.reason ?? "unknown"})`,
 		);
@@ -503,7 +538,7 @@ export async function handleSessionStart(
 		`session_start: background scans launched (${startupNotes.length} startup note(s))`,
 	);
 
-	const errorDebtEnabled = getFlag("error-debt");
+	const errorDebtEnabled = allowBootstrapTasks && getFlag("error-debt");
 	const pendingDebt = cacheManager.readCache<{
 		pendingCheck: boolean;
 		baselineTestsPassed: boolean;
