@@ -74,61 +74,74 @@ export class LSPService {
 
 		// Try each matching server
 		for (const server of servers) {
-			const root = await server.root(filePath);
-			if (!root) continue;
-			const allowInstall = this.shouldAllowInstall(filePath, root);
-
-			const normalizedRoot = normalizeMapKey(root);
-			const key = `${server.id}:${normalizedRoot}`;
-
-			// Check cache first (fast path)
-			const existing = this.state.clients.get(key);
-			if (existing) {
-				if (!existing.isAlive()) {
-					try {
-						await existing.shutdown();
-					} catch {
-						/* ignore dead client shutdown errors */
-					}
-					this.state.clients.delete(key);
-					this.state.broken.delete(key);
-				} else {
-				return { client: existing, info: server };
-				}
-			}
-
-			// Check if broken
-			const brokenUntil = this.state.broken.get(key);
-			if (typeof brokenUntil === "number" && brokenUntil > Date.now()) {
-				continue;
-			}
-			if (typeof brokenUntil === "number" && brokenUntil <= Date.now()) {
-				this.state.broken.delete(key);
-			}
-
-			// Check if there's already an in-flight spawn for this key
-			const inFlight = this.state.inFlight.get(key);
-			if (inFlight) {
-				// Wait for the existing spawn to complete
-				const result = await inFlight;
-				if (result) return result;
-				continue; // This server failed, try next
-			}
-
-			// Create the spawn promise and store it
-			const spawnPromise = this.spawnClient(server, root, key, filePath, allowInstall);
-			this.state.inFlight.set(key, spawnPromise);
-
-			try {
-				const result = await spawnPromise;
-				if (result) return result;
-			} finally {
-				// Clean up in-flight tracking
-				this.state.inFlight.delete(key);
-			}
+			const spawned = await this.ensureClientForServer(filePath, server);
+			if (spawned) return spawned;
 		}
 
 		return undefined;
+	}
+
+	/**
+	 * Get or create ALL LSP clients that can serve a file.
+	 * Used for diagnostics aggregation across complementary servers.
+	 */
+	async getClientsForFile(filePath: string): Promise<SpawnedServer[]> {
+		const servers = getServersForFileWithConfig(filePath);
+		if (servers.length === 0) return [];
+
+		const spawned = await Promise.all(
+			servers.map((server) => this.ensureClientForServer(filePath, server)),
+		);
+		return spawned.filter((entry): entry is SpawnedServer => Boolean(entry));
+	}
+
+	private async ensureClientForServer(
+		filePath: string,
+		server: LSPServerInfo,
+	): Promise<SpawnedServer | undefined> {
+		const root = await server.root(filePath);
+		if (!root) return undefined;
+		const allowInstall = this.shouldAllowInstall(filePath, root);
+
+		const normalizedRoot = normalizeMapKey(root);
+		const key = `${server.id}:${normalizedRoot}`;
+
+		const existing = this.state.clients.get(key);
+		if (existing) {
+			if (!existing.isAlive()) {
+				try {
+					await existing.shutdown();
+				} catch {
+					/* ignore dead client shutdown errors */
+				}
+				this.state.clients.delete(key);
+				this.state.broken.delete(key);
+			} else {
+				return { client: existing, info: server };
+			}
+		}
+
+		const brokenUntil = this.state.broken.get(key);
+		if (typeof brokenUntil === "number" && brokenUntil > Date.now()) {
+			return undefined;
+		}
+		if (typeof brokenUntil === "number" && brokenUntil <= Date.now()) {
+			this.state.broken.delete(key);
+		}
+
+		const inFlight = this.state.inFlight.get(key);
+		if (inFlight) {
+			return inFlight;
+		}
+
+		const spawnPromise = this.spawnClient(server, root, key, filePath, allowInstall);
+		this.state.inFlight.set(key, spawnPromise);
+
+		try {
+			return await spawnPromise;
+		} finally {
+			this.state.inFlight.delete(key);
+		}
 	}
 
 	private shouldAllowInstall(filePath: string, root: string): boolean {
@@ -265,11 +278,33 @@ export class LSPService {
 	async getDiagnostics(
 		filePath: string,
 	): Promise<import("./client.js").LSPDiagnostic[]> {
-		const spawned = await this.getClientForFile(filePath);
-		if (!spawned) return [];
+		const spawned = await this.getClientsForFile(filePath);
+		if (spawned.length === 0) return [];
 
-		await spawned.client.waitForDiagnostics(filePath, 3000);
-		return spawned.client.getDiagnostics(filePath);
+		await Promise.all(
+			spawned.map((entry) => entry.client.waitForDiagnostics(filePath, 3000)),
+		);
+
+		const merged: import("./client.js").LSPDiagnostic[] = [];
+		const seen = new Set<string>();
+		for (const entry of spawned) {
+			const diagnostics = entry.client.getDiagnostics(filePath);
+			for (const diagnostic of diagnostics) {
+				const key = [
+					diagnostic.range.start.line,
+					diagnostic.range.start.character,
+					diagnostic.severity,
+					diagnostic.code ?? "",
+					diagnostic.source ?? "",
+					diagnostic.message,
+				].join(":");
+				if (seen.has(key)) continue;
+				seen.add(key);
+				merged.push(diagnostic);
+			}
+		}
+
+		return merged;
 	}
 
 	/**
