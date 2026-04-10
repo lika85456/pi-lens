@@ -25,10 +25,10 @@ import { normalizeMapKey } from "../path-utils.js";
 import { RUNTIME_CONFIG } from "../runtime-config.js";
 import { safeSpawnAsync } from "../safe-spawn.js";
 import { classifyDiagnostic } from "./diagnostic-taxonomy.js";
+import { FactStore } from "./fact-store.js";
 import { resolveRunnerPath } from "./runner-context.js";
 import { getToolProfile } from "./tool-profile.js";
 import type {
-	BaselineStore,
 	Diagnostic,
 	DispatchContext,
 	DispatchResult,
@@ -36,88 +36,78 @@ import type {
 	PiAgentAPI,
 	RunnerDefinition,
 	RunnerGroup,
+	RunnerRegistry as RunnerRegistryContract,
 	RunnerResult,
 } from "./types.js";
 import { formatDiagnostics } from "./utils/format-utils.js";
 
-// --- In-Memory Baseline Store ---
-
-export function createBaselineStore(): BaselineStore {
-	const baselines = new Map<string, unknown[]>();
-
-	return {
-		get(filePath) {
-			return baselines.get(normalizeMapKey(filePath));
-		},
-		set(filePath, diagnostics) {
-			baselines.set(normalizeMapKey(filePath), diagnostics);
-		},
-		clear() {
-			baselines.clear();
-		},
-	};
-}
-
 // --- Runner Registry ---
 
-const globalRegistry = new Map<string, RunnerDefinition>();
+export class RunnerRegistry implements RunnerRegistryContract {
+	private readonly runners = new Map<string, RunnerDefinition>();
 
-export function registerRunner(runner: RunnerDefinition): void {
-	if (globalRegistry.has(runner.id)) return; // Already registered, skip silently
-	globalRegistry.set(runner.id, runner);
-}
-
-export function getRunner(id: string): RunnerDefinition | undefined {
-	return globalRegistry.get(id);
-}
-
-export function getRunnersForKind(
-	kind: FileKind | undefined,
-	filePath?: string,
-): RunnerDefinition[] {
-	if (!kind) return [];
-	const runners: RunnerDefinition[] = [];
-	const isTest = filePath ? isTestFile(filePath) : false;
-
-	for (const runner of globalRegistry.values()) {
-		// Skip runners that shouldn't run on test files
-		if (isTest && runner.skipTestFiles) continue;
-
-		if (runner.appliesTo.includes(kind) || runner.appliesTo.length === 0) {
-			runners.push(runner);
-		}
+	register(runner: RunnerDefinition): void {
+		if (this.runners.has(runner.id)) return;
+		this.runners.set(runner.id, runner);
 	}
-	return runners.sort((a, b) => a.priority - b.priority);
-}
 
-export function listRunners(): RunnerDefinition[] {
-	return Array.from(globalRegistry.values());
-}
+	get(id: string): RunnerDefinition | undefined {
+		return this.runners.get(id);
+	}
 
-/**
- * Clear all registered runners. Used primarily for testing.
- */
-export function clearRunnerRegistry(): void {
-	globalRegistry.clear();
+	getForKind(kind: FileKind, filePath?: string): RunnerDefinition[] {
+		const matching: RunnerDefinition[] = [];
+		const isTest = filePath ? isTestFile(filePath) : false;
+
+		for (const runner of this.runners.values()) {
+			if (isTest && runner.skipTestFiles) continue;
+			if (runner.appliesTo.includes(kind) || runner.appliesTo.length === 0) {
+				matching.push(runner);
+			}
+		}
+
+		return matching.sort((a, b) => a.priority - b.priority);
+	}
+
+	list(): RunnerDefinition[] {
+		return Array.from(this.runners.values());
+	}
+
+	clear(): void {
+		this.runners.clear();
+	}
 }
 
 // --- Tool Availability Cache ---
 
-const toolCache = new Map<string, boolean>();
+/**
+ * Normalize a command name to a FactStore session key.
+ * Strips .cmd/.exe suffixes (case-insensitive) and lowercases,
+ * then prefixes with "session.toolCache.".
+ */
+export function normalizeCacheKey(cmd: string): string {
+	const normalized = cmd.replace(/\.(cmd|exe)$/i, "").toLowerCase();
+	return `session.toolCache.${normalized}`;
+}
 
-async function checkToolAvailability(command: string): Promise<boolean> {
-	if (toolCache.has(command)) {
-		return toolCache.get(command)!;
+async function checkToolAvailability(
+	command: string,
+	facts: FactStore,
+): Promise<boolean> {
+	const key = normalizeCacheKey(command);
+	const cached = facts.getSessionFact<boolean>(key);
+	if (cached !== undefined) {
+		return cached;
 	}
 	try {
 		const result = await safeSpawnAsync(command, ["--version"], {
 			timeout: 5000,
 		});
 		const available = result.status === 0;
-		toolCache.set(command, available);
+		facts.setSessionFact(key, available);
 		return available;
 	} catch {
-		toolCache.set(command, false);
+		facts.setSessionFact(key, false);
 		return false;
 	}
 }
@@ -128,7 +118,7 @@ export function createDispatchContext(
 	filePath: string,
 	cwd: string,
 	pi: PiAgentAPI,
-	baselines: BaselineStore,
+	facts: FactStore,
 	blockingOnly?: boolean,
 	modifiedRanges?: import("./types.js").ModifiedRange[],
 ): DispatchContext {
@@ -145,12 +135,12 @@ export function createDispatchContext(
 		pi,
 		autofix: !!(pi.getFlag("autofix-biome") || pi.getFlag("autofix-ruff")),
 		deltaMode: !pi.getFlag("no-delta"),
-		baselines,
+		facts,
 		blockingOnly,
 		modifiedRanges,
 
 		async hasTool(command: string): Promise<boolean> {
-			return checkToolAvailability(command);
+			return checkToolAvailability(command, facts);
 		},
 
 		log(message: string): void {
@@ -437,6 +427,7 @@ interface GroupResult {
 async function runGroup(
 	ctx: DispatchContext,
 	group: RunnerGroup,
+	registry: RunnerRegistryContract,
 ): Promise<GroupResult> {
 	const diagnostics: Diagnostic[] = [];
 	const latencies: RunnerLatency[] = [];
@@ -445,16 +436,16 @@ async function runGroup(
 	// Filter runners by kind if specified
 	const runnerIds = group.filterKinds
 		? group.runnerIds.filter((id) => {
-				const runner = getRunner(id);
+				const runner = registry.get(id);
 				return runner && ctx.kind && group.filterKinds?.includes(ctx.kind);
-			})
+		  })
 		: group.runnerIds;
 
 	const semantic = group.semantic ?? "warning";
 
 	for (const runnerId of runnerIds) {
 		const runnerStart = Date.now();
-		const runner = getRunner(runnerId);
+		const runner = registry.get(runnerId);
 
 		if (!runner) {
 			latencies.push({
@@ -558,6 +549,7 @@ async function runGroup(
 export async function dispatchForFile(
 	ctx: DispatchContext,
 	groups: RunnerGroup[],
+	registry: RunnerRegistryContract,
 ): Promise<DispatchResult> {
 	const _overallStart = Date.now();
 	const allDiagnostics: Diagnostic[] = [];
@@ -584,14 +576,16 @@ export async function dispatchForFile(
 	// preserved (sequential first-success). Results are merged in original
 	// group order so output is deterministic.
 	const groupResults = await Promise.all(
-		groups.map((group) => runGroup(ctx, group)),
+		groups.map((group) => runGroup(ctx, group, registry)),
 	);
 
 	// Count baseline warnings before filtering (for delta count display)
 	const relativeKey = path.relative(ctx.cwd, ctx.filePath).replace(/\\/g, "/");
+	const baselineAbsKey = `session.baseline.${normalizeMapKey(ctx.filePath)}`;
+	const baselineRelKey = `session.baseline.${normalizeMapKey(relativeKey)}`;
 	const previousBaseline = ctx.deltaMode
-		? ((ctx.baselines.get(ctx.filePath) as Diagnostic[] | undefined) ??
-			(ctx.baselines.get(relativeKey) as Diagnostic[] | undefined))
+		? (ctx.facts.getSessionFact<Diagnostic[]>(baselineAbsKey) ??
+			ctx.facts.getSessionFact<Diagnostic[]>(baselineRelKey))
 		: undefined;
 	const baselineWarnings = previousBaseline?.filter(
 		(d) => d.semantic === "warning" || d.semantic === "none",
@@ -623,8 +617,8 @@ export async function dispatchForFile(
 
 	// Persist full current snapshot for next run (not delta-filtered subset).
 	if (ctx.deltaMode) {
-		ctx.baselines.set(ctx.filePath, [...dedupedDiagnostics]);
-		ctx.baselines.set(relativeKey, [...dedupedDiagnostics]);
+		ctx.facts.setSessionFact(baselineAbsKey, [...dedupedDiagnostics]);
+		ctx.facts.setSessionFact(baselineRelKey, [...dedupedDiagnostics]);
 	}
 
 	// Categorize results
@@ -787,17 +781,25 @@ async function runRunner(
 
 // --- Simple Integration Helper ---
 
+/**
+ * @internal
+ * Low-level dispatch entry point. Use `dispatchLint` from `./integration.js` instead —
+ * that version provides session-persistent baselines and FactStore.
+ * This function creates an ephemeral FactStore per call; facts do not persist across calls.
+ */
 export async function dispatchLint(
 	filePath: string,
 	cwd: string,
 	pi: PiAgentAPI,
-	baselines: BaselineStore,
+	facts: FactStore,
+	registry: RunnerRegistryContract,
 ): Promise<string> {
 	// By default, only run BLOCKING rules for fast feedback on file write
-	const ctx = createDispatchContext(filePath, cwd, pi, baselines, true);
+	const ctx = createDispatchContext(filePath, cwd, pi, facts, true);
 
 	// Get runners for this file kind
-	const runners = getRunnersForKind(ctx.kind);
+	if (!ctx.kind) return "";
+	const runners = registry.getForKind(ctx.kind, ctx.filePath);
 	if (runners.length === 0) {
 		return "";
 	}
@@ -810,6 +812,6 @@ export async function dispatchLint(
 		},
 	];
 
-	const result = await dispatchForFile(ctx, groups);
+	const result = await dispatchForFile(ctx, groups, registry);
 	return result.output;
 }
