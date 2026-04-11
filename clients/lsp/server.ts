@@ -86,6 +86,38 @@ function nodeBinCandidates(root: string, baseName: string): string[] {
 	return [localBase, baseName];
 }
 
+function rubyBinCandidates(baseName: string): string[] {
+	const candidates: string[] = [];
+	const userProfile = process.env.USERPROFILE;
+	if (userProfile) {
+		candidates.push(
+			path.join(
+				userProfile,
+				".local",
+				"share",
+				"mise",
+				"installs",
+				"ruby",
+				"bin",
+				`${baseName}.bat`,
+			),
+		);
+		candidates.push(
+			path.join(
+				userProfile,
+				".asdf",
+				"installs",
+				"ruby",
+				"bin",
+				`${baseName}.bat`,
+			),
+		);
+	}
+	candidates.push(path.join("C:\\Ruby34-x64", "bin", `${baseName}.bat`));
+	candidates.push(path.join("C:\\Ruby33-x64", "bin", `${baseName}.bat`));
+	return candidates;
+}
+
 async function launchWithDirectOrPackageManager(
 	directCommands: string[],
 	packageName: string,
@@ -715,22 +747,23 @@ export const RubyServer: LSPServerInfo = {
 			[],
 			{ cwd: root, allowInstall: options?.allowInstall },
 			async () => {
-				try {
-					return await launchLSP("ruby-lsp", [], { cwd: root });
-				} catch {
+				for (const command of ["ruby-lsp", ...rubyBinCandidates("ruby-lsp")]) {
 					try {
-						return await launchLSP("solargraph", ["stdio"], { cwd: root });
+						return await launchLSP(command, [], { cwd: root });
 					} catch {
-					const fallback = await launchWithDirectOrPackageManager(
-						nodeBinCandidates(root, "solargraph"),
-						"solargraph",
-						["stdio"],
-						{ cwd: root, allowInstall: options?.allowInstall },
-					);
-					if (!fallback) throw new Error("ENOENT: command not found");
-					return fallback.process;
+						// try next ruby-lsp candidate
 					}
 				}
+
+				for (const command of ["solargraph", ...rubyBinCandidates("solargraph")]) {
+					try {
+						return await launchLSP(command, ["stdio"], { cwd: root });
+					} catch {
+						// try next solargraph candidate
+					}
+				}
+
+				throw new Error("ENOENT: command not found");
 			},
 		);
 		return proc ? { process: proc, source: "interactive" } : undefined;
@@ -744,12 +777,15 @@ export const RubySolargraphServer: LSPServerInfo = {
 	extensions: [".rb", ".rake", ".gemspec", ".ru"],
 	root: PriorityRoot([["Gemfile", ".ruby-version"], [".git"]]),
 	async spawn(root) {
-		try {
-			const proc = await launchLSP("solargraph", ["stdio"], { cwd: root });
-			return { process: proc, source: "direct" };
-		} catch {
-			return undefined;
+		for (const command of ["solargraph", ...rubyBinCandidates("solargraph")]) {
+			try {
+				const proc = await launchLSP(command, ["stdio"], { cwd: root });
+				return { process: proc, source: "direct" };
+			} catch {
+				// try next candidate
+			}
 		}
+		return undefined;
 	},
 };
 
