@@ -256,6 +256,7 @@ export async function createLSPClient(options: {
 		(label: string) => (err: Error & { code?: string }) => {
 			if (
 				err.code === "ERR_STREAM_DESTROYED" ||
+				err.code === "ERR_STREAM_WRITE_AFTER_END" ||
 				err.code === "EPIPE" ||
 				err.code === "ECONNRESET"
 			)
@@ -343,11 +344,6 @@ export async function createLSPClient(options: {
 	function disposeConnection(): void {
 		if (connectionDisposed) return;
 		connectionDisposed = true;
-		try {
-			connection.end();
-		} catch {
-			// ignore
-		}
 		try {
 			connection.dispose();
 		} catch {
@@ -891,6 +887,7 @@ function isStreamError(err: unknown): boolean {
 		msg.includes("disposed") ||
 		msg.includes("cancelled") ||
 		(err as { code?: string }).code === "ERR_STREAM_DESTROYED" ||
+		(err as { code?: string }).code === "ERR_STREAM_WRITE_AFTER_END" ||
 		(err as { code?: string }).code === "EPIPE"
 	);
 }
