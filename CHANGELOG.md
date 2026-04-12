@@ -4,6 +4,16 @@ All notable changes to pi-lens will be documented in this file.
 
 ## [Unreleased]
 
+## [3.8.24] - 2026-04-12
+
+### Changed
+- **Lazy bootstrap client loading** — startup now defers heavy client initialization behind a shared bootstrap promise, reducing first-turn startup overhead while preserving tool behavior.
+- **LSP config discovery scope** — `.pi-lens/lsp.json` (and related config paths) are now resolved from the current directory up through parent directories, improving nested-workspace support.
+- **Ruby server fallback chain** — Ruby LSP startup now tries `ruby-lsp`, then `solargraph`, then `rubocop --lsp` for broader environment compatibility.
+
+### Fixed
+- **LSP config activation timing** — LSP server config initialization now runs reliably at `session_start` and before LSP-backed `tool_call` operations, so server enable/disable overrides apply in one-shot and interactive sessions.
+
 ## [3.8.23] - 2026-04-12
 
 ### Added
