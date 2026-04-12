@@ -29,7 +29,7 @@ export function consumeTurnEndFindings(
 export function consumeSessionStartGuidance(
 	cacheManager: CacheManager,
 	cwd: string,
-): { messages: Array<{ role: "system"; content: string }> } | undefined {
+): { messages: Array<{ role: "user"; content: string }> } | undefined {
 	const guidance = cacheManager.readCache<{ content: string }>(
 		"session-start-guidance",
 		cwd,
@@ -45,7 +45,7 @@ export function consumeSessionStartGuidance(
 	return {
 		messages: [
 			{
-				role: "system",
+				role: "user",
 				content: `[pi-lens] Session guidance:\n\n${guidance.data.content}`,
 			},
 		],
