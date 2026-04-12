@@ -4,17 +4,23 @@ All notable changes to pi-lens will be documented in this file.
 
 ## [Unreleased]
 
+## [3.8.23] - 2026-04-12
+
 ### Added
 - **LSP auto-touch warm-up** — tool-call flow now proactively opens/syncs supported files (`read`/`write`/`edit`/`lsp_navigation`) so LSP clients warm up earlier and first semantic requests are less likely to return cold-start empties.
 
 ### Changed
 - **Ruby LSP spawn resilience on Windows** — Ruby command discovery now tries `ruby-lsp`/`solargraph` from PATH plus common Ruby install locations before marking servers unavailable.
 - **LSP diagnostics dedupe strategy** — multi-server diagnostics aggregation now dedupes using a simpler key (`line`, `character`, `message`) to better collapse equivalent findings across servers.
+- **Windows LSP PATH fallback** — language-server spawns now augment PATH with common user-level tool locations (`.cargo\bin`, `go\bin`, common Ruby bin dirs) to improve server discovery on Windows shells.
 
 ### Fixed
 - **LSP diagnostics key normalization** — publish diagnostics now store/update using normalized file-path keys, fixing Windows path mismatches that could hide diagnostics in some languages.
 - **Pull diagnostics fallback path** — when a server advertises pull diagnostics, `textDocument/diagnostic` is now attempted before push-wait fallback.
 - **Navigation diagnostics/health observability** — `lsp_navigation` and diagnostics aggregation now emit explicit `failureKind`/health metadata to latency logs and tool details for faster root-cause triage (`no_server`, `unsupported`, `empty_result`, `lsp_error`, etc.).
+- **Scoped workspaceDiagnostics collection** — `workspaceDiagnostics` with `filePath` now forces file-level diagnostics collection (instead of only returning tracked snapshots), including pull-mode aggregation metadata.
+- **Rust pull diagnostics cold-start handling** — pull diagnostics now retry briefly and then fall back to push-wait if pull responses remain empty, improving first-hit Rust diagnostic reliability.
+- **Context injection message role validity** — session-start guidance is now injected as `user` context (valid `AgentMessage` role), preventing dropped context on providers that reject/ignore `system` in this path.
 
 ## [3.8.22] - 2026-04-09
 
