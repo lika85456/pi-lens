@@ -35,6 +35,8 @@ function buildAugmentedPath(basePath?: string): string {
 		candidates.push(path.join(userProfile, ".cargo", "bin"));
 		candidates.push(path.join(userProfile, "go", "bin"));
 	}
+	candidates.push(path.join("C:\\", "Program Files", "Go", "bin"));
+	candidates.push(path.join("C:\\", "Go", "bin"));
 	candidates.push(path.join("C:\\", "Ruby34-x64", "bin"));
 	candidates.push(path.join("C:\\", "Ruby33-x64", "bin"));
 
