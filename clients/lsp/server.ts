@@ -124,23 +124,35 @@ async function launchWithDirectOrPackageManager(
 	args: string[],
 	options: { cwd: string; env?: NodeJS.ProcessEnv; allowInstall?: boolean },
 ): Promise<{ process: LSPProcess; source: "direct" | "package-manager" } | undefined> {
+	let lastDirectError: unknown;
+
 	for (const command of directCommands) {
 		try {
 			const process = await launchLSP(command, args, options);
 			return { process, source: "direct" };
 		} catch (error) {
-			if (!isCommandNotFoundError(error)) {
-				throw error;
-			}
+			lastDirectError = error;
 		}
 	}
 
-	const process = await launchViaPackageManagerWithPolicy(packageName, args, {
-		cwd: options.cwd,
-		allowInstall: options.allowInstall,
-	});
-	if (!process) return undefined;
-	return { process, source: "package-manager" };
+	try {
+		const process = await launchViaPackageManagerWithPolicy(packageName, args, {
+			cwd: options.cwd,
+			allowInstall: options.allowInstall,
+		});
+		if (!process) {
+			if (lastDirectError && !isCommandNotFoundError(lastDirectError)) {
+				throw lastDirectError;
+			}
+			return undefined;
+		}
+		return { process, source: "package-manager" };
+	} catch (packageManagerError) {
+		if (lastDirectError && !isCommandNotFoundError(lastDirectError)) {
+			throw lastDirectError;
+		}
+		throw packageManagerError;
+	}
 }
 
 type InitializationConfig = Record<string, unknown>;

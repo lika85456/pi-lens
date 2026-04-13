@@ -31,6 +31,11 @@ export interface LSPState {
 }
 
 const BROKEN_RETRY_COOLDOWN_MS = 15_000;
+const TOUCH_DEBOUNCE_MS = Math.max(
+	0,
+	Number.parseInt(process.env.PI_LENS_LSP_TOUCH_DEBOUNCE_MS ?? "1500", 10) ||
+		1500,
+);
 const SESSIONSTART_LOG_DIR = path.join(os.homedir(), ".pi-lens");
 const SESSIONSTART_LOG = path.join(SESSIONSTART_LOG_DIR, "sessionstart.log");
 
@@ -57,6 +62,10 @@ export class LSPService {
 	private workspaceProbeLogged = new Set<string>();
 	private warmStartLogged = new Set<string>();
 	private emitConsoleLspErrors = process.env.PI_LENS_CONSOLE_LSP === "1";
+	private recentTouches = new Map<
+		string,
+		{ fingerprint: string; touchedAt: number; clientScope: "primary" | "all" }
+	>();
 
 	constructor() {
 		this.state = {
@@ -65,6 +74,48 @@ export class LSPService {
 			broken: new Map(),
 			inFlight: new Map(),
 		};
+	}
+
+	private fingerprintContent(content: string): string {
+		if (content.length <= 96) {
+			return `${content.length}:${content}`;
+		}
+		return `${content.length}:${content.slice(0, 48)}:${content.slice(-48)}`;
+	}
+
+	private shouldSkipTouch(
+		filePath: string,
+		content: string,
+		clientScope: "primary" | "all",
+		waitForDiagnostics: boolean,
+	): boolean {
+		if (waitForDiagnostics || TOUCH_DEBOUNCE_MS <= 0) {
+			return false;
+		}
+
+		const key = `${normalizeMapKey(filePath)}:${clientScope}`;
+		const previous = this.recentTouches.get(key);
+		if (!previous) return false;
+
+		const now = Date.now();
+		if (now - previous.touchedAt > TOUCH_DEBOUNCE_MS) {
+			return false;
+		}
+
+		return previous.fingerprint === this.fingerprintContent(content);
+	}
+
+	private markTouched(
+		filePath: string,
+		content: string,
+		clientScope: "primary" | "all",
+	): void {
+		const key = `${normalizeMapKey(filePath)}:${clientScope}`;
+		this.recentTouches.set(key, {
+			fingerprint: this.fingerprintContent(content),
+			touchedAt: Date.now(),
+			clientScope,
+		});
 	}
 
 	/**
@@ -329,6 +380,7 @@ export class LSPService {
 	): Promise<void> {
 		const startedAt = Date.now();
 		const normalizedPath = normalizeMapKey(filePath);
+		const clientScope = useAllClients ? "all" : "primary";
 		const spawned = useAllClients
 			? await this.getClientsForFile(filePath)
 			: await this.getClientForFile(filePath).then((entry) =>
@@ -342,9 +394,28 @@ export class LSPService {
 				durationMs: Date.now() - startedAt,
 			metadata: {
 				serverCountReady: 0,
-				clientScope: useAllClients ? "all" : "primary",
+				clientScope,
 				failureKind: "no_clients",
 			},
+			});
+			return;
+		}
+
+		if (this.shouldSkipTouch(filePath, content, clientScope, waitForDiagnostics)) {
+			logLatency({
+				type: "phase",
+				phase: "lsp_touch_file",
+				filePath: normalizedPath,
+				durationMs: Date.now() - startedAt,
+				metadata: {
+					serverCountReady: spawned.length,
+					clientScope,
+					waitForDiagnostics,
+					source,
+					failureKind: "success",
+					skipped: true,
+					reason: "debounced_unchanged_content",
+				},
 			});
 			return;
 		}
@@ -362,6 +433,8 @@ export class LSPService {
 			);
 		}
 
+		this.markTouched(filePath, content, clientScope);
+
 		logLatency({
 			type: "phase",
 			phase: "lsp_touch_file",
@@ -369,7 +442,7 @@ export class LSPService {
 			durationMs: Date.now() - startedAt,
 			metadata: {
 				serverCountReady: spawned.length,
-				clientScope: useAllClients ? "all" : "primary",
+				clientScope,
 				waitForDiagnostics,
 				source,
 				failureKind: "success",
