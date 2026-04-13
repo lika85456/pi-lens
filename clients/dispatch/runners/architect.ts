@@ -47,7 +47,11 @@ const architectRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const relPath = path.relative(ctx.cwd, ctx.filePath).replace(/\\/g, "/");
-		const content = readFileContent(ctx.filePath);
+		const contentFromFacts = ctx.facts.getFileFact<string | null>(
+			ctx.filePath,
+			"file.content",
+		);
+		const content = contentFromFacts ?? readFileContent(ctx.filePath);
 
 		if (!content) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };

@@ -519,13 +519,27 @@ const treeSitterRunner: RunnerDefinition = {
 		});
 
 		const diagnostics: Diagnostic[] = [];
+		const contentFromFacts = ctx.facts.getFileFact<string | null>(
+			filePath,
+			"file.content",
+		);
+		const contentOverride =
+			contentFromFacts !== undefined && contentFromFacts !== null
+				? contentFromFacts
+				: undefined;
 
 		// Run each query against the file
 		for (const query of effectiveQueries) {
 			try {
-				const matches = await client.runQueryOnFile(query, filePath, languageId, {
-					maxResults: 10,
-				});
+				const matches = await client.runQueryOnFile(
+					query,
+					filePath,
+					languageId,
+					{
+						maxResults: 10,
+					},
+					contentOverride,
+				);
 
 				for (const match of matches) {
 					// Get line/column from match (already 0-indexed from tree-sitter)

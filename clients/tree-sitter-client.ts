@@ -283,6 +283,7 @@ export class TreeSitterClient {
 	async parseFile(
 		filePath: string,
 		languageId: string,
+		contentOverride?: string,
 	): Promise<TreeSitterTree | null> {
 		this.dbg(`Parsing ${filePath} with language ${languageId}`);
 		const parser = await this.getParser(languageId);
@@ -292,7 +293,7 @@ export class TreeSitterClient {
 		}
 
 		try {
-			const content = fs.readFileSync(filePath, "utf-8");
+			const content = contentOverride ?? fs.readFileSync(filePath, "utf-8");
 			this.dbg(`File content length: ${content.length}`);
 
 			// Check cache first
@@ -469,6 +470,7 @@ export class TreeSitterClient {
 		filePath: string,
 		languageId: string,
 		options: { maxResults?: number } = {},
+		contentOverride?: string,
 	): Promise<StructuralMatch[]> {
 		if (!this.initialized) {
 			const ok = await this.init();
@@ -493,6 +495,7 @@ export class TreeSitterClient {
 			queryDef.id,
 			compiled.postFilter,
 			compiled.postFilterParams,
+			contentOverride,
 		);
 
 		const maxResults = options.maxResults ?? 50;
@@ -727,8 +730,9 @@ export class TreeSitterClient {
 		postFilter?: string,
 		// biome-ignore lint/suspicious/noExplicitAny: Post filter params
 		postFilterParams?: any,
+		contentOverride?: string,
 	): Promise<StructuralMatch[]> {
-		const tree = await this.parseFile(filePath, languageId);
+		const tree = await this.parseFile(filePath, languageId, contentOverride);
 		if (!tree) return [];
 
 		const matches: StructuralMatch[] = [];

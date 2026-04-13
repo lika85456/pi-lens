@@ -36,9 +36,9 @@ const OPTIONAL_LSP_SERVER_IDS = new Set(["biome-lsp"]);
 const NAV_CLIENT_WAIT_TIMEOUT_MS = Math.max(
 	0,
 	Number.parseInt(
-		process.env.PI_LENS_LSP_NAV_CLIENT_WAIT_MS ?? "500",
+		process.env.PI_LENS_LSP_NAV_CLIENT_WAIT_MS ?? "700",
 		10,
-	) || 500,
+	) || 700,
 );
 const TOUCH_DEBOUNCE_MS = Math.max(
 	0,

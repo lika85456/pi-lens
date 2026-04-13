@@ -423,10 +423,18 @@ const astGrepNapiRunner: RunnerDefinition = {
 		}
 
 		let content: string;
-		try {
-			content = fs.readFileSync(ctx.filePath, "utf-8");
-		} catch {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
+		const contentFromFacts = ctx.facts.getFileFact<string | null>(
+			ctx.filePath,
+			"file.content",
+		);
+		if (contentFromFacts !== undefined && contentFromFacts !== null) {
+			content = contentFromFacts;
+		} else {
+			try {
+				content = fs.readFileSync(ctx.filePath, "utf-8");
+			} catch {
+				return { status: "skipped", diagnostics: [], semantic: "none" };
+			}
 		}
 
 		let root: import("@ast-grep/napi").SgRoot;
