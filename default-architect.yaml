@@ -25,7 +25,7 @@ rules:
         message: "Extreme nesting (6+ levels) — refactor into smaller functions."
 
   # Clients/commands: can be larger but still bounded
-  - pattern: "**/clients/**/*.ts|**/commands/**/*.ts"
+  - pattern: "**/{clients,commands}/**/*.ts"
     max_lines: 1000
     must_not:
       - pattern: '(?:\s{12,}.*\n){10,}'
@@ -39,7 +39,7 @@ rules:
         message: "Extreme nesting (6+ levels) — refactor into smaller functions."
 
   # Test files: more relaxed
-  - pattern: "**/*.test.ts|**/*.test.js|**/*.spec.ts|**/*.spec.js"
+  - pattern: "**/*.{test,spec}.{ts,js}"
     max_lines: 5000
 
   # ===========================================================================

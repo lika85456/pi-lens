@@ -18,7 +18,7 @@ description: |
 query: |
   (for_statement
     body: (block
-      (go_statement) @GO)
+      (go_statement) @GO))
 
 metavars:
   - GO
