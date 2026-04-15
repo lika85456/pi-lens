@@ -24,6 +24,12 @@ export interface FunctionSummary {
   isPassThroughWrapper: boolean;
   passThroughTarget?: string;
   isBoundaryWrapper: boolean;
+  /** McCabe cyclomatic complexity (branches + 1) */
+  cyclomaticComplexity: number;
+  /** Maximum control-flow nesting depth within the function */
+  maxNestingDepth: number;
+  /** Distinct callees invoked within the function body */
+  outgoingCalls: string[];
 }
 
 function getFunctionName(node: ts.Node): string {
@@ -62,6 +68,76 @@ function isCallPassThrough(
   }
 
   return { pass: true, target: expr.expression.getText() };
+}
+
+function calcCyclomaticComplexity(body: ts.Block): number {
+  let cc = 1;
+  const walk = (node: ts.Node): void => {
+    switch (node.kind) {
+      case ts.SyntaxKind.IfStatement:
+      case ts.SyntaxKind.ForStatement:
+      case ts.SyntaxKind.ForInStatement:
+      case ts.SyntaxKind.ForOfStatement:
+      case ts.SyntaxKind.WhileStatement:
+      case ts.SyntaxKind.DoStatement:
+      case ts.SyntaxKind.CaseClause:
+      case ts.SyntaxKind.CatchClause:
+      case ts.SyntaxKind.ConditionalExpression:
+        cc++;
+        break;
+      case ts.SyntaxKind.BinaryExpression: {
+        const op = (node as ts.BinaryExpression).operatorToken.kind;
+        if (
+          op === ts.SyntaxKind.AmpersandAmpersandToken ||
+          op === ts.SyntaxKind.BarBarToken ||
+          op === ts.SyntaxKind.QuestionQuestionToken
+        ) cc++;
+        break;
+      }
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(body);
+  return cc;
+}
+
+function calcMaxNestingDepth(body: ts.Block): number {
+  let maxDepth = 0;
+  const isNestingNode = (node: ts.Node): boolean => {
+    switch (node.kind) {
+      case ts.SyntaxKind.IfStatement:
+      case ts.SyntaxKind.ForStatement:
+      case ts.SyntaxKind.ForInStatement:
+      case ts.SyntaxKind.ForOfStatement:
+      case ts.SyntaxKind.WhileStatement:
+      case ts.SyntaxKind.DoStatement:
+      case ts.SyntaxKind.SwitchStatement:
+      case ts.SyntaxKind.TryStatement:
+        return true;
+      default:
+        return false;
+    }
+  };
+  const walk = (node: ts.Node, depth: number): void => {
+    if (depth > maxDepth) maxDepth = depth;
+    const next = isNestingNode(node) ? depth + 1 : depth;
+    ts.forEachChild(node, (child) => walk(child, next));
+  };
+  ts.forEachChild(body, (child) => walk(child, 0));
+  return maxDepth;
+}
+
+function collectOutgoingCalls(body: ts.Block): string[] {
+  const calls = new Set<string>();
+  const walk = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression.getText();
+      if (callee.length < 80) calls.add(callee);
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(body);
+  return [...calls];
 }
 
 function hasAwaitInNode(node: ts.Node): boolean {
@@ -156,6 +232,9 @@ export const functionFactProvider: FactProvider = {
         isPassThroughWrapper: passThrough.pass,
         passThroughTarget: passThrough.target,
         isBoundaryWrapper,
+        cyclomaticComplexity: calcCyclomaticComplexity(body),
+        maxNestingDepth: calcMaxNestingDepth(body),
+        outgoingCalls: collectOutgoingCalls(body),
       });
     };
 

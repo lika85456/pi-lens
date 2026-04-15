@@ -72,6 +72,7 @@ function parseBiomeJson(
 			semantic: d.severity === "error" ? "blocking" : ("warning" as const),
 			tool: "biome",
 			rule: d.category,
+			fixable: d.tags?.includes("fixable") ?? false,
 			})),
 		};
 	} catch (err) {

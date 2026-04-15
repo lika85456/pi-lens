@@ -52,6 +52,8 @@ import { functionFactProvider } from "./facts/function-facts.js";
 registerProvider(functionFactProvider);
 import { commentFactProvider } from "./facts/comment-facts.js";
 registerProvider(commentFactProvider);
+import { importFactProvider } from "./facts/import-facts.js";
+registerProvider(importFactProvider);
 
 // Register fact rules
 import { registerRule } from "./fact-rule-runner.js";

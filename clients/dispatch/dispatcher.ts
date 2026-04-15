@@ -208,6 +208,40 @@ function dedupeOverlappingDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
 	return [...byKey.values()];
 }
 
+/**
+ * Apply inline suppression comments.
+ * Syntax: `// pi-lens-ignore: rule-id` (JS/TS) or `# pi-lens-ignore: rule-id` (Python/Ruby/etc.)
+ * Place on the same line as the diagnostic or the line immediately above it.
+ */
+function applyInlineSuppressions(diagnostics: Diagnostic[], content: string): Diagnostic[] {
+	if (!content || !diagnostics.length) return diagnostics;
+
+	// Build a set of (line, ruleId) pairs that are suppressed.
+	// Line numbers are 1-based to match diagnostic line numbers.
+	const suppressed = new Set<string>();
+	const lines = content.split("\n");
+	const SUPPRESS_RE = /(?:\/\/|#)\s*pi-lens-ignore:\s*(.+)/;
+	for (let i = 0; i < lines.length; i++) {
+		const m = SUPPRESS_RE.exec(lines[i]);
+		if (!m) continue;
+		const rules = m[1].split(",").map((r) => r.trim()).filter(Boolean);
+		const suppressedLine = i + 1; // same line (1-based)
+		const nextLine = i + 2;      // next line (1-based)
+		for (const ruleId of rules) {
+			suppressed.add(`${suppressedLine}:${ruleId}`);
+			suppressed.add(`${nextLine}:${ruleId}`);
+		}
+	}
+
+	if (suppressed.size === 0) return diagnostics;
+
+	return diagnostics.filter((d) => {
+		const ruleId = d.rule ?? d.id ?? "";
+		const line = d.line ?? 1;
+		return !suppressed.has(`${line}:${ruleId}`);
+	});
+}
+
 function suppressLintOverlapsWithLsp(diagnostics: Diagnostic[]): Diagnostic[] {
 	const lspBySpanClass = new Set<string>();
 	const lspByLine = new Set<string>();
@@ -607,7 +641,9 @@ export async function dispatchForFile(
 	// This avoids partial-baseline corruption when processing multiple groups.
 	const dedupedDiagnostics = dedupeOverlappingDiagnostics(allDiagnostics);
 	const overlapSuppressed = suppressLintOverlapsWithLsp(dedupedDiagnostics);
-	let visibleDiagnostics = overlapSuppressed;
+	const fileContent = ctx.facts.getFileFact<string>(ctx.filePath, "file.content") ?? "";
+	const inlineSuppressed = applyInlineSuppressions(overlapSuppressed, fileContent);
+	let visibleDiagnostics = inlineSuppressed;
 	let resolvedCount = 0;
 	if (ctx.deltaMode && previousBaseline) {
 		const filtered = filterDelta(visibleDiagnostics, previousBaseline, (d) => d.id);
@@ -627,6 +663,20 @@ export async function dispatchForFile(
 		(d) => d.semantic === "warning" || d.semantic === "none",
 	);
 	const fixedItems = visibleDiagnostics.filter((d) => d.semantic === "fixed");
+
+	// Append fixed and fixable diagnostics to the persistent worklog
+	if (fixedItems.length > 0) {
+		import("../fix-worklog.js").then(({ appendToWorklog }) => {
+			appendToWorklog(ctx.cwd, fixedItems, true);
+		}).catch(() => {});
+	}
+	const fixableWarnings = warnings.filter((d) => d.fixable);
+	if (fixableWarnings.length > 0) {
+		import("../fix-worklog.js").then(({ appendToWorklog }) => {
+			appendToWorklog(ctx.cwd, fixableWarnings, false);
+		}).catch(() => {});
+	}
+
 	const inlineBlockers = blockers.filter((d) => d.tool !== "similarity");
 	const inlineFixed = fixedItems.filter((d) => d.tool !== "similarity");
 	const coverageNotice = buildCoverageNotice(ctx, runnerLatencies);
