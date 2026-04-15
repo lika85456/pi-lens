@@ -15,11 +15,13 @@ import type { TryCatchSummary } from "../facts/try-catch-facts.js";
 const IO_PREFIXES = [
 	"fetch", "axios", "got", "request",
 	"db.", "prisma.", "knex.", "mongoose.", "sequelize.",
-	"fs.", "fs/promises", "readFile", "writeFile", "readdir",
 	"http.", "https.", "net.", "dns.",
 	"redis.", "mongo.", "pg.", "mysql.",
 	"s3.", "storage.", "bucket.",
-	"exec", "spawn", "execSync",
+	"spawn", "exec(",
+	// Async fs only — sync variants (existsSync, readFileSync, etc.) don't produce rejections
+	"fs.promises.", "fs/promises",
+	"readFile(", "writeFile(", "appendFile(", "readdir(", "mkdir(", "unlink(", "stat(",
 ];
 
 const CC_THRESHOLD = 4; // lower bar than high-complexity — IO makes it riskier

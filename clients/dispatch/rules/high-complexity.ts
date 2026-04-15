@@ -2,8 +2,8 @@ import type { FactRule } from "../fact-provider-types.js";
 import type { Diagnostic } from "../types.js";
 import type { FunctionSummary } from "../facts/function-facts.js";
 
-const CC_THRESHOLD = 10;
-const DEPTH_THRESHOLD = 5;
+const CC_THRESHOLD = 15;
+const DEPTH_THRESHOLD = 6;
 
 export const highComplexityRule: FactRule = {
 	id: "high-complexity",
