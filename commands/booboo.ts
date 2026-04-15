@@ -9,7 +9,6 @@ import type { AstGrepClient } from "../clients/ast-grep-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
 import type { DependencyChecker } from "../clients/dependency-checker.js";
 import {
-	EXCLUDED_DIRS,
 	getKnipIgnorePatterns,
 	isTestFile,
 } from "../clients/file-utils.js";
@@ -27,7 +26,6 @@ import {
 } from "../clients/project-metadata.js";
 import { RunnerTracker } from "../clients/runner-tracker.js";
 import { safeSpawn } from "../clients/safe-spawn.js";
-import { getSourceFiles } from "../clients/scan-utils.js";
 import {
 	collectSourceFiles,
 	getFilterStats,
@@ -35,7 +33,33 @@ import {
 import { calculateSimilarity } from "../clients/state-matrix.js";
 import type { TodoScanner } from "../clients/todo-scanner.js";
 import { TreeSitterClient } from "../clients/tree-sitter-client.js";
+import { queryLoader } from "../clients/tree-sitter-query-loader.js";
 import type { TypeCoverageClient } from "../clients/type-coverage-client.js";
+import { FactStore } from "../clients/dispatch/fact-store.js";
+import { runProviders } from "../clients/dispatch/fact-runner.js";
+import { evaluateRules } from "../clients/dispatch/fact-rule-runner.js";
+import { createDispatchContext } from "../clients/dispatch/dispatcher.js";
+// Side-effect import: registers all fact providers and fact rules
+import "../clients/dispatch/integration.js";
+
+// Module-level singleton — web-tree-sitter WASM must only be initialized once per process
+let _sharedTreeSitterClient: TreeSitterClient | null = null;
+function getSharedTreeSitterClient(): TreeSitterClient {
+	if (!_sharedTreeSitterClient) {
+		_sharedTreeSitterClient = new TreeSitterClient();
+	}
+	return _sharedTreeSitterClient;
+}
+
+const EXT_TO_LANG: Record<string, string> = {
+	".ts": "typescript", ".mts": "typescript", ".cts": "typescript",
+	".tsx": "typescript",
+	".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript",
+	".py": "python",
+	".go": "go",
+	".rs": "rust",
+	".rb": "ruby",
+};
 
 const getExtensionDir = () => {
 	if (typeof __dirname !== "undefined") {
@@ -561,207 +585,163 @@ export async function handleBooboo(
 		return { findings: 0, status: "done" };
 	});
 
-	// Runner 4: Tree-sitter patterns (complementary to ast-grep)
-	// - Falls back to tree-sitter if ast-grep unavailable
-	// - Detects patterns ast-grep can't easily do (multi-statement, complex nesting)
-	// - Captures values for richer reporting
+	// Runner 4: Tree-sitter patterns — language-aware, driven by .yml rule files
+	// Uses the same queryLoader + singleton client as the per-write dispatch runner.
+	// Covers all languages: TypeScript, JavaScript, Python, Go, Rust, Ruby.
 	await tracker.run("tree-sitter patterns", async () => {
-		const client = new TreeSitterClient();
-		if (!client.isAvailable()) {
-			return { findings: 0, status: "skipped" };
-		}
+		const client = getSharedTreeSitterClient();
+		if (!client.isAvailable()) return { findings: 0, status: "skipped" };
 
-		const languageId = isTsProject ? "typescript" : "javascript";
-		let findings = 0;
-		const structuralIssues: Array<{
+		const initialized = await client.init();
+		if (!initialized) return { findings: 0, status: "skipped" };
+
+		await queryLoader.loadQueries(targetPath);
+		const allQueries = queryLoader.getAllQueries();
+		if (allQueries.length === 0) return { findings: 0, status: "skipped" };
+
+		// Deduplicate structural rules that fire per nesting level
+		const DEDUP_PER_FILE = new Set(["deep-promise-chain", "deep-nesting"]);
+
+		interface TSIssue {
 			file: string;
 			line: number;
-			pattern: string;
+			ruleId: string;
 			severity: string;
-			fixable: boolean;
-			note?: string;
-		}> = [];
-		const seenStructuralIssueKeys = new Set<string>();
+			message: string;
+		}
 
-		const normalizeMatchedText = (text: string): string =>
-			text.replace(/\s+/g, " ").replace(/["'`][^"'`]{0,80}["'`]/g, "STR").trim();
+		const byRule = new Map<string, TSIssue[]>();
+		let findings = 0;
 
-		const pushStructuralIssue = (
-			match: { file: string; line: number; matchedText: string },
-			issue: {
-				pattern: string;
-				severity: string;
-				fixable: boolean;
-				note?: string;
-			},
-		) => {
-			const scopeKey = normalizeMatchedText(match.matchedText || "").slice(0, 260);
-			const key = `${match.file}:${issue.pattern}:${scopeKey}`;
-			if (seenStructuralIssueKeys.has(key)) return;
-			seenStructuralIssueKeys.add(key);
+		for (const filePath of allFiles) {
+			if (isTestFile(filePath)) continue;
+			const ext = filePath.slice(filePath.lastIndexOf("."));
+			const langId = EXT_TO_LANG[ext];
+			if (!langId) continue;
 
-			structuralIssues.push({
-				file: match.file,
-				line: match.line,
-				pattern: issue.pattern,
-				severity: issue.severity,
-				fixable: issue.fixable,
-				note: issue.note,
-			});
-			findings++;
-		};
-
-		// Only run basic patterns if ast-grep is NOT available (avoid duplication)
-		const astGrepAvailable = await clients.astGrep.ensureAvailable();
-
-		if (!astGrepAvailable) {
-			// Fallback: console.log detection (ast-grep normally handles this)
-			const consoleLogs = await client.structuralSearch(
-				"console.$METHOD($MSG)",
-				languageId,
-				targetPath,
-				{ maxResults: 30, fileFilter: shouldIncludeFile },
+			const langQueries = allQueries.filter(
+				(q) =>
+					q.language === langId ||
+					(langId === "javascript" && q.language === "typescript"),
 			);
+			if (langQueries.length === 0) continue;
 
-			for (const match of consoleLogs) {
-				const method = match.captures.METHOD || "log";
-				if (["log", "debug", "info", "warn"].includes(method)) {
-					pushStructuralIssue(match, {
-						pattern: `console.${method}()`,
-						severity: "🟡",
-						fixable: true,
-						note: astGrepAvailable
-							? undefined
-							: "(fallback - ast-grep not available)",
+			for (const query of langQueries) {
+				let matches;
+				try {
+					matches = await client.runQueryOnFile(query, filePath, langId, {
+						maxResults: 20,
 					});
+				} catch {
+					continue;
 				}
+				if (!matches?.length) continue;
+
+				const relFile = path.relative(targetPath, filePath);
+				const bucket = byRule.get(query.id) ?? [];
+
+				if (DEDUP_PER_FILE.has(query.id)) {
+					if (!bucket.some((h) => h.file === relFile)) {
+						bucket.push({ file: relFile, line: matches[0].line ?? 1, ruleId: query.id, severity: query.severity, message: query.message });
+						findings++;
+					}
+				} else {
+					for (const m of matches) {
+						bucket.push({ file: relFile, line: m.line ?? 1, ruleId: query.id, severity: query.severity, message: query.message });
+						findings++;
+					}
+				}
+				byRule.set(query.id, bucket);
 			}
 		}
 
-		// Pattern 1: Nested promise chains (ast-grep struggles with multi-statement nesting)
-		// This detects: .then().catch().then() chains that could be async/await
-		const promiseChains = await client.structuralSearch(
-			"$PROMISE.then($$$HANDLER1).catch($$$HANDLER2).then($$$HANDLER3)",
-			languageId,
-			targetPath,
-			{ maxResults: 20, fileFilter: shouldIncludeFile },
-		);
+		if (findings === 0) return { findings: 0, status: "done" };
 
-		for (const match of promiseChains) {
-			pushStructuralIssue(match, {
-				pattern: "deep promise chain (3+ levels)",
-				severity: "🟡",
-				fixable: true,
-				note: "Consider converting to async/await for readability",
-			});
-		}
-
-		// Pattern 2: Callback pyramids (error-first callbacks nested 3+ levels)
-		const callbackPyramids = await client.structuralSearch(
-			"$FUNC($$$ARGS, ($ERR, $$$PARAMS) => { $$$BODY })",
-			languageId,
-			targetPath,
-			{ maxResults: 20, fileFilter: shouldIncludeFile },
-		);
-
-		// Filter for actual callback nesting (error parameter pattern)
-		const nestedCallbacks = callbackPyramids.filter((m) => {
-			const body = m.captures.BODY || "";
-			// Check if body contains another callback
-			return body.includes("(") && body.includes("=>");
+		const errorCount = [...byRule.values()].flat().filter((i) => i.severity === "error").length;
+		summaryItems.push({
+			category: "Tree-sitter Patterns",
+			count: findings,
+			severity: errorCount > 0 ? "🔴" : "🟡",
+			fixable: true,
 		});
 
-		for (const match of nestedCallbacks.slice(0, 10)) {
-			pushStructuralIssue(match, {
-				pattern: "callback pyramid (error-first pattern)",
-				severity: "🟡",
-				fixable: true,
-				note: "Consider promisify + async/await",
-			});
+		// Sort rules by hit count descending
+		const sorted = [...byRule.entries()].sort((a, b) => b[1].length - a[1].length);
+		let fullSection = `## Tree-sitter Patterns\n\n**${findings} issue(s) across ${byRule.size} rule(s)**\n\n`;
+		for (const [ruleId, issues] of sorted) {
+			const sev = issues[0].severity === "error" ? "🔴" : "🟡";
+			fullSection += `### ${sev} ${ruleId} (${issues.length})\n\n`;
+			fullSection += `${issues[0].message}\n\n`;
+			fullSection += "| File | Line |\n|------|------|\n";
+			for (const issue of issues.slice(0, 10)) {
+				fullSection += `| ${issue.file} | ${issue.line} |\n`;
+			}
+			if (issues.length > 10) fullSection += `| ... | +${issues.length - 10} more |\n`;
+			fullSection += "\n";
 		}
+		fullReport.push(fullSection);
 
-		// Pattern 3: Mixed async patterns (async function + .then() + callback)
-		// Detects inconsistent async styles in same function
-		const asyncFunctions = await client.structuralSearch(
-			"async function $NAME($$$PARAMS) { $BODY }",
-			languageId,
-			targetPath,
-			{ maxResults: 50, fileFilter: shouldIncludeFile },
+		return { findings, status: "done" };
+	});
+
+	// Runner 4b: Fact rules — semantic analysis over TS/JS files
+	// Runs all registered fact rules (error-obscuring, async-noise, unsafe-boundary, etc.)
+	// using the same provider/rule pipeline as the per-write dispatch system.
+	await tracker.run("fact rules", async () => {
+		const boobooFacts = new FactStore();
+		const tsFiles = allFiles.filter(
+			(f) => /\.tsx?$/.test(f) && !isTestFile(f),
 		);
+		if (tsFiles.length === 0) return { findings: 0, status: "skipped" };
 
-		for (const match of asyncFunctions) {
-			const body = match.captures.BODY || "";
-			// Check if async function uses both await and .then()
-			const hasAwait = body.includes("await");
-			const hasThen = body.match(/\.\s*then\s*\(/);
+		interface FactIssue { file: string; line: number; ruleId: string; severity: string; message: string }
+		const byRule = new Map<string, FactIssue[]>();
+		let findings = 0;
 
-			if (hasAwait && hasThen) {
-				pushStructuralIssue(match, {
-					pattern: "mixed async/await + promise chains",
-					severity: "🟡",
-					fixable: true,
-					note: "Use consistent async style (prefer await)",
-				});
+		for (const filePath of tsFiles) {
+			boobooFacts.clearFileFactsFor(filePath);
+			const ctx = createDispatchContext(filePath, targetPath, pi, boobooFacts, false);
+
+			try {
+				await runProviders(ctx);
+			} catch {
+				continue;
+			}
+
+			const diagnostics = evaluateRules(ctx);
+			for (const diag of diagnostics) {
+				const relFile = path.relative(targetPath, filePath);
+				const bucket = byRule.get(diag.rule ?? diag.id) ?? [];
+				bucket.push({ file: relFile, line: diag.line ?? 1, ruleId: diag.rule ?? diag.id, severity: diag.severity ?? "warning", message: diag.message ?? "" });
+				byRule.set(diag.rule ?? diag.id, bucket);
+				findings++;
 			}
 		}
 
-		// Pattern 4: Complex nested if/else (ast-grep can do this, but tree-sitter captures entire block)
-		const deepIfs = await client.structuralSearch(
-			"if ($COND1) { if ($COND2) { if ($COND3) { $$$BODY } } }",
-			languageId,
-			targetPath,
-			{ maxResults: 15, fileFilter: shouldIncludeFile },
-		);
+		if (findings === 0) return { findings: 0, status: "done" };
 
-		for (const match of deepIfs) {
-			pushStructuralIssue(match, {
-				pattern: "deeply nested conditionals (3+ levels)",
-				severity: "🟡",
-				fixable: true,
-				note: "Consider early returns or guard clauses",
-			});
+		const errorCount = [...byRule.values()].flat().filter((i) => i.severity === "error").length;
+		summaryItems.push({
+			category: "Fact Rules",
+			count: findings,
+			severity: errorCount > 0 ? "🔴" : "🟡",
+			fixable: true,
+		});
+
+		const sorted = [...byRule.entries()].sort((a, b) => b[1].length - a[1].length);
+		let fullSection = `## Fact Rules (Semantic Analysis)\n\n**${findings} issue(s) across ${byRule.size} rule(s)**\n\n`;
+		for (const [ruleId, issues] of sorted) {
+			const sev = issues[0].severity === "error" ? "🔴" : "🟡";
+			fullSection += `### ${sev} ${ruleId} (${issues.length})\n\n`;
+			fullSection += `${issues[0].message}\n\n`;
+			fullSection += "| File | Line |\n|------|------|\n";
+			for (const issue of issues.slice(0, 10)) {
+				fullSection += `| ${issue.file} | ${issue.line} |\n`;
+			}
+			if (issues.length > 10) fullSection += `| ... | +${issues.length - 10} more |\n`;
+			fullSection += "\n";
 		}
-
-		// Add to summary if issues found
-		if (findings > 0) {
-			summaryItems.push({
-				category: astGrepAvailable
-					? "Advanced Structural"
-					: "Structural Patterns (fallback)",
-				count: findings,
-				severity: "🟡",
-				fixable: true,
-			});
-
-			// Build detailed report
-			let fullSection = `## ${astGrepAvailable ? "Advanced Structural" : "Structural Patterns"} (Tree-sitter)\n\n`;
-			fullSection += `**${findings} issue(s) found**`;
-			if (!astGrepAvailable) {
-				fullSection += ` *(ast-grep not available - showing basic + advanced patterns)*`;
-			}
-			fullSection += `\n\n`;
-
-			// Group by pattern type
-			const byPattern: Record<string, typeof structuralIssues> = {};
-			for (const issue of structuralIssues) {
-				if (!byPattern[issue.pattern]) byPattern[issue.pattern] = [];
-				byPattern[issue.pattern].push(issue);
-			}
-
-			for (const [pattern, issues] of Object.entries(byPattern)) {
-				fullSection += `### ${pattern} (${issues.length})\n\n`;
-				fullSection += "| File | Line | Note |\n|------|------|------|\n";
-				for (const issue of issues.slice(0, 10)) {
-					fullSection += `| ${issue.file} | ${issue.line} | ${issue.note || ""} |\n`;
-				}
-				if (issues.length > 10) {
-					fullSection += `| ... | ... | ... |\n`;
-				}
-				fullSection += "\n";
-			}
-
-			fullReport.push(fullSection);
-		}
+		fullReport.push(fullSection);
 
 		return { findings, status: "done" };
 	});
