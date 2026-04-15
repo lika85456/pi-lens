@@ -4,6 +4,11 @@ All notable changes to pi-lens will be documented in this file.
 
 ## [Unreleased]
 
+## [3.8.26] - 2026-04-15
+
+### Fixed
+- **Silent crash on unhandled promise rejection** — the LSP crash guard's `unhandledRejection` handler was swallowing all non-ignorable rejections without rethrowing, causing silent process exits. The handler now rethrows so non-ignorable rejections surface as `uncaughtException` and are properly reported. Triggered most visibly when editing JSON files while Biome or another LSP server was active.
+
 ## [3.8.25] - 2026-04-13
 
 ### Changed

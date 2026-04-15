@@ -271,6 +271,7 @@ function installCrashGuard(): void {
 		if (isIgnorableLspRuntimeCrash(reason)) {
 			return;
 		}
+		throw reason instanceof Error ? reason : new Error(String(reason));
 	});
 }
 
