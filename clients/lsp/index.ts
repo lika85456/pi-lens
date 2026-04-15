@@ -328,7 +328,7 @@ export class LSPService {
 		const isOptionalServer = OPTIONAL_LSP_SERVER_IDS.has(server.id);
 		const startedAt = Date.now();
 		logSessionStart(
-			`lsp spawn ${server.id}: start root=${root} policy=${server.installPolicy ?? "unknown"} install=${allowInstall ? "enabled" : "disabled"} file=${filePath}`,
+			`lsp spawn ${server.id}: start root=${root} install=${allowInstall ? "enabled" : "disabled"} file=${filePath}`,
 		);
 		try {
 			const spawned = await server.spawn(root, { allowInstall });
@@ -361,7 +361,7 @@ export class LSPService {
 				this.optionalFailureLogged.delete(key);
 			}
 			logSessionStart(
-				`lsp spawn ${server.id}: success source=${spawned.source ?? server.installPolicy ?? "unknown"} (${Date.now() - startedAt}ms)`,
+				`lsp spawn ${server.id}: success source=${spawned.source ?? "unknown"} (${Date.now() - startedAt}ms)`,
 			);
 			if (!this.workspaceProbeLogged.has(key)) {
 				logSessionStart(

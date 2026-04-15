@@ -31,9 +31,9 @@ afterEach(() => {
 });
 
 describe("lsp server policy", () => {
-	it("declares installPolicy for every built-in server", async () => {
+	it("every built-in server has a spawn function", async () => {
 		const { LSP_SERVERS } = await import("../../../clients/lsp/server.js");
-		const missing = LSP_SERVERS.filter((server) => !server.installPolicy).map(
+		const missing = LSP_SERVERS.filter((server) => typeof server.spawn !== "function").map(
 			(server) => server.id,
 		);
 		expect(missing).toEqual([]);

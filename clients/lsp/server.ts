@@ -12,13 +12,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ensureTool, getToolEnvironment } from "../installer/index.js";
 import {
-	promptForInstall,
-	supportsInteractiveInstall,
-} from "./interactive-install.js";
-import {
 	type LSPProcess,
 	launchLSP,
-	launchViaPackageManager,
 } from "./launch.js";
 
 // --- Types ---
@@ -34,7 +29,6 @@ export interface LSPServerInfo {
 	name: string;
 	extensions: string[];
 	root: RootFunction;
-	installPolicy?: "none" | "interactive" | "managed" | "package-manager";
 	spawn(
 		root: string,
 		options?: LSPSpawnOptions,
@@ -62,15 +56,90 @@ function isCommandNotFoundError(error: unknown): boolean {
 	return msg.includes("not found") || msg.includes("ENOENT");
 }
 
-async function launchViaPackageManagerWithPolicy(
-	packageName: string,
-	args: string[],
-	options: { cwd: string; allowInstall?: boolean },
-): Promise<LSPProcess | undefined> {
-	if (!canInstall(options.allowInstall)) {
-		return undefined;
+
+// ---------------------------------------------------------------------------
+// Unified binary resolution + launch
+// ---------------------------------------------------------------------------
+//
+// Replaces the four ad-hoc patterns (launchWithDirectOrPackageManager,
+// spawnWithInteractiveInstall, manual ensureTool chains, installPolicy enum).
+//
+// Resolution chain (first match wins):
+//   1. Explicit candidates (project node_modules, full paths)
+//   2. System PATH (bare command name)
+//   3. ensureTool() — managed npm/pip install via installer registry
+//   4. runtimeInstall — language-native install (go install, gem install, …)
+//   5. [future] github — platform binary download
+//
+// All steps are silent and gated by canInstall(). Returns undefined if no
+// binary can be found or installed.
+
+interface ResolveAndLaunchSpec {
+	/** Ordered list of full paths / bare commands to try first */
+	candidates: string[];
+	/** LSP args to pass on launch */
+	args: string[];
+	/** Working directory */
+	cwd: string;
+	/** Optional env overrides */
+	env?: NodeJS.ProcessEnv;
+	/** installer tool ID — checked/installed via ensureTool() */
+	managedToolId?: string;
+	/** Runtime install: check this command is on PATH, then run installer */
+	runtimeInstall?: {
+		runtimeCommand: string;
+		install: () => Promise<boolean>;
+		/** After a successful install, retry these candidates (defaults to spec.candidates) */
+		retryCandidates?: string[];
+	};
+}
+
+async function resolveAndLaunch(
+	spec: ResolveAndLaunchSpec,
+	allowInstall: boolean | undefined,
+): Promise<{ process: LSPProcess; source: "direct" | "managed" | "package-manager" } | undefined> {
+	// Step 1 & 2 — try all explicit candidates (includes bare command = PATH lookup)
+	for (const command of spec.candidates) {
+		try {
+			const proc = await launchLSP(command, spec.args, { cwd: spec.cwd, env: spec.env });
+			return { process: proc, source: "direct" };
+		} catch {
+			// try next
+		}
 	}
-	return launchViaPackageManager(packageName, args, options);
+
+	if (!canInstall(allowInstall)) return undefined;
+
+	// Step 3 — managed install via installer registry
+	if (spec.managedToolId) {
+		const installed = await ensureTool(spec.managedToolId);
+		if (installed) {
+			try {
+				const proc = await launchLSP(installed, spec.args, { cwd: spec.cwd, env: spec.env });
+				return { process: proc, source: "managed" };
+			} catch {
+				// fall through
+			}
+		}
+	}
+
+	// Step 4 — language-native runtime install (go install, gem install, …)
+	if (spec.runtimeInstall && isOnPath(spec.runtimeInstall.runtimeCommand)) {
+		const ok = await spec.runtimeInstall.install();
+		if (ok) {
+			const retry = spec.runtimeInstall.retryCandidates ?? spec.candidates;
+			for (const command of retry) {
+				try {
+					const proc = await launchLSP(command, spec.args, { cwd: spec.cwd, env: spec.env });
+					return { process: proc, source: "managed" };
+				} catch {
+					// try next
+				}
+			}
+		}
+	}
+
+	return undefined;
 }
 
 function nodeBinCandidates(root: string, baseName: string): string[] {
@@ -119,43 +188,6 @@ function rubyBinCandidates(baseName: string): string[] {
 	return candidates;
 }
 
-async function launchWithDirectOrPackageManager(
-	directCommands: string[],
-	packageName: string,
-	args: string[],
-	options: { cwd: string; env?: NodeJS.ProcessEnv; allowInstall?: boolean },
-): Promise<{ process: LSPProcess; source: "direct" | "package-manager" } | undefined> {
-	let lastDirectError: unknown;
-
-	for (const command of directCommands) {
-		try {
-			const process = await launchLSP(command, args, options);
-			return { process, source: "direct" };
-		} catch (error) {
-			lastDirectError = error;
-		}
-	}
-
-	try {
-		const process = await launchViaPackageManagerWithPolicy(packageName, args, {
-			cwd: options.cwd,
-			allowInstall: options.allowInstall,
-		});
-		if (!process) {
-			if (lastDirectError && !isCommandNotFoundError(lastDirectError)) {
-				throw lastDirectError;
-			}
-			return undefined;
-		}
-		return { process, source: "package-manager" };
-	} catch (packageManagerError) {
-		if (lastDirectError && !isCommandNotFoundError(lastDirectError)) {
-			throw lastDirectError;
-		}
-		throw packageManagerError;
-	}
-}
-
 type InitializationConfig = Record<string, unknown>;
 
 interface InteractiveServerSpec {
@@ -173,29 +205,27 @@ function createInteractiveServer(spec: InteractiveServerSpec): LSPServerInfo {
 	return {
 		id: spec.id,
 		name: spec.name,
-		installPolicy: "interactive",
 		extensions: spec.extensions,
 		root: spec.root,
-		async spawn(root, options) {
+		async spawn(root) {
 			const command =
 				typeof spec.command === "function" ? spec.command(root) : spec.command;
 			const args =
 				typeof spec.args === "function"
 					? spec.args(root)
 					: spec.args || [];
-			const proc = await spawnWithInteractiveInstall(
-				spec.language,
-				command,
-				args,
-				{ cwd: root, allowInstall: options?.allowInstall },
-				async () => await launchLSP(command, args, { cwd: root }),
-			);
-			if (!proc) return undefined;
-			const initialization =
-				typeof spec.initialization === "function"
-					? spec.initialization(root)
-					: spec.initialization;
-			return { process: proc, source: "interactive", initialization };
+			// Try to launch directly — no auto-install for language-runtime tools
+			// (C#, Java, Swift, etc. require their SDK; cannot npm/pip install them)
+			try {
+				const proc = await launchLSP(command, args, { cwd: root });
+				const initialization =
+					typeof spec.initialization === "function"
+						? spec.initialization(root)
+						: spec.initialization;
+				return { process: proc, source: "direct", initialization };
+			} catch {
+				return undefined;
+			}
 		},
 	};
 }
@@ -227,46 +257,6 @@ const __dirname = dirname(__filename);
 
 // --- Interactive Install Helper ---
 
-/**
- * Spawn LSP with interactive install support for common languages
- *
- * For Go, Rust, YAML, JSON, Bash: prompts user to install if tool not found
- * Other languages: throws error with install instructions
- */
-async function spawnWithInteractiveInstall(
-	language: string,
-	_command: string,
-	_args: string[],
-	options: { cwd: string; allowInstall?: boolean },
-	spawnFn: () => LSPProcess | Promise<LSPProcess>,
-): Promise<LSPProcess | undefined> {
-	try {
-		return await spawnFn();
-	} catch (error) {
-		if (!canInstall(options.allowInstall)) {
-			return undefined;
-		}
-		// Check if this is a "command not found" error
-		const errorMsg = String(error);
-		if (!errorMsg.includes("not found") && !errorMsg.includes("ENOENT")) {
-			throw error; // Re-throw if it's a different error
-		}
-
-		// Check if language supports interactive install
-		if (supportsInteractiveInstall(language)) {
-			const shouldInstall = await promptForInstall(language, options.cwd);
-			if (shouldInstall) {
-				// Try again after install
-				return await spawnFn();
-			}
-			// User declined, return undefined to skip this LSP
-			return undefined;
-		}
-
-		// For other languages, throw with install instructions
-		throw error;
-	}
-}
 
 /**
  * Walk up the directory tree looking for project root markers.
@@ -398,7 +388,6 @@ async function tryGemInstall(gem: string): Promise<boolean> {
 export const TypeScriptServer: LSPServerInfo = {
 	id: "typescript",
 	name: "TypeScript Language Server",
-	installPolicy: "managed",
 	extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
 	root: createRootDetector([
 		"package-lock.json",
@@ -528,7 +517,6 @@ export const TypeScriptServer: LSPServerInfo = {
 export const DenoServer: LSPServerInfo = {
 	id: "deno",
 	name: "Deno Language Server",
-	installPolicy: "none",
 	extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
 	root: createRootDetector(["deno.json", "deno.jsonc"]),
 	async spawn(root) {
@@ -544,7 +532,6 @@ export const DenoServer: LSPServerInfo = {
 export const PythonServer: LSPServerInfo = {
 	id: "python",
 	name: "Pyright Language Server",
-	installPolicy: "managed",
 	extensions: [".py", ".pyi"],
 	root: createRootDetector([
 		".git",
@@ -624,36 +611,16 @@ export const PythonServer: LSPServerInfo = {
 		}
 
 		// Spawn the LSP server
-		let proc: LSPProcess;
-		if (langserverPath) {
-			// Use resolved langserver path
-			proc = await launchLSP(langserverPath, ["--stdio"], {
-				cwd: root,
-				env,
-			});
-		} else {
-			if (!canInstall(options?.allowInstall)) {
-				try {
-					proc = await launchLSP("pyright-langserver", ["--stdio"], {
-						cwd: root,
-						env,
-					});
-				} catch {
-					return undefined;
-				}
-			} else {
-				// Fallback to npx for auto-download
-				console.error("[lsp] Falling back to npx for pyright-langserver");
-				const managed = await launchViaPackageManagerWithPolicy(
-					"pyright-langserver",
-					["--stdio"],
-					{ cwd: root, allowInstall: options?.allowInstall },
-				);
-				if (!managed) return undefined;
-				proc = managed;
-				source = "package-manager";
-			}
-		}
+		const candidates = langserverPath
+			? [langserverPath, "pyright-langserver"]
+			: ["pyright-langserver"];
+		const resolved = await resolveAndLaunch(
+			{ candidates, args: ["--stdio"], cwd: root, env, managedToolId: "pyright" },
+			options?.allowInstall,
+		);
+		if (!resolved) return undefined;
+		const proc = resolved.process;
+		source = resolved.source;
 
 		// Detect virtual environment
 		const initialization: Record<string, unknown> = {};
@@ -687,7 +654,6 @@ export const PythonServer: LSPServerInfo = {
 export const PythonPylspServer: LSPServerInfo = {
 	id: "python-pylsp",
 	name: "Python LSP Server (pylsp)",
-	installPolicy: "none",
 	extensions: [".py", ".pyi"],
 	root: createRootDetector([
 		".git",
@@ -712,40 +678,22 @@ export const GoServer: LSPServerInfo = {
 	id: "go",
 	name: "gopls",
 	extensions: [".go"],
-	installPolicy: "managed",
 	root: PriorityRoot([["go.work"], ["go.mod", "go.sum"]]),
 	async spawn(root, options) {
-		// Try to launch gopls directly from PATH first
-		try {
-			const proc = await launchLSP("gopls", [], { cwd: root });
-			return {
-				process: proc,
-				source: "direct",
-				initialization: { ui: { semanticTokens: true } },
-			};
-		} catch {
-			// not on PATH
-		}
-
-		// If `go` is on PATH and installs are allowed, run `go install gopls`
-		if (canInstall(options?.allowInstall) && isOnPath("go")) {
-			console.error("[lsp] gopls not found — installing via `go install golang.org/x/tools/gopls@latest`");
-			const ok = await tryGoInstallGopls();
-			if (ok) {
-				try {
-					const proc = await launchLSP("gopls", [], { cwd: root });
-					return {
-						process: proc,
-						source: "managed",
-						initialization: { ui: { semanticTokens: true } },
-					};
-				} catch {
-					// install succeeded but gopls still not launchable
-				}
-			}
-		}
-
-		return undefined;
+		const result = await resolveAndLaunch(
+			{
+				candidates: ["gopls"],
+				args: [],
+				cwd: root,
+				runtimeInstall: {
+					runtimeCommand: "go",
+					install: tryGoInstallGopls,
+				},
+			},
+			options?.allowInstall,
+		);
+		if (!result) return undefined;
+		return { ...result, initialization: { ui: { semanticTokens: true } } };
 	},
 };
 
@@ -753,85 +701,67 @@ export const RustServer: LSPServerInfo = {
 	id: "rust",
 	name: "rust-analyzer",
 	extensions: [".rs"],
-	installPolicy: "interactive",
 	root: createRootDetector(["Cargo.toml", "Cargo.lock"]),
-	async spawn(root, options) {
-		const proc = await spawnWithInteractiveInstall(
-			"rust",
-			"rust-analyzer",
-			[],
-			{ cwd: root, allowInstall: options?.allowInstall },
-			async () => await launchLSP("rust-analyzer", [], { cwd: root }),
-		);
-		// rust-analyzer needs minimal initialization to avoid capability mismatches
-		return proc
-			? {
-					process: proc,
-					initialization: {
-						// Disable features that may conflict with our client capabilities
-						cargo: {
-							buildScripts: { enable: true },
-						},
-						procMacro: { enable: true },
-						diagnostics: { enable: true },
-					},
-				}
-			: undefined;
+	async spawn(root) {
+		// rust-analyzer must be installed via rustup — no auto-install path
+		try {
+			const proc = await launchLSP("rust-analyzer", [], { cwd: root });
+			return {
+				process: proc,
+				source: "direct" as const,
+				initialization: {
+					cargo: { buildScripts: { enable: true } },
+					procMacro: { enable: true },
+					diagnostics: { enable: true },
+				},
+			};
+		} catch {
+			return undefined;
+		}
 	},
 };
 
 export const RubyServer: LSPServerInfo = {
 	id: "ruby",
 	name: "Ruby LSP",
-	installPolicy: "managed",
 	extensions: [".rb", ".rake", ".gemspec", ".ru"],
 	root: PriorityRoot([["Gemfile", ".ruby-version"], [".git"]]),
 	async spawn(root, options) {
-		// Helper: try a list of candidate commands in order
-		const tryLaunch = async (
-			commands: string[],
-			args: string[],
-		): Promise<LSPProcess | undefined> => {
-			for (const command of commands) {
-				try {
-					return await launchLSP(command, args, { cwd: root });
-				} catch {
-					// try next
-				}
-			}
-			return undefined;
-		};
+		// Try ruby-lsp first, then solargraph, then rubocop --lsp
+		// Each has different args so we can't use a single resolveAndLaunch call
+		const rubylsp = await resolveAndLaunch(
+			{
+				candidates: ["ruby-lsp", ...rubyBinCandidates("ruby-lsp")],
+				args: [],
+				cwd: root,
+				runtimeInstall: {
+					runtimeCommand: "gem",
+					install: () => tryGemInstall("ruby-lsp"),
+					retryCandidates: ["ruby-lsp", ...rubyBinCandidates("ruby-lsp")],
+				},
+			},
+			options?.allowInstall,
+		);
+		if (rubylsp) return rubylsp;
 
-		// 1. Try ruby-lsp (preferred)
-		let proc = await tryLaunch(["ruby-lsp", ...rubyBinCandidates("ruby-lsp")], []);
-		if (proc) return { process: proc, source: "direct" };
+		// Solargraph fallback
+		const solargraph = await resolveAndLaunch(
+			{ candidates: ["solargraph", ...rubyBinCandidates("solargraph")], args: ["stdio"], cwd: root },
+			false, // don't install solargraph — already tried gem install above
+		);
+		if (solargraph) return solargraph;
 
-		// 2. Try solargraph
-		proc = await tryLaunch(["solargraph", ...rubyBinCandidates("solargraph")], ["stdio"]);
-		if (proc) return { process: proc, source: "direct" };
-
-		// 3. Try rubocop --lsp
-		proc = await tryLaunch(["rubocop", ...rubyBinCandidates("rubocop")], ["--lsp"]);
-		if (proc) return { process: proc, source: "direct" };
-
-		// 4. If `gem` is available and installs are allowed, install ruby-lsp
-		if (canInstall(options?.allowInstall) && isOnPath("gem")) {
-			console.error("[lsp] ruby-lsp not found — installing via `gem install ruby-lsp`");
-			const ok = await tryGemInstall("ruby-lsp");
-			if (ok) {
-				proc = await tryLaunch(["ruby-lsp", ...rubyBinCandidates("ruby-lsp")], []);
-				if (proc) return { process: proc, source: "managed" };
-			}
-		}
-
-		return undefined;
+		// rubocop --lsp fallback
+		return resolveAndLaunch(
+			{ candidates: ["rubocop", ...rubyBinCandidates("rubocop")], args: ["--lsp"], cwd: root },
+			false,
+		);
 	},
 };
 
 export const RubySolargraphServer: LSPServerInfo = {
 	id: "ruby-solargraph",
 	name: "Solargraph",
-	installPolicy: "none",
 	extensions: [".rb", ".rake", ".gemspec", ".ru"],
 	root: PriorityRoot([["Gemfile", ".ruby-version"], [".git"]]),
 	async spawn(root) {
@@ -850,22 +780,15 @@ export const RubySolargraphServer: LSPServerInfo = {
 export const PHPServer: LSPServerInfo = {
 	id: "php",
 	name: "Intelephense",
-	installPolicy: "package-manager",
 	extensions: [".php"],
 	root: createRootDetector(["composer.json", "composer.lock"]),
 	async spawn(root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(root, "intelephense"),
-			"intelephense",
-			["--stdio"],
-			{ cwd: root, allowInstall: options?.allowInstall },
+		const result = await resolveAndLaunch(
+			{ candidates: nodeBinCandidates(root, "intelephense"), args: ["--stdio"], cwd: root, managedToolId: "intelephense" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return {
-			process: launched.process,
-			source: launched.source,
-			initialization: { storagePath: path.join(__dirname, ".intelephense") },
-		};
+		if (!result) return undefined;
+		return { ...result, initialization: { storagePath: path.join(__dirname, ".intelephense") } };
 	},
 };
 
@@ -1037,45 +960,25 @@ export const BashServer: LSPServerInfo = {
 	id: "bash",
 	name: "Bash Language Server",
 	extensions: [".sh", ".bash", ".zsh"],
-	installPolicy: "managed",
 	root: async () => process.cwd(),
 	async spawn(_root, options) {
-		const cwd = process.cwd();
-		const launched = await launchWithDirectOrPackageManager(
-			["bash-language-server"],
-			"bash-language-server",
-			["start"],
-			{ cwd, allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: ["bash-language-server"], args: ["start"], cwd: process.cwd(), managedToolId: "bash-language-server" },
+			options?.allowInstall,
 		);
-		if (!launched) {
-			if (canInstall(options?.allowInstall)) {
-				const installed = await ensureTool("bash-language-server");
-				if (installed) {
-					const proc = await launchLSP(installed, ["start"], { cwd });
-					return { process: proc, source: "managed" };
-				}
-			}
-			return undefined;
-		}
-		return { process: launched.process, source: launched.source };
 	},
 };
 
 export const DockerServer: LSPServerInfo = {
 	id: "docker",
 	name: "Dockerfile Language Server",
-	installPolicy: "package-manager",
 	extensions: [".dockerfile", "Dockerfile"],
 	root: PriorityRoot([["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"], [".git"]]),
 	async spawn(_root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(process.cwd(), "docker-langserver"),
-			"dockerfile-language-server-nodejs",
-			["--stdio"],
-			{ cwd: process.cwd(), allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: nodeBinCandidates(process.cwd(), "docker-langserver"), args: ["--stdio"], cwd: process.cwd(), managedToolId: "dockerfile-language-server-nodejs" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1083,27 +986,12 @@ export const YamlServer: LSPServerInfo = {
 	id: "yaml",
 	name: "YAML Language Server",
 	extensions: [".yaml", ".yml"],
-	installPolicy: "managed",
 	root: PriorityRoot([[".yamllint", "yamllint.yml", "yamllint.yaml", "pyproject.toml"], [".git"]]),
 	async spawn(_root, options) {
-		const cwd = process.cwd();
-		const launched = await launchWithDirectOrPackageManager(
-			["yaml-language-server"],
-			"yaml-language-server",
-			["--stdio"],
-			{ cwd, allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: ["yaml-language-server"], args: ["--stdio"], cwd: process.cwd(), managedToolId: "yaml-language-server" },
+			options?.allowInstall,
 		);
-		if (!launched) {
-			if (canInstall(options?.allowInstall)) {
-				const installed = await ensureTool("yaml-language-server");
-				if (installed) {
-					const proc = await launchLSP(installed, ["--stdio"], { cwd });
-					return { process: proc, source: "managed" };
-				}
-			}
-			return undefined;
-		}
-		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1111,45 +999,25 @@ export const JsonServer: LSPServerInfo = {
 	id: "json",
 	name: "VSCode JSON Language Server",
 	extensions: [".json", ".jsonc"],
-	installPolicy: "managed",
 	root: PriorityRoot([["package.json", "tsconfig.json", "jsconfig.json"], [".git"]]),
 	async spawn(_root, options) {
-		const cwd = process.cwd();
-		const launched = await launchWithDirectOrPackageManager(
-			["vscode-json-language-server"],
-			"vscode-langservers-extracted",
-			["--stdio"],
-			{ cwd, allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: ["vscode-json-language-server"], args: ["--stdio"], cwd: process.cwd(), managedToolId: "vscode-json-language-server" },
+			options?.allowInstall,
 		);
-		if (!launched) {
-			if (canInstall(options?.allowInstall)) {
-				const installed = await ensureTool("vscode-json-language-server");
-				if (installed) {
-					const proc = await launchLSP(installed, ["--stdio"], { cwd });
-					return { process: proc, source: "managed" };
-				}
-			}
-			return undefined;
-		}
-		return { process: launched.process, source: launched.source };
 	},
 };
 
 export const HtmlServer: LSPServerInfo = {
 	id: "html",
 	name: "VSCode HTML Language Server",
-	installPolicy: "package-manager",
 	extensions: [".html", ".htm"],
 	root: PriorityRoot([["package.json", "index.html", "vite.config.ts"], [".git"]]),
 	async spawn(_root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(process.cwd(), "vscode-html-language-server"),
-			"vscode-html-languageserver-bin",
-			["--stdio"],
-			{ cwd: process.cwd(), allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: nodeBinCandidates(process.cwd(), "vscode-html-language-server"), args: ["--stdio"], cwd: process.cwd(), managedToolId: "vscode-html-languageserver-bin" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1166,18 +1034,13 @@ export const TomlServer = createInteractiveServer({
 export const PrismaServer: LSPServerInfo = {
 	id: "prisma",
 	name: "Prisma Language Server",
-	installPolicy: "package-manager",
 	extensions: [".prisma"],
 	root: createRootDetector(["prisma/schema.prisma"]),
 	async spawn(root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(root, "prisma-language-server"),
-			"@prisma/language-server",
-			["--stdio"],
-			{ cwd: root, allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: nodeBinCandidates(root, "prisma-language-server"), args: ["--stdio"], cwd: root, managedToolId: "@prisma/language-server" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1187,7 +1050,6 @@ export const VueServer: LSPServerInfo = {
 	id: "vue",
 	name: "Vue Language Server",
 	extensions: [".vue"],
-	installPolicy: "package-manager",
 	root: createRootDetector([
 		"package-lock.json",
 		"bun.lockb",
@@ -1196,14 +1058,10 @@ export const VueServer: LSPServerInfo = {
 		"yarn.lock",
 	]),
 	async spawn(root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(root, "vue-language-server"),
-			"@vue/language-server",
-			["--stdio"],
-			{ cwd: root, allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: nodeBinCandidates(root, "vue-language-server"), args: ["--stdio"], cwd: root, managedToolId: "@vue/language-server" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1211,7 +1069,6 @@ export const SvelteServer: LSPServerInfo = {
 	id: "svelte",
 	name: "Svelte Language Server",
 	extensions: [".svelte"],
-	installPolicy: "package-manager",
 	root: createRootDetector([
 		"package-lock.json",
 		"bun.lockb",
@@ -1220,21 +1077,16 @@ export const SvelteServer: LSPServerInfo = {
 		"yarn.lock",
 	]),
 	async spawn(root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			[...nodeBinCandidates(root, "svelteserver"), ...nodeBinCandidates(root, "svelte-language-server")],
-			"svelte-language-server",
-			["--stdio"],
-			{ cwd: root, allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: [...nodeBinCandidates(root, "svelteserver"), ...nodeBinCandidates(root, "svelte-language-server")], args: ["--stdio"], cwd: root, managedToolId: "svelte-language-server" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
 	},
 };
 
 export const ESLintServer: LSPServerInfo = {
 	id: "eslint",
 	name: "ESLint Language Server",
-	installPolicy: "package-manager",
 	extensions: [".js", ".jsx", ".vue", ".svelte"], // Note: .ts/.tsx handled by TypeScript LSP + Biome
 	root: createRootDetector([
 		".eslintrc",
@@ -1245,41 +1097,23 @@ export const ESLintServer: LSPServerInfo = {
 		"package.json",
 	]),
 	async spawn(root, options) {
-		// Try via package manager (npx) since it's not auto-installed
-		try {
-			const launched = await launchWithDirectOrPackageManager(
-				nodeBinCandidates(root, "vscode-eslint-language-server"),
-				"vscode-eslint-language-server",
-				["--stdio"],
-				{ cwd: root, allowInstall: options?.allowInstall },
-			);
-			if (!launched) return undefined;
-			return { process: launched.process, source: launched.source };
-		} catch {
-			// Fall back to global install message
-			console.error(
-				"[lsp] ESLint Language Server not found. Install: npm install -g vscode-langservers-extracted",
-			);
-			return undefined;
-		}
+		return resolveAndLaunch(
+			{ candidates: nodeBinCandidates(root, "vscode-eslint-language-server"), args: ["--stdio"], cwd: root, managedToolId: "vscode-langservers-extracted" },
+			options?.allowInstall,
+		);
 	},
 };
 
 export const CssServer: LSPServerInfo = {
 	id: "css",
 	name: "CSS Language Server",
-	installPolicy: "package-manager",
 	extensions: [".css", ".scss", ".sass", ".less"],
 	root: PriorityRoot([["package.json", "postcss.config.js", "tailwind.config.js", "vite.config.ts"], [".git"]]),
 	async spawn(_root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(process.cwd(), "vscode-css-language-server"),
-			"vscode-css-languageserver",
-			["--stdio"],
-			{ cwd: process.cwd(), allowInstall: options?.allowInstall },
+		return resolveAndLaunch(
+			{ candidates: nodeBinCandidates(process.cwd(), "vscode-css-language-server"), args: ["--stdio"], cwd: process.cwd(), managedToolId: "vscode-css-languageserver" },
+			options?.allowInstall,
 		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
 	},
 };
 
