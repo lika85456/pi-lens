@@ -41,6 +41,7 @@ const CONFIG = {
 	MIN_TRANSITIONS: 40, // stronger signal floor for structural comparisons
 	MIN_FUNCTION_LINES: 8, // Ignore tiny helpers/wrappers
 	MIN_FILE_CHARS: 140, // Skip tiny/trivial files early
+	MAX_FILE_LINES: 2000, // Skip very large files (data files, generated code) to avoid OOM
 	MAX_TRANSITION_RATIO: 1.8, // Skip pairs with highly mismatched complexity/size
 	MAX_SUGGESTIONS: 3, // Max 3 suggestions per file
 	MAX_PER_TARGET_NAME: 1, // Avoid one-to-many spam for the same target utility
@@ -120,6 +121,7 @@ const similarityRunner: RunnerDefinition = {
 		if (
 			content.trim().length < CONFIG.MIN_FILE_CHARS ||
 			lineCount < CONFIG.MIN_FUNCTION_LINES + 2 ||
+			lineCount > CONFIG.MAX_FILE_LINES ||
 			!/(\bfunction\b|=>)/.test(content)
 		) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };

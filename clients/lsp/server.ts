@@ -484,39 +484,6 @@ export const DenoServer: LSPServerInfo = {
 	},
 };
 
-export const BiomeLspServer: LSPServerInfo = {
-	id: "biome-lsp",
-	name: "Biome LSP Proxy",
-	installPolicy: "package-manager",
-	extensions: [
-		".ts",
-		".tsx",
-		".js",
-		".jsx",
-		".mjs",
-		".cjs",
-		".mts",
-		".cts",
-		".json",
-		".jsonc",
-		".css",
-		".scss",
-		".sass",
-		".less",
-	],
-	root: PriorityRoot([["biome.json", "biome.jsonc", "package.json"], [".git"]]),
-	async spawn(root, options) {
-		const launched = await launchWithDirectOrPackageManager(
-			nodeBinCandidates(root, "biome"),
-			"@biomejs/biome",
-			["lsp-proxy"],
-			{ cwd: root, allowInstall: options?.allowInstall },
-		);
-		if (!launched) return undefined;
-		return { process: launched.process, source: launched.source };
-	},
-};
-
 export const PythonServer: LSPServerInfo = {
 	id: "python",
 	name: "Pyright Language Server",
@@ -999,18 +966,27 @@ export const BashServer: LSPServerInfo = {
 	id: "bash",
 	name: "Bash Language Server",
 	extensions: [".sh", ".bash", ".zsh"],
-	installPolicy: "interactive",
+	installPolicy: "managed",
 	root: async () => process.cwd(),
 	async spawn(_root, options) {
 		const cwd = process.cwd();
-		const proc = await spawnWithInteractiveInstall(
-			"bash",
+		const launched = await launchWithDirectOrPackageManager(
+			["bash-language-server"],
 			"bash-language-server",
 			["start"],
 			{ cwd, allowInstall: options?.allowInstall },
-			async () => await launchLSP("bash-language-server", ["start"], {}),
 		);
-		return proc ? { process: proc } : undefined;
+		if (!launched) {
+			if (canInstall(options?.allowInstall)) {
+				const installed = await ensureTool("bash-language-server");
+				if (installed) {
+					const proc = await launchLSP(installed, ["start"], { cwd });
+					return { process: proc, source: "managed" };
+				}
+			}
+			return undefined;
+		}
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1036,18 +1012,27 @@ export const YamlServer: LSPServerInfo = {
 	id: "yaml",
 	name: "YAML Language Server",
 	extensions: [".yaml", ".yml"],
-	installPolicy: "interactive",
+	installPolicy: "managed",
 	root: PriorityRoot([[".yamllint", "yamllint.yml", "yamllint.yaml", "pyproject.toml"], [".git"]]),
 	async spawn(_root, options) {
 		const cwd = process.cwd();
-		const proc = await spawnWithInteractiveInstall(
-			"yaml",
+		const launched = await launchWithDirectOrPackageManager(
+			["yaml-language-server"],
 			"yaml-language-server",
 			["--stdio"],
 			{ cwd, allowInstall: options?.allowInstall },
-			async () => await launchLSP("yaml-language-server", ["--stdio"], {}),
 		);
-		return proc ? { process: proc } : undefined;
+		if (!launched) {
+			if (canInstall(options?.allowInstall)) {
+				const installed = await ensureTool("yaml-language-server");
+				if (installed) {
+					const proc = await launchLSP(installed, ["--stdio"], { cwd });
+					return { process: proc, source: "managed" };
+				}
+			}
+			return undefined;
+		}
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1055,19 +1040,27 @@ export const JsonServer: LSPServerInfo = {
 	id: "json",
 	name: "VSCode JSON Language Server",
 	extensions: [".json", ".jsonc"],
-	installPolicy: "interactive",
+	installPolicy: "managed",
 	root: PriorityRoot([["package.json", "tsconfig.json", "jsconfig.json"], [".git"]]),
 	async spawn(_root, options) {
 		const cwd = process.cwd();
-		const proc = await spawnWithInteractiveInstall(
-			"json",
-			"vscode-json-language-server",
+		const launched = await launchWithDirectOrPackageManager(
+			["vscode-json-language-server"],
+			"vscode-langservers-extracted",
 			["--stdio"],
 			{ cwd, allowInstall: options?.allowInstall },
-			async () =>
-				await launchLSP("vscode-json-language-server", ["--stdio"], {}),
 		);
-		return proc ? { process: proc } : undefined;
+		if (!launched) {
+			if (canInstall(options?.allowInstall)) {
+				const installed = await ensureTool("vscode-json-language-server");
+				if (installed) {
+					const proc = await launchLSP(installed, ["--stdio"], { cwd });
+					return { process: proc, source: "managed" };
+				}
+			}
+			return undefined;
+		}
+		return { process: launched.process, source: launched.source };
 	},
 };
 
@@ -1224,7 +1217,6 @@ export const CssServer: LSPServerInfo = {
 export const LSP_SERVERS: LSPServerInfo[] = [
 	TypeScriptServer,
 	DenoServer,
-	BiomeLspServer,
 	PythonServer,
 	PythonPylspServer,
 	GoServer,

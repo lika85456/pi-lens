@@ -32,7 +32,7 @@ export interface LSPState {
 
 const BROKEN_RETRY_COOLDOWN_MS = 15_000;
 const OPTIONAL_LSP_RETRY_COOLDOWN_MS = 5 * 60_000;
-const OPTIONAL_LSP_SERVER_IDS = new Set(["biome-lsp"]);
+const OPTIONAL_LSP_SERVER_IDS = new Set<string>();
 const NAV_CLIENT_WAIT_TIMEOUT_MS = Math.max(
 	0,
 	Number.parseInt(
@@ -544,7 +544,7 @@ export class LSPService {
 		const perServer = await Promise.all(
 			spawned.map(async (entry) => {
 				const waitStart = Date.now();
-				await entry.client.waitForDiagnostics(filePath, 3000);
+				await entry.client.waitForDiagnostics(filePath, 5000);
 				const diagnostics = entry.client.getDiagnostics(filePath);
 				return {
 					serverId: entry.info.id,

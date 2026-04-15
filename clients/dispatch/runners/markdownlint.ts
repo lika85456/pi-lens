@@ -11,7 +11,7 @@ import type {
 } from "../types.js";
 import { PRIORITY } from "../priorities.js";
 
-const markdownlint = createAvailabilityChecker("markdownlint", ".cmd");
+const markdownlint = createAvailabilityChecker("markdownlint-cli2", ".cmd");
 
 const MARKDOWNLINT_CONFIGS = [
 	".markdownlint.json",
@@ -71,7 +71,7 @@ const markdownlintRunner: RunnerDefinition = {
 		if (markdownlint.isAvailable(cwd)) {
 			cmd = markdownlint.getCommand(cwd);
 		} else {
-			const installed = await ensureTool("markdownlint-cli");
+			const installed = await ensureTool("markdownlint");
 			if (!installed) {
 				return { status: "skipped", diagnostics: [], semantic: "none" };
 			}

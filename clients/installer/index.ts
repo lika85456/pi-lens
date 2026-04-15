@@ -4,9 +4,12 @@
  * Minimal auto-install: Core tools that run frequently.
  * Other tools require manual installation with clear instructions.
  *
- * Auto-install (10 tools):
+ * Auto-install (16 tools):
  * - typescript-language-server (TypeScript LSP)
  * - pyright (Python LSP)
+ * - bash-language-server (Bash LSP)
+ * - yaml-language-server (YAML LSP)
+ * - vscode-langservers-extracted (JSON LSP)
  * - ruff (Python linting)
  * - @biomejs/biome (JS/TS/JSON linting/formatting)
  * - madge (circular dependency detection)
@@ -15,6 +18,9 @@
  * - knip (dead code detection)
  * - yamllint (YAML linting)
  * - sqlfluff (SQL linting/formatting)
+ * - markdownlint-cli2 (Markdown linting)
+ * - mypy (Python type checking)
+ * - stylelint (CSS/SCSS/Less linting)
  *
  * Manual install required (25+ tools):
  * - yaml-language-server: npm install -g yaml-language-server
@@ -195,9 +201,66 @@ const TOOLS: ToolDefinition[] = [
 		packageName: "sqlfluff",
 		binaryName: "sqlfluff",
 	},
+	{
+		id: "bash-language-server",
+		name: "Bash Language Server",
+		checkCommand: "bash-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "bash-language-server",
+		binaryName: "bash-language-server",
+	},
+	{
+		id: "yaml-language-server",
+		name: "YAML Language Server",
+		checkCommand: "yaml-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "yaml-language-server",
+		binaryName: "yaml-language-server",
+	},
+	{
+		id: "vscode-json-language-server",
+		name: "VSCode JSON Language Server",
+		checkCommand: "vscode-json-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-langservers-extracted",
+		binaryName: "vscode-json-language-server",
+	},
+	{
+		id: "markdownlint",
+		name: "markdownlint-cli2",
+		checkCommand: "markdownlint-cli2",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "markdownlint-cli2",
+		binaryName: "markdownlint-cli2",
+	},
+	{
+		id: "mypy",
+		name: "mypy",
+		checkCommand: "mypy",
+		checkArgs: ["--version"],
+		installStrategy: "pip",
+		packageName: "mypy",
+		binaryName: "mypy",
+	},
+	{
+		id: "stylelint",
+		name: "Stylelint",
+		checkCommand: "stylelint",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "stylelint",
+		binaryName: "stylelint",
+	},
 ];
 
 const ensureInFlight = new Map<string, Promise<string | undefined>>();
+
+// Session-lifetime cache: once a tool path is resolved, skip the process-spawn check on subsequent calls.
+const resolvedPathCache = new Map<string, string>();
 
 // --- Check Functions ---
 
@@ -796,11 +859,16 @@ export async function installTool(toolId: string): Promise<boolean> {
  * Ensure a tool is installed (check first, install if missing)
  */
 export async function ensureTool(toolId: string): Promise<string | undefined> {
+	// Fast path: return cached path without spawning a process
+	const cached = resolvedPathCache.get(toolId);
+	if (cached) return cached;
+
 	const ensureStartMs = Date.now();
 	logSessionStart(`auto-install ensure ${toolId}: start`);
 	// Check if already installed
 	const existingPath = await getToolPath(toolId);
 	if (existingPath) {
+		resolvedPathCache.set(toolId, existingPath);
 		logSessionStart(
 			`auto-install ensure ${toolId}: already available at ${existingPath} (${Date.now() - ensureStartMs}ms)`,
 		);
@@ -826,6 +894,7 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
 	try {
 		const result = await installPromise;
 		if (result) {
+			resolvedPathCache.set(toolId, result);
 			logSessionStart(
 				`auto-install ensure ${toolId}: success at ${result} (${Date.now() - ensureStartMs}ms)`,
 			);

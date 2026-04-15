@@ -33,6 +33,11 @@ const typeSafetyRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
+		// Skip very large files (generated code, data files) — regex scanning on 10k+ lines is wasteful
+		if (content.length > 256 * 1024) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
+
 		const diagnostics: Diagnostic[] = [];
 
 		// Check for switch exhaustiveness patterns
