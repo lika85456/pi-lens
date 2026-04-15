@@ -717,33 +717,41 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 	const assetSubstring = spec.assetMatch(platform, arch);
 	if (!assetSubstring) {
 		console.error(`[auto-install] ${tool.name}: no asset for ${platform}/${arch}`);
+		logSessionStart(`github-install ${tool.id}: unsupported platform=${platform} arch=${arch}`);
 		return undefined;
 	}
 
 	// Fetch latest release metadata from GitHub API
+	logSessionStart(`github-install ${tool.id}: fetching release metadata from ${spec.repo}`);
 	let releaseJson: { assets: Array<{ name: string; browser_download_url: string }> };
 	try {
 		const body = await httpsGet(`https://api.github.com/repos/${spec.repo}/releases/latest`);
 		releaseJson = JSON.parse(body.toString("utf8"));
 	} catch (err) {
 		console.error(`[auto-install] ${tool.name}: failed to fetch GitHub release: ${(err as Error).message}`);
+		logSessionStart(`github-install ${tool.id}: release fetch failed: ${(err as Error).message}`);
 		return undefined;
 	}
 
 	const asset = releaseJson.assets.find((a) => a.name.includes(assetSubstring));
 	if (!asset) {
 		console.error(`[auto-install] ${tool.name}: no asset matching "${assetSubstring}" in release`);
+		logSessionStart(`github-install ${tool.id}: no asset matched "${assetSubstring}"`);
 		return undefined;
 	}
 
+	logSessionStart(`github-install ${tool.id}: downloading ${asset.name}`);
 	debugLog(`[github] downloading ${asset.name} from ${asset.browser_download_url}`);
 
 	// Download the asset
+	const downloadStart = Date.now();
 	let assetBuffer: Buffer;
 	try {
 		assetBuffer = await httpsGet(asset.browser_download_url);
+		logSessionStart(`github-install ${tool.id}: downloaded ${asset.name} (${assetBuffer.length} bytes, ${Date.now() - downloadStart}ms)`);
 	} catch (err) {
 		console.error(`[auto-install] ${tool.name}: download failed: ${(err as Error).message}`);
+		logSessionStart(`github-install ${tool.id}: download failed: ${(err as Error).message}`);
 		return undefined;
 	}
 
@@ -782,6 +790,7 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			if (!extracted) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
 				console.error(`[auto-install] ${tool.name}: tar extraction failed`);
+				logSessionStart(`github-install ${tool.id}: tar extraction failed for ${assetName}`);
 				return undefined;
 			}
 
@@ -811,6 +820,7 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			if (!extracted) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
 				console.error(`[auto-install] ${tool.name}: zip extraction failed`);
+				logSessionStart(`github-install ${tool.id}: zip extraction failed for ${assetName}`);
 				return undefined;
 			}
 
@@ -820,6 +830,7 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			if (!srcBinary) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
 				console.error(`[auto-install] ${tool.name}: binary "${targetName}" not found in zip`);
+				logSessionStart(`github-install ${tool.id}: binary "${targetName}" not found in zip ${assetName}`);
 				return undefined;
 			}
 			await fs.rename(srcBinary, destPath);
@@ -832,10 +843,12 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 		}
 	} catch (err) {
 		console.error(`[auto-install] ${tool.name}: install failed: ${(err as Error).message}`);
+		logSessionStart(`github-install ${tool.id}: install failed: ${(err as Error).message}`);
 		return undefined;
 	}
 
 	debugLog(`[github] installed ${tool.name} → ${destPath}`);
+	logSessionStart(`github-install ${tool.id}: installed → ${destPath}`);
 	return destPath;
 }
 
