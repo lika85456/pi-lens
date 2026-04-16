@@ -662,6 +662,12 @@ export async function runPipeline(
 		cwd,
 		piApi,
 		ctx.modifiedRanges,
+		{
+			model: ctx.telemetry?.model ?? "unknown",
+			sessionId: ctx.telemetry?.sessionId ?? "unknown",
+			turnIndex: ctx.telemetry?.turnIndex ?? 0,
+			writeIndex: ctx.telemetry?.writeIndex ?? 0,
+		},
 	);
 	let hasBlockers = dispatchResult.hasBlockers;
 

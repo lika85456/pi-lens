@@ -498,14 +498,11 @@ const treeSitterRunner: RunnerDefinition = {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
+		// Run all queries regardless of blockingOnly — warning-tier results are logged
+		// for diagnostic history but filtered from agent output by the dispatcher.
+		// Only skip "review" tier queries on write (too noisy / expensive).
 		const effectiveQueries = ctx.blockingOnly
-			? languageQueries.filter(
-					(q) =>
-						q.inline_tier !== "review" &&
-						(q.severity === "error" ||
-							q.inline_tier === "blocking" ||
-							SILENT_ERROR_QUERY_IDS.has(q.id)),
-				)
+			? languageQueries.filter((q) => q.inline_tier !== "review")
 			: languageQueries;
 
 		logTreeSitter({
@@ -546,8 +543,15 @@ const treeSitterRunner: RunnerDefinition = {
 					const line = match.line;
 					const column = match.column;
 
+					// Modified-ranges gate only applies to blocking-tier diagnostics.
+					// Warning-tier diagnostics always flow through for logging.
+					const isSeverityBlocking =
+						query.severity === "error" ||
+						query.inline_tier === "blocking" ||
+						SILENT_ERROR_QUERY_IDS.has(query.id);
 					if (
 						ctx.blockingOnly &&
+						isSeverityBlocking &&
 						!isLineInModifiedRanges(line + 1, ctx.modifiedRanges)
 					) {
 						continue;

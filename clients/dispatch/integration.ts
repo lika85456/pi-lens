@@ -7,6 +7,7 @@
 
 import { detectFileKind } from "../file-kinds.js";
 import type { FileKind } from "../file-kinds.js";
+import { getDiagnosticLogger, type LogContext } from "../diagnostic-logger.js";
 import {
 	getLspCapableKinds,
 	getPrimaryDispatchGroup,
@@ -140,6 +141,48 @@ const FACT_RULE_IDS = new Set([
 const sessionSlopRuleCounts = new Map<string, number>();
 let sessionSlopDiagnosticCount = 0;
 let sessionWrittenLineCount = 0;
+
+// Debounced ast-grep warning scan — fires 2s after the last write to a jsts file.
+// Runs warning-tier rules that are too expensive to include in the blocking write path,
+// logs all diagnostics for history without surfacing anything to the agent.
+const astGrepWarnDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const AST_GREP_WARN_DEBOUNCE_MS = 2000;
+
+function scheduleAstGrepWarningScan(
+	filePath: string,
+	cwd: string,
+	pi: PiAgentAPI,
+	logContext: LogContext,
+): void {
+	const existing = astGrepWarnDebounceTimers.get(filePath);
+	if (existing) clearTimeout(existing);
+
+	const timer = setTimeout(async () => {
+		astGrepWarnDebounceTimers.delete(filePath);
+		try {
+			const ctx = createDispatchContext(filePath, cwd, pi, sessionFacts, false);
+			if (ctx.kind !== "jsts") return;
+
+			// Single-runner group: ast-grep only, warning mode (blockingOnly=false)
+			const group: RunnerGroup = {
+				mode: "all",
+				runnerIds: ["ast-grep"],
+				filterKinds: ["jsts"],
+			};
+			const result = await dispatchForFile(ctx, [group], sessionRunnerRegistry);
+			if (result.diagnostics.length === 0) return;
+
+			const logger = getDiagnosticLogger();
+			for (const d of result.diagnostics) {
+				logger.logCaught(d, logContext, false);
+			}
+		} catch {
+			// Non-critical background scan — swallow errors silently
+		}
+	}, AST_GREP_WARN_DEBOUNCE_MS);
+
+	astGrepWarnDebounceTimers.set(filePath, timer);
+}
 
 function resetSessionSlopScore(): void {
 	sessionSlopRuleCounts.clear();
@@ -317,6 +360,7 @@ export async function dispatchLintWithResult(
 	cwd: string,
 	pi: PiAgentAPI,
 	modifiedRanges?: ModifiedRange[],
+	logContext?: LogContext,
 ): Promise<DispatchResult> {
 	const ctx = createDispatchContext(
 		filePath,
@@ -359,6 +403,14 @@ export async function dispatchLintWithResult(
 	await runProviders(ctx);
 	const result = await dispatchForFile(ctx, groups, sessionRunnerRegistry);
 	trackSessionSlopStats(ctx, result.diagnostics);
+
+	// Schedule debounced ast-grep warning scan for jsts files.
+	// Runs 2s after the last write — collapses rapid sequential edits into one scan.
+	// Results are logged only, never surfaced to the agent.
+	if (kind === "jsts" && logContext) {
+		scheduleAstGrepWarningScan(filePath, cwd, pi, logContext);
+	}
+
 	return result;
 }
 

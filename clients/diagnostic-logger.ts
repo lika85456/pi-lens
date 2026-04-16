@@ -57,7 +57,7 @@ export interface Diagnostic {
 	message?: string;
 }
 
-interface LogContext {
+export interface LogContext {
 	model: string;
 	sessionId: string;
 	turnIndex: number;

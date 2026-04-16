@@ -7,9 +7,7 @@ note: |
   and can execute arbitrary code. Pass a function reference instead.
 rule:
   any:
-    - pattern: setTimeout($$$ARGS)
-    - pattern: setInterval($$$ARGS)
-  has:
-    kind: arguments
-    has:
-      kind: string
+    - pattern: setTimeout("$STRING")
+    - pattern: setTimeout('$STRING')
+    - pattern: setInterval("$STRING")
+    - pattern: setInterval('$STRING')
