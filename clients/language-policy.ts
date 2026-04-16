@@ -16,7 +16,7 @@ export const LANGUAGE_POLICY: Record<FileKind, LanguagePolicy> = {
 	jsts: {
 		lspCapable: true,
 		startup: {
-			defaults: ["typescript-language-server"],
+			defaults: ["typescript-language-server", "biome"],
 			heavyScansRequireConfig: true,
 		},
 	},

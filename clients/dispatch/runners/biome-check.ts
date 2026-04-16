@@ -29,6 +29,35 @@ function hasUserBiomeConfig(cwd: string): boolean {
 	return false;
 }
 
+const ESLINT_CONFIGS = [
+	".eslintrc",
+	".eslintrc.js",
+	".eslintrc.cjs",
+	".eslintrc.json",
+	".eslintrc.yaml",
+	".eslintrc.yml",
+	"eslint.config.js",
+	"eslint.config.mjs",
+	"eslint.config.cjs",
+];
+
+/** Returns true if the project has explicitly chosen ESLint or oxlint */
+function hasAlternateLinter(cwd: string): boolean {
+	for (const cfg of ESLINT_CONFIGS) {
+		if (fs.existsSync(path.join(cwd, cfg))) return true;
+	}
+	// eslintConfig in package.json
+	try {
+		const pkg = JSON.parse(
+			fs.readFileSync(path.join(cwd, "package.json"), "utf-8"),
+		);
+		if (pkg.eslintConfig) return true;
+	} catch {}
+	// oxlint config
+	if (fs.existsSync(path.join(cwd, ".oxlintrc.json"))) return true;
+	return false;
+}
+
 function findBiome(cwd: string): string {
 	const isWin = process.platform === "win32";
 	const local = path.join(
@@ -91,6 +120,12 @@ const biomeCheckJsonRunner: RunnerDefinition = {
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const cwd = ctx.cwd || path.dirname(ctx.filePath);
+
+		// Defer to ESLint/oxlint if the project has explicitly configured one —
+		// biome runs as the default linter only when no alternative is present.
+		if (!hasUserBiomeConfig(cwd) && hasAlternateLinter(cwd)) {
+			return { status: "skipped", diagnostics: [], semantic: "none" };
+		}
 
 		// Check if Biome is available
 		const biomeCmd = findBiome(cwd);
