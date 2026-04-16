@@ -97,26 +97,30 @@ const ruffRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// No --fix here: dispatch runners report issues for agent understanding,
-		// not silent correction. Auto-fix (ruff --fix) already runs in the
-		// format phase before dispatch, handling all safe style transforms.
-		// Silently rewriting here would leave the agent's context window stale.
 		const configArgs: string[] = hasProjectRuffConfig(cwd)
 			? []
 			: ["--config", resolvePackagePath(import.meta.url, "config/ruff/core.toml")];
 
-		const args = ["check", "--output-format", "json", ...configArgs, ctx.filePath];
+		// Step 1: Capture diagnostics (before fixing) — teaching signal for the agent
+		const checkResult = await safeSpawnAsync(
+			cmd,
+			["check", "--output-format", "json", ...configArgs, ctx.filePath],
+			{ timeout: 30000 },
+		);
 
-		const result = await safeSpawnAsync(cmd, args, {
-			timeout: 30000,
-		});
-
-		const raw = stripAnsi(result.stdout + result.stderr);
-		const diagnostics = parseRuffJson(result.stdout || "", ctx.filePath);
+		const raw = stripAnsi(checkResult.stdout + checkResult.stderr);
+		const diagnostics = parseRuffJson(checkResult.stdout || "", ctx.filePath);
 		const parsedDiagnostics =
 			diagnostics.length > 0 ? diagnostics : parseRuffOutput(raw, ctx.filePath);
 
-		if (result.status === 0 && parsedDiagnostics.length === 0) {
+		// Step 2: Auto-fix safe issues silently (unused imports, import order, etc.)
+		await safeSpawnAsync(
+			cmd,
+			["check", "--fix", "--no-unsafe-fixes", ...configArgs, ctx.filePath],
+			{ timeout: 15000 },
+		);
+
+		if (checkResult.status === 0 && parsedDiagnostics.length === 0) {
 			return { status: "succeeded", diagnostics: [], semantic: "none" };
 		}
 
