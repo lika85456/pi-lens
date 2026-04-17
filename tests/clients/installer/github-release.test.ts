@@ -5,7 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 // Ensure the real installer module is used, not any mock registered by other test files
 vi.unmock("../../../clients/installer/index.ts");
 
-const GITHUB_TOOLS = ["shellcheck", "shfmt", "rust-analyzer", "golangci-lint"] as const;
+const GITHUB_TOOLS = [
+	"shellcheck",
+	"shfmt",
+	"rust-analyzer",
+	"golangci-lint",
+	"ktlint",
+	"tflint",
+] as const;
 type GitHubToolId = (typeof GITHUB_TOOLS)[number];
 
 const SUPPORTED_PLATFORMS = ["linux", "darwin", "win32"] as const;
@@ -94,6 +101,58 @@ describe("GitHub release asset selection", () => {
 		] as const)("%s/%s → %s", async (platform, arch, expected) => {
 			const { resolveGitHubAsset } = await import("../../../clients/installer/index.ts");
 			expect(resolveGitHubAsset("golangci-lint", platform, arch)).toBe(expected);
+		});
+	});
+
+	describe("windows archive binary names", () => {
+		it("resolves shellcheck/tflint zip binaries to .exe on Windows", async () => {
+			const {
+				resolveGitHubArchiveBinaryCandidates,
+				resolveGitHubInstalledBinaryName,
+			} = await import("../../../clients/installer/index.ts");
+
+			expect(
+				resolveGitHubArchiveBinaryCandidates(
+					"shellcheck",
+					"win32",
+					"shellcheck-v0.11.0.zip",
+				),
+			).toContain("shellcheck.exe");
+			expect(
+				resolveGitHubArchiveBinaryCandidates(
+					"tflint",
+					"win32",
+					"tflint_windows_amd64.zip",
+				),
+			).toContain("tflint.exe");
+			expect(
+				resolveGitHubInstalledBinaryName(
+					"shellcheck",
+					"win32",
+					"shellcheck-v0.11.0.zip",
+				),
+			).toBe("shellcheck.exe");
+			expect(
+				resolveGitHubInstalledBinaryName(
+					"tflint",
+					"win32",
+					"tflint_windows_amd64.zip",
+				),
+			).toBe("tflint.exe");
+		});
+
+		it("preserves batch launchers like ktlint.bat on Windows", async () => {
+			const {
+				resolveGitHubArchiveBinaryCandidates,
+				resolveGitHubInstalledBinaryName,
+			} = await import("../../../clients/installer/index.ts");
+
+			expect(
+				resolveGitHubArchiveBinaryCandidates("ktlint", "win32", "ktlint.bat"),
+			).toContain("ktlint.bat");
+			expect(
+				resolveGitHubInstalledBinaryName("ktlint", "win32", "ktlint.bat"),
+			).toBe("ktlint.bat");
 		});
 	});
 });

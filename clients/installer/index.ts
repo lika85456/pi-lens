@@ -595,6 +595,8 @@ async function findGitHubToolPath(binaryName: string): Promise<string | undefine
 	const candidates = isWindows
 		? [
 				path.join(GITHUB_BIN_DIR, `${binaryName}.exe`),
+				path.join(GITHUB_BIN_DIR, `${binaryName}.bat`),
+				path.join(GITHUB_BIN_DIR, `${binaryName}.cmd`),
 				path.join(GITHUB_BIN_DIR, binaryName),
 			]
 		: [path.join(GITHUB_BIN_DIR, binaryName)];
@@ -608,6 +610,39 @@ async function findGitHubToolPath(binaryName: string): Promise<string | undefine
 		}
 	}
 	return undefined;
+}
+
+function hasExecutableExtension(name: string): boolean {
+	return /\.(exe|bat|cmd|ps1)$/i.test(name);
+}
+
+function getGitHubInstalledBinaryName(
+	binaryName: string,
+	platform: string,
+	assetName: string,
+): string {
+	if (platform !== "win32") return binaryName;
+	if (hasExecutableExtension(binaryName)) return binaryName;
+	if (assetName.endsWith(".bat")) return `${binaryName}.bat`;
+	if (assetName.endsWith(".cmd")) return `${binaryName}.cmd`;
+	return `${binaryName}.exe`;
+}
+
+function getArchiveBinaryCandidates(
+	binaryName: string,
+	platform: string,
+	assetName: string,
+): string[] {
+	if (platform !== "win32") return [binaryName];
+	if (hasExecutableExtension(binaryName)) return [binaryName];
+	const candidates = new Set<string>();
+	if (assetName.endsWith(".bat")) candidates.add(`${binaryName}.bat`);
+	if (assetName.endsWith(".cmd")) candidates.add(`${binaryName}.cmd`);
+	candidates.add(`${binaryName}.exe`);
+	candidates.add(binaryName);
+	candidates.add(`${binaryName}.bat`);
+	candidates.add(`${binaryName}.cmd`);
+	return [...candidates];
 }
 
 async function findNpmGlobalToolPath(
@@ -911,7 +946,11 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 
 	const binaryName = tool.binaryName ?? tool.id;
 	const isWindows = platform === "win32";
-	const finalBinaryName = isWindows && !binaryName.endsWith(".exe") ? `${binaryName}.exe` : binaryName;
+	const finalBinaryName = getGitHubInstalledBinaryName(
+		binaryName,
+		platform,
+		asset.name,
+	);
 	const destPath = path.join(GITHUB_BIN_DIR, finalBinaryName);
 
 	const assetName = asset.name;
@@ -977,12 +1016,19 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			}
 
 			// Find binary — may be at root or inside a subdir
-			const targetName = spec.binaryInArchive ?? finalBinaryName;
-			const srcBinary = await findFileRecursive(tmpDir, targetName);
+			const archiveBinaryName = spec.binaryInArchive ?? binaryName;
+			const srcBinary = await findFirstFileRecursive(
+				tmpDir,
+				getArchiveBinaryCandidates(archiveBinaryName, platform, assetName),
+			);
 			if (!srcBinary) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
-				console.error(`[auto-install] ${tool.name}: binary "${targetName}" not found in zip`);
-				logSessionStart(`github-install ${tool.id}: binary "${targetName}" not found in zip ${assetName}`);
+				console.error(`[auto-install] ${tool.name}: binary not found in zip`);
+				logSessionStart(
+					`github-install ${tool.id}: binary candidates ${JSON.stringify(
+						getArchiveBinaryCandidates(archiveBinaryName, platform, assetName),
+					)} not found in zip ${assetName}`,
+				);
 				return undefined;
 			}
 			await fs.rename(srcBinary, destPath);
@@ -1004,15 +1050,19 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 	return destPath;
 }
 
-/** Recursively find a file by name under a directory. */
-async function findFileRecursive(dir: string, name: string): Promise<string | undefined> {
+/** Recursively find the first matching file under a directory. */
+async function findFirstFileRecursive(
+	dir: string,
+	names: string[],
+): Promise<string | undefined> {
+	const wanted = new Set(names.map((name) => name.toLowerCase()));
 	const entries = await fs.readdir(dir, { withFileTypes: true });
 	for (const entry of entries) {
 		const full = path.join(dir, entry.name);
 		if (entry.isDirectory()) {
-			const found = await findFileRecursive(full, name);
+			const found = await findFirstFileRecursive(full, names);
 			if (found) return found;
-		} else if (entry.name === name) {
+		} else if (wanted.has(entry.name.toLowerCase())) {
 			return full;
 		}
 	}
@@ -1474,4 +1524,25 @@ export function resolveGitHubAsset(
 ): string | undefined {
 	const tool = TOOLS.find((t) => t.id === toolId);
 	return tool?.github?.assetMatch(platform, arch);
+}
+
+export function resolveGitHubInstalledBinaryName(
+	toolId: string,
+	platform: string,
+	assetName: string,
+): string | undefined {
+	const tool = TOOLS.find((t) => t.id === toolId);
+	if (!tool) return undefined;
+	return getGitHubInstalledBinaryName(tool.binaryName ?? tool.id, platform, assetName);
+}
+
+export function resolveGitHubArchiveBinaryCandidates(
+	toolId: string,
+	platform: string,
+	assetName: string,
+): string[] | undefined {
+	const tool = TOOLS.find((t) => t.id === toolId);
+	if (!tool) return undefined;
+	const binaryName = tool.github?.binaryInArchive ?? tool.binaryName ?? tool.id;
+	return getArchiveBinaryCandidates(binaryName, platform, assetName);
 }

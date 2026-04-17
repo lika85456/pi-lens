@@ -123,10 +123,11 @@ export function createDispatchContext(
 	blockingOnly?: boolean,
 	modifiedRanges?: import("./types.js").ModifiedRange[],
 ): DispatchContext {
+	const absoluteFilePath = path.resolve(cwd, filePath);
 	const normalizedCwd = normalizeMapKey(
-		resolveLanguageRootForFile(path.resolve(cwd, filePath), cwd),
+		resolveLanguageRootForFile(absoluteFilePath, cwd),
 	);
-	const normalizedFilePath = resolveRunnerPath(normalizedCwd, filePath);
+	const normalizedFilePath = normalizeMapKey(absoluteFilePath);
 	const kind = detectFileKind(normalizedFilePath);
 
 	return {

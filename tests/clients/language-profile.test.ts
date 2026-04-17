@@ -2,7 +2,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createDispatchContext } from "../../clients/dispatch/dispatcher.js";
+import { FactStore } from "../../clients/dispatch/fact-store.js";
 import { resolveLanguageRootForFile } from "../../clients/language-profile.js";
+import { normalizeMapKey } from "../../clients/path-utils.js";
 
 const dirs: string[] = [];
 
@@ -41,5 +44,29 @@ describe("language-profile roots", () => {
 
 		const root = resolveLanguageRootForFile(external, workspace);
 		expect(root).toBe(workspace);
+	});
+
+	it("keeps dispatch file paths absolute when a language root is nested under the workspace", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-lang-root-"));
+		dirs.push(tmp);
+
+		const workspace = path.join(tmp, "repo");
+		const projectRoot = path.join(workspace, "cases", "kotlin");
+		const file = path.join(projectRoot, "src", "main", "kotlin", "main.kt");
+
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(path.join(projectRoot, "build.gradle.kts"), "plugins {}\n");
+		fs.writeFileSync(file, "fun main() = greet(123)\n");
+
+		const ctx = createDispatchContext(
+			path.relative(workspace, file),
+			workspace,
+			{ getFlag: () => false },
+			new FactStore(),
+		);
+
+		expect(normalizeMapKey(ctx.cwd)).toBe(normalizeMapKey(projectRoot));
+		expect(normalizeMapKey(ctx.filePath)).toBe(normalizeMapKey(file));
+		expect(ctx.filePath.includes("cases/kotlin/cases/kotlin")).toBe(false);
 	});
 });
