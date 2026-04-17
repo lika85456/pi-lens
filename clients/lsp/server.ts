@@ -98,12 +98,21 @@ async function resolveAndLaunch(
 	spec: ResolveAndLaunchSpec,
 	allowInstall: boolean | undefined,
 ): Promise<{ process: LSPProcess; source: "direct" | "managed" | "package-manager" } | undefined> {
+	let lastRuntimeFailure: Error | undefined;
+	const trackRuntimeFailure = (err: unknown): void => {
+		const message = err instanceof Error ? err.message : String(err);
+		if (!isCommandNotFoundError(message)) {
+			lastRuntimeFailure = err instanceof Error ? err : new Error(message);
+		}
+	};
+
 	// Step 1 & 2 — try all explicit candidates (includes bare command = PATH lookup)
 	for (const command of spec.candidates) {
 		try {
 			const proc = await launchLSP(command, spec.args, { cwd: spec.cwd, env: spec.env });
 			return { process: proc, source: "direct" };
-		} catch {
+		} catch (err) {
+			trackRuntimeFailure(err);
 			// try next
 		}
 	}
@@ -117,7 +126,8 @@ async function resolveAndLaunch(
 			try {
 				const proc = await launchLSP(installed, spec.args, { cwd: spec.cwd, env: spec.env });
 				return { process: proc, source: "managed" };
-			} catch {
+			} catch (err) {
+				trackRuntimeFailure(err);
 				// fall through
 			}
 		}
@@ -132,11 +142,16 @@ async function resolveAndLaunch(
 				try {
 					const proc = await launchLSP(command, spec.args, { cwd: spec.cwd, env: spec.env });
 					return { process: proc, source: "managed" };
-				} catch {
+				} catch (err) {
+					trackRuntimeFailure(err);
 					// try next
 				}
 			}
 		}
+	}
+
+	if (lastRuntimeFailure) {
+		throw lastRuntimeFailure;
 	}
 
 	return undefined;

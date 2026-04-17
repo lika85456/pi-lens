@@ -292,9 +292,25 @@ export async function launchLSP(
 		);
 	}
 
+	const formatStartupStderr = (stderr: string): string => {
+		const normalized = stderr.replace(/\s+/g, " ").trim();
+		if (!normalized) return "";
+		const max = 280;
+		const clipped = normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
+		return ` stderr=${clipped}`;
+	};
+
+	let startupStderr = "";
+	const onStartupStderr = (chunk: Buffer | string): void => {
+		if (startupStderr.length >= 4000) return;
+		startupStderr += chunk.toString();
+	};
+	proc.stderr?.on("data", onStartupStderr);
+
 	// For Windows and certain spawn failures, the error is async (ENOENT)
 	// We need to wait a small tick to catch immediate spawn failures
-	await new Promise<void>((resolve, reject) => {
+	try {
+		await new Promise<void>((resolve, reject) => {
 		let settled = false;
 
 		// Attach error handler that can reject for immediate errors
@@ -304,7 +320,7 @@ export async function launchLSP(
 				reject(
 					new Error(
 						`LSP server binary not found: ${command}. ` +
-							`Install it or check your PATH.`,
+							`Install it or check your PATH.${formatStartupStderr(startupStderr)}`,
 					),
 				);
 			}
@@ -317,7 +333,7 @@ export async function launchLSP(
 				reject(
 					new Error(
 						`LSP server ${command} exited immediately with code ${code}. ` +
-							`The binary may be missing or corrupted.`,
+							`The binary may be missing or corrupted.${formatStartupStderr(startupStderr)}`,
 					),
 				);
 			}
@@ -330,7 +346,10 @@ export async function launchLSP(
 				resolve();
 			}
 		}, 50);
-	});
+		});
+	} finally {
+		proc.stderr?.off("data", onStartupStderr);
+	}
 
 	// Re-attach the permanent error handler now that we've passed the danger zone
 	_attachErrorHandler(proc, command);
