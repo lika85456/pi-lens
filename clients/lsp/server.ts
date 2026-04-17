@@ -7,10 +7,12 @@
  * - Platform-specific handling
  */
 
-import { stat } from "node:fs/promises";
+import { appendFile, mkdir, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ensureTool, getToolEnvironment } from "../installer/index.js";
+import { logLatency } from "../latency-logger.js";
 import {
 	type LSPProcess,
 	launchLSP,
@@ -56,6 +58,18 @@ function isCommandNotFoundError(error: unknown): boolean {
 	return msg.includes("not found") || msg.includes("ENOENT") || msg.includes("not recognized");
 }
 
+const SESSIONSTART_LOG_DIR = path.join(os.homedir(), ".pi-lens");
+const SESSIONSTART_LOG = path.join(SESSIONSTART_LOG_DIR, "sessionstart.log");
+
+function logSessionStart(message: string): void {
+	const line = `[${new Date().toISOString()}] ${message}\n`;
+	void mkdir(SESSIONSTART_LOG_DIR, { recursive: true })
+		.then(() => appendFile(SESSIONSTART_LOG, line))
+		.catch(() => {
+			// best-effort logging
+		});
+}
+
 
 // ---------------------------------------------------------------------------
 // Unified binary resolution + launch
@@ -98,6 +112,7 @@ async function resolveAndLaunch(
 	spec: ResolveAndLaunchSpec,
 	allowInstall: boolean | undefined,
 ): Promise<{ process: LSPProcess; source: "direct" | "managed" | "package-manager" } | undefined> {
+	const toolLabel = spec.managedToolId ?? spec.candidates[spec.candidates.length - 1] ?? "unknown";
 	let lastRuntimeFailure: Error | undefined;
 	const trackRuntimeFailure = (err: unknown): void => {
 		const message = err instanceof Error ? err.message : String(err);
@@ -107,26 +122,132 @@ async function resolveAndLaunch(
 	};
 
 	// Step 1 & 2 — try all explicit candidates (includes bare command = PATH lookup)
-	for (const command of spec.candidates) {
+	for (const [index, command] of spec.candidates.entries()) {
+		logLatency({
+			type: "phase",
+			phase: "lsp_launch_candidate_attempt",
+			filePath: spec.cwd,
+			durationMs: 0,
+			metadata: {
+				tool: toolLabel,
+				command,
+				index,
+				totalCandidates: spec.candidates.length,
+				allowInstall: canInstall(allowInstall),
+			},
+		});
+		logSessionStart(
+			`lsp launch candidate attempt tool=${toolLabel} idx=${index}/${spec.candidates.length - 1} command=${command} cwd=${spec.cwd}`,
+		);
 		try {
 			const proc = await launchLSP(command, spec.args, { cwd: spec.cwd, env: spec.env });
+			logLatency({
+				type: "phase",
+				phase: "lsp_launch_candidate_success",
+				filePath: spec.cwd,
+				durationMs: 0,
+				metadata: {
+					tool: toolLabel,
+					command,
+					index,
+					source: "direct",
+				},
+			});
+			logSessionStart(
+				`lsp launch candidate success tool=${toolLabel} idx=${index} command=${command} source=direct`,
+			);
 			return { process: proc, source: "direct" };
 		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			logLatency({
+				type: "phase",
+				phase: "lsp_launch_candidate_failed",
+				filePath: spec.cwd,
+				durationMs: 0,
+				metadata: {
+					tool: toolLabel,
+					command,
+					index,
+					error: message,
+				},
+			});
+			logSessionStart(
+				`lsp launch candidate failed tool=${toolLabel} idx=${index} command=${command} error=${message}`,
+			);
 			trackRuntimeFailure(err);
 			// try next
 		}
 	}
 
-	if (!canInstall(allowInstall)) return undefined;
+	if (!canInstall(allowInstall)) {
+		logSessionStart(
+			`lsp launch install blocked tool=${toolLabel} cwd=${spec.cwd} allowInstall=${allowInstall !== false} globalDisabled=${isLspInstallDisabled()}`,
+		);
+		logLatency({
+			type: "phase",
+			phase: "lsp_launch_install_blocked",
+			filePath: spec.cwd,
+			durationMs: 0,
+			metadata: {
+				tool: toolLabel,
+				allowInstall,
+				globalInstallDisabled: isLspInstallDisabled(),
+			},
+		});
+		return undefined;
+	}
 
 	// Step 3 — managed install via installer registry
 	if (spec.managedToolId) {
+		logSessionStart(`lsp launch ensure-tool start tool=${spec.managedToolId} cwd=${spec.cwd}`);
 		const installed = await ensureTool(spec.managedToolId);
+		logSessionStart(
+			`lsp launch ensure-tool result tool=${spec.managedToolId} installed=${installed ? "yes" : "no"} path=${installed ?? ""}`,
+		);
+		logLatency({
+			type: "phase",
+			phase: "lsp_launch_ensure_tool_result",
+			filePath: spec.cwd,
+			durationMs: 0,
+			metadata: {
+				tool: spec.managedToolId,
+				installed: Boolean(installed),
+				path: installed,
+			},
+		});
 		if (installed) {
 			try {
 				const proc = await launchLSP(installed, spec.args, { cwd: spec.cwd, env: spec.env });
+				logSessionStart(
+					`lsp launch managed success tool=${spec.managedToolId} command=${installed} source=managed`,
+				);
+				logLatency({
+					type: "phase",
+					phase: "lsp_launch_managed_success",
+					filePath: spec.cwd,
+					durationMs: 0,
+					metadata: {
+						tool: spec.managedToolId,
+						command: installed,
+					},
+				});
 				return { process: proc, source: "managed" };
 			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				logSessionStart(
+					`lsp launch managed failed tool=${spec.managedToolId} command=${installed} error=${message}`,
+				);
+				logLatency({
+					type: "phase",
+					phase: "lsp_launch_managed_failed",
+					filePath: spec.cwd,
+					durationMs: 0,
+					metadata: {
+						tool: spec.managedToolId,
+						command: installed,
+						error: message,
+					},
+				});
 				trackRuntimeFailure(err);
 				// fall through
 			}
@@ -1004,7 +1125,7 @@ export const BashServer: LSPServerInfo = {
 	root: FileDirRoot,
 	spawn(root, options) {
 		return resolveAndLaunch(
-			{ candidates: ["bash-language-server"], args: ["start"], cwd: root, managedToolId: "bash-language-server" },
+			{ candidates: nodeBinCandidates(root, "bash-language-server"), args: ["start"], cwd: root, managedToolId: "bash-language-server" },
 			options?.allowInstall,
 		);
 	},

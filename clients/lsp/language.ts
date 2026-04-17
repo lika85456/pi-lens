@@ -1,3 +1,5 @@
+import path from "node:path";
+
 /**
  * Language ID Mappings for LSP
  * 
@@ -202,8 +204,13 @@ export const LANGUAGE_EXTENSIONS: Record<string, string> = {
  * Get language ID for a file path
  */
 export function getLanguageId(filePath: string): string | undefined {
-	const ext = filePath.slice(filePath.lastIndexOf(".")).toLowerCase();
-	return LANGUAGE_EXTENSIONS[ext];
+	const ext = path.extname(filePath).toLowerCase();
+	if (ext && LANGUAGE_EXTENSIONS[ext]) {
+		return LANGUAGE_EXTENSIONS[ext];
+	}
+
+	const base = path.basename(filePath);
+	return LANGUAGE_EXTENSIONS[base] ?? LANGUAGE_EXTENSIONS[base.toLowerCase()];
 }
 
 /**

@@ -154,7 +154,11 @@ export function isServerDisabled(serverId: string): boolean {
 
 export function getServersForFileWithConfig(filePath: string): LSPServerInfo[] {
 	const ext = path.extname(filePath).toLowerCase();
-	return getAllServers().filter((server) => server.extensions.includes(ext));
+	const base = path.basename(filePath).toLowerCase();
+	return getAllServers().filter((server) => {
+		const extensions = server.extensions.map((value) => value.toLowerCase());
+		return extensions.includes(ext) || extensions.includes(base);
+	});
 }
 
 // Re-export with config support

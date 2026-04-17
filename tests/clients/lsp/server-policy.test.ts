@@ -129,6 +129,16 @@ describe("lsp server policy", () => {
 		}
 	});
 
+	it("matches Dockerfile by basename in configured server lookup", async () => {
+		const { getServersForFileWithConfig } = await import(
+			"../../../clients/lsp/config.js"
+		);
+		const servers = getServersForFileWithConfig("infra/Dockerfile").map(
+			(server) => server.id,
+		);
+		expect(servers).toContain("docker");
+	});
+
 	it("uses git root fallback for ruby files without ruby config", async () => {
 		const { RubyServer } = await import("../../../clients/lsp/server.js");
 		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-ruby-root-"));
@@ -155,6 +165,21 @@ describe("lsp server policy", () => {
 
 		const spawned = await TypeScriptServer.spawn(tmp);
 		expect(spawned).toBeUndefined();
+	});
+
+	it("tries local bash-language-server bin candidates before PATH lookup", async () => {
+		const { BashServer } = await import("../../../clients/lsp/server.js");
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-bash-candidates-"));
+		dirs.push(tmp);
+
+		launchLSP.mockRejectedValue(new Error("ENOENT: command not found"));
+
+		const spawned = await BashServer.spawn(tmp, { allowInstall: false });
+		expect(spawned).toBeUndefined();
+		expect(launchLSP).toHaveBeenCalled();
+		const firstCommand = launchLSP.mock.calls[0]?.[0] as string;
+		expect(firstCommand).toContain("node_modules");
+		expect(firstCommand).toContain("bash-language-server");
 	});
 
 	it("skips managed TypeScript install when install is disallowed for file", async () => {

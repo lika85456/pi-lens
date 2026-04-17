@@ -81,5 +81,6 @@ BUG_*.md
 
 # Dev log
 clients/dispatch/debug.log
+clients/lsp/.intelephense/
 AGENTS.md
 .npmignore
