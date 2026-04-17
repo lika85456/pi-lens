@@ -253,6 +253,78 @@ const TOOLS: ToolDefinition[] = [
 		binaryName: "vscode-json-language-server",
 	},
 	{
+		id: "vscode-langservers-extracted",
+		name: "VSCode ESLint Language Server",
+		checkCommand: "vscode-eslint-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-langservers-extracted",
+		binaryName: "vscode-eslint-language-server",
+	},
+	{
+		id: "vscode-html-languageserver-bin",
+		name: "VSCode HTML Language Server",
+		checkCommand: "vscode-html-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-html-languageserver-bin",
+		binaryName: "vscode-html-language-server",
+	},
+	{
+		id: "vscode-css-languageserver",
+		name: "VSCode CSS Language Server",
+		checkCommand: "vscode-css-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "vscode-css-languageserver",
+		binaryName: "vscode-css-language-server",
+	},
+	{
+		id: "dockerfile-language-server-nodejs",
+		name: "Dockerfile Language Server",
+		checkCommand: "docker-langserver",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "dockerfile-language-server-nodejs",
+		binaryName: "docker-langserver",
+	},
+	{
+		id: "intelephense",
+		name: "Intelephense",
+		checkCommand: "intelephense",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "intelephense",
+		binaryName: "intelephense",
+	},
+	{
+		id: "@prisma/language-server",
+		name: "Prisma Language Server",
+		checkCommand: "prisma-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "@prisma/language-server",
+		binaryName: "prisma-language-server",
+	},
+	{
+		id: "@vue/language-server",
+		name: "Vue Language Server",
+		checkCommand: "vue-language-server",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "@vue/language-server",
+		binaryName: "vue-language-server",
+	},
+	{
+		id: "svelte-language-server",
+		name: "Svelte Language Server",
+		checkCommand: "svelteserver",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "svelte-language-server",
+		binaryName: "svelteserver",
+	},
+	{
 		id: "markdownlint",
 		name: "markdownlint-cli2",
 		checkCommand: "markdownlint-cli2",
@@ -913,72 +985,84 @@ async function installNpmTool(
 		const needsScripts = NEEDS_POSTINSTALL.has(
 			packageName.split("@")[0] ?? packageName,
 		);
-		const installArgs = needsScripts
+		const baseInstallArgs = needsScripts
 			? ["install", packageName]
 			: ["install", "--ignore-scripts", packageName];
-		const proc = spawn(pm, installArgs, {
-			cwd: TOOLS_DIR,
-			stdio: ["ignore", "pipe", "pipe"],
-			shell: isWindows, // Required for .cmd files on Windows
-		});
 
-		return new Promise((resolve, reject) => {
-			let stderr = "";
-			proc.stderr?.on("data", (data) => (stderr += data));
+		const runInstallAttempt = async (
+			args: string[],
+		): Promise<{ ok: boolean; stderr: string }> =>
+			new Promise((resolve) => {
+				const proc = spawn(pm, args, {
+					cwd: TOOLS_DIR,
+					stdio: ["ignore", "pipe", "pipe"],
+					shell: isWindows, // Required for .cmd files on Windows
+				});
 
-			proc.on("exit", async (code) => {
-				if (code === 0) {
-					const binPath = path.join(
-						TOOLS_DIR,
-						"node_modules",
-						".bin",
-						binaryName,
-					);
+				let stderr = "";
+				proc.stderr?.on("data", (data) => (stderr += data));
 
-					// Make executable on Unix
-					if (process.platform !== "win32") {
-						try {
-							await fs.chmod(binPath, 0o755);
-						} catch {
-							/* ignore */
-						}
-					}
-
-					// NEW: Verify the binary actually works before returning
-					debugLog(`Verifying ${binaryName}...`);
-					const isValid = await verifyToolBinary(binPath);
-					if (!isValid) {
-						console.error(
-							`[auto-install] ${packageName} installed but verification failed (binary may be corrupted)`,
-						);
-						// Clean up the broken installation
-						try {
-							const packagePath = path.join(
-								TOOLS_DIR,
-								"node_modules",
-								packageName,
-							);
-							await fs.rm(packagePath, { recursive: true, force: true });
-							await fs.rm(binPath, { force: true });
-							if (isWindows) {
-								await fs.rm(`${binPath}.cmd`, { force: true });
-								await fs.rm(`${binPath}.ps1`, { force: true });
-							}
-						} catch {
-							/* ignore cleanup errors */
-						}
-						resolve(undefined);
-						return;
-					}
-
-					resolve(binPath);
-				} else {
-					reject(new Error(`Failed to install ${packageName}: ${stderr}`));
-				}
+				proc.on("exit", (code) => resolve({ ok: code === 0, stderr }));
+				proc.on("error", (err) => resolve({ ok: false, stderr: err.message }));
 			});
 
-			proc.on("error", (err) => reject(err));
-		});
+		let outcome = await runInstallAttempt(baseInstallArgs);
+
+		const isNpm = pm === "npm" || pm === "npm.cmd";
+		const erResolve =
+			outcome.ok === false &&
+			/npm\s+error\s+ERESOLVE|\bERESOLVE\b|could not resolve/i.test(
+				outcome.stderr,
+			);
+
+		if (isNpm && erResolve) {
+			const retryArgs = needsScripts
+				? ["install", "--legacy-peer-deps", packageName]
+				: ["install", "--ignore-scripts", "--legacy-peer-deps", packageName];
+			logSessionStart(
+				`auto-install npm ${packageName}: retry with --legacy-peer-deps after ERESOLVE`,
+			);
+			outcome = await runInstallAttempt(retryArgs);
+		}
+
+		if (!outcome.ok) {
+			throw new Error(`Failed to install ${packageName}: ${outcome.stderr}`);
+		}
+
+		const binPath = path.join(TOOLS_DIR, "node_modules", ".bin", binaryName);
+
+		// Make executable on Unix
+		if (process.platform !== "win32") {
+			try {
+				await fs.chmod(binPath, 0o755);
+			} catch {
+				/* ignore */
+			}
+		}
+
+		// Verify the binary actually works before returning
+		debugLog(`Verifying ${binaryName}...`);
+		const isValid = await verifyToolBinary(binPath);
+		if (!isValid) {
+			console.error(
+				`[auto-install] ${packageName} installed but verification failed (binary may be corrupted)`,
+			);
+			// Clean up the broken installation
+			try {
+				const packagePath = path.join(TOOLS_DIR, "node_modules", packageName);
+				await fs.rm(packagePath, { recursive: true, force: true });
+				await fs.rm(binPath, { force: true });
+				if (isWindows) {
+					await fs.rm(`${binPath}.cmd`, { force: true });
+					await fs.rm(`${binPath}.ps1`, { force: true });
+				}
+			} catch {
+				/* ignore cleanup errors */
+			}
+			return undefined;
+		}
+
+		return binPath;
 	} catch (err) {
 		console.error(
 			`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`,
@@ -1079,7 +1163,8 @@ async function installPipTool(
 						}
 					}
 
-					const currentPath = process.env.PATH || "";
+					const currentPath =
+						process.env.PATH || process.env.Path || process.env.path || "";
 					const separator = isWindows ? ";" : ":";
 					const normalizedPath = currentPath
 						.toLowerCase()
@@ -1090,7 +1175,13 @@ async function installPipTool(
 						try {
 							await fs.access(scriptsDir);
 							if (!normalizedPath.includes(scriptsDir.toLowerCase())) {
-								process.env.PATH = `${scriptsDir}${separator}${process.env.PATH || ""}`;
+								const existingPath =
+									process.env.PATH || process.env.Path || process.env.path || "";
+								const updatedPath = `${scriptsDir}${separator}${existingPath}`;
+								process.env.PATH = updatedPath;
+								if (isWindows) {
+									process.env.Path = updatedPath;
+								}
 								debugLog(`Added pip user scripts dir to PATH: ${scriptsDir}`);
 							}
 						} catch {
@@ -1247,13 +1338,22 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
  */
 export async function getToolEnvironment(): Promise<NodeJS.ProcessEnv> {
 	const localBin = path.join(TOOLS_DIR, "node_modules", ".bin");
-	const currentPath = process.env.PATH || "";
+	const currentPath = process.env.PATH || process.env.Path || process.env.path || "";
 	const separator = process.platform === "win32" ? ";" : ":";
+	const nodeDir = path.dirname(process.execPath);
+	const withNode = nodeDir ? `${nodeDir}${separator}${currentPath}` : currentPath;
+	const augmentedPath = `${GITHUB_BIN_DIR}${separator}${localBin}${separator}${withNode}`;
 
-	return {
+	const env: NodeJS.ProcessEnv = {
 		...process.env,
-		PATH: `${GITHUB_BIN_DIR}${separator}${localBin}${separator}${currentPath}`,
+		PATH: augmentedPath,
 	};
+
+	if (process.platform === "win32") {
+		env.Path = augmentedPath;
+	}
+
+	return env;
 }
 
 // --- Status Check ---
@@ -1275,6 +1375,10 @@ export async function checkAllTools(): Promise<
 		});
 	}
 	return results;
+}
+
+export function isKnownToolId(toolId: string): boolean {
+	return TOOLS.some((tool) => tool.id === toolId);
 }
 
 /**
