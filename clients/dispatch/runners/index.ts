@@ -40,6 +40,7 @@ import prismaValidateRunner from "./prisma-validate.js";
 import ktlintRunner from "./ktlint.js";
 import tflintRunner from "./tflint.js";
 import taploRunner from "./taplo.js";
+import dartAnalyzeRunner from "./dart-analyze.js";
 
 export function registerDefaultRunners(registry: RunnerRegistry): void {
 	// Register all runners (ordered by priority)
@@ -81,4 +82,5 @@ export function registerDefaultRunners(registry: RunnerRegistry): void {
 	registry.register(ktlintRunner); // Kotlin linting via ktlint (priority 10)
 	registry.register(tflintRunner); // Terraform linting via tflint (priority 20)
 	registry.register(taploRunner); // TOML linting/validation via taplo (priority 10)
+	registry.register(dartAnalyzeRunner); // Dart analysis via dart analyze (priority 20)
 }

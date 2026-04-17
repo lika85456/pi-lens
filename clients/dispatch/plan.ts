@@ -180,7 +180,10 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<FileKind, CapabilityMatrixEntry>
 	dart: {
 		name: "Dart Linting",
 		capabilities: ["types", "lint"],
-		writeGroups: [primary("dart")],
+		writeGroups: [
+			primary("dart"),
+			{ mode: "all", runnerIds: ["dart-analyze"], filterKinds: ["dart"] },
+		],
 	},
 	lua: {
 		name: "Lua Linting",
