@@ -148,7 +148,10 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<FileKind, CapabilityMatrixEntry>
 	powershell: {
 		name: "PowerShell Linting",
 		capabilities: ["lint"],
-		writeGroups: [primary("powershell")],
+		writeGroups: [
+			primary("powershell"),
+			{ mode: "all", runnerIds: ["psscriptanalyzer"], filterKinds: ["powershell"] },
+		],
 	},
 	prisma: {
 		name: "Prisma Schema Linting",

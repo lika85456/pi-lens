@@ -34,6 +34,7 @@ import shfmtRunner from "./shfmt.js";
 import factRulesRunner from "./fact-rules.js";
 import htmlhintRunner from "./htmlhint.js";
 import hadolintRunner from "./hadolint.js";
+import psScriptAnalyzerRunner from "./psscriptanalyzer.js";
 
 export function registerDefaultRunners(registry: RunnerRegistry): void {
 	// Register all runners (ordered by priority)
@@ -69,4 +70,5 @@ export function registerDefaultRunners(registry: RunnerRegistry): void {
 	registry.register(factRulesRunner); // FactRule pipeline — all registered rules (priority 21)
 	registry.register(htmlhintRunner); // HTML linting — tag pairs, attribute rules (priority 20)
 	registry.register(hadolintRunner); // Dockerfile linting — syntax, best practices (priority 20)
+	registry.register(psScriptAnalyzerRunner); // PowerShell linting via PSScriptAnalyzer module (priority 20)
 }
