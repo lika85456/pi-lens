@@ -26,30 +26,76 @@ export interface LSPProcess {
 
 const isWindows = process.platform === "win32";
 
-function buildAugmentedPath(basePath?: string): string {
-	if (!isWindows) return basePath ?? "";
+function delimiterForPlatform(platform: NodeJS.Platform): string {
+	return platform === "win32" ? ";" : ":";
+}
 
-	const userProfile = process.env.USERPROFILE;
-	const candidates: string[] = [];
-	if (userProfile) {
-		candidates.push(path.join(userProfile, ".cargo", "bin"));
-		candidates.push(path.join(userProfile, "go", "bin"));
+function splitPathEntries(value: string | undefined, delimiter: string): string[] {
+	if (!value) return [];
+	return value
+		.split(delimiter)
+		.map((entry) => entry.trim())
+		.filter((entry) => entry.length > 0);
+}
+
+function normalizePathEntry(entry: string, platform: NodeJS.Platform): string {
+	const normalized = path.normalize(entry);
+	return platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+export function combinePathValuesForPlatform(
+	values: Array<string | undefined>,
+	platform: NodeJS.Platform = process.platform,
+): string {
+	const unique: string[] = [];
+	const seen = new Set<string>();
+	const delimiter = delimiterForPlatform(platform);
+
+	for (const value of values) {
+		for (const entry of splitPathEntries(value, delimiter)) {
+			const key = normalizePathEntry(entry, platform);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			unique.push(entry);
+		}
 	}
-	candidates.push(path.join("C:\\", "Program Files", "Go", "bin"));
-	candidates.push(path.join("C:\\", "Go", "bin"));
-	candidates.push(path.join("C:\\", "Ruby34-x64", "bin"));
-	candidates.push(path.join("C:\\", "Ruby33-x64", "bin"));
+
+	return unique.join(delimiter);
+}
+
+function resolvePathValue(env: NodeJS.ProcessEnv): string {
+	return combinePathValuesForPlatform([env.PATH, env.Path, env.path]);
+}
+
+function buildAugmentedPath(basePath?: string): string {
+	const candidates: string[] = [];
+	const nodeDir = path.dirname(process.execPath);
+	if (nodeDir) {
+		candidates.push(nodeDir);
+	}
+
+	if (isWindows) {
+		const userProfile = process.env.USERPROFILE;
+		if (userProfile) {
+			candidates.push(path.join(userProfile, ".cargo", "bin"));
+			candidates.push(path.join(userProfile, "go", "bin"));
+		}
+		candidates.push(path.join("C:\\", "Program Files", "Go", "bin"));
+		candidates.push(path.join("C:\\", "Go", "bin"));
+		candidates.push(path.join("C:\\", "Ruby34-x64", "bin"));
+		candidates.push(path.join("C:\\", "Ruby33-x64", "bin"));
+	}
 
 	const existing = new Set<string>();
-	for (const entry of (basePath ?? "").split(path.delimiter)) {
+	for (const entry of splitPathEntries(basePath, path.delimiter)) {
 		if (!entry) continue;
-		existing.add(path.normalize(entry).toLowerCase());
+		existing.add(normalizePathEntry(entry, process.platform));
 	}
 
 	const toAppend: string[] = [];
 	for (const candidate of candidates) {
 		if (!candidate || !fs.existsSync(candidate)) continue;
-		const normalized = path.normalize(candidate).toLowerCase();
+		const normalized = normalizePathEntry(candidate, process.platform);
 		if (existing.has(normalized)) continue;
 		toAppend.push(candidate);
 		existing.add(normalized);
@@ -204,9 +250,11 @@ export async function launchLSP(
 ): Promise<LSPProcess> {
 	const cwd = String(options.cwd ?? process.cwd());
 	const mergedEnv = { ...process.env, ...options.env };
+	const augmentedPath = buildAugmentedPath(resolvePathValue(mergedEnv));
 	const env: NodeJS.ProcessEnv = {
 		...mergedEnv,
-		PATH: buildAugmentedPath(mergedEnv.PATH),
+		PATH: augmentedPath,
+		...(isWindows ? { Path: augmentedPath } : {}),
 	};
 
 	// Resolve command path
@@ -390,9 +438,11 @@ export async function launchViaPackageManager(
 
 		const cwd = String(options.cwd ?? process.cwd());
 		const mergedEnv = { ...process.env, ...options.env };
+		const augmentedPath = buildAugmentedPath(resolvePathValue(mergedEnv));
 		const env: NodeJS.ProcessEnv = {
 			...mergedEnv,
-			PATH: buildAugmentedPath(mergedEnv.PATH),
+			PATH: augmentedPath,
+			...(isWindows ? { Path: augmentedPath } : {}),
 		};
 
 		const proc = nodeSpawn(shellCommand, [], {

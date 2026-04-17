@@ -1163,7 +1163,8 @@ async function installPipTool(
 						}
 					}
 
-					const currentPath = process.env.PATH || "";
+					const currentPath =
+						process.env.PATH || process.env.Path || process.env.path || "";
 					const separator = isWindows ? ";" : ":";
 					const normalizedPath = currentPath
 						.toLowerCase()
@@ -1174,7 +1175,13 @@ async function installPipTool(
 						try {
 							await fs.access(scriptsDir);
 							if (!normalizedPath.includes(scriptsDir.toLowerCase())) {
-								process.env.PATH = `${scriptsDir}${separator}${process.env.PATH || ""}`;
+								const existingPath =
+									process.env.PATH || process.env.Path || process.env.path || "";
+								const updatedPath = `${scriptsDir}${separator}${existingPath}`;
+								process.env.PATH = updatedPath;
+								if (isWindows) {
+									process.env.Path = updatedPath;
+								}
 								debugLog(`Added pip user scripts dir to PATH: ${scriptsDir}`);
 							}
 						} catch {
@@ -1331,13 +1338,22 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
  */
 export async function getToolEnvironment(): Promise<NodeJS.ProcessEnv> {
 	const localBin = path.join(TOOLS_DIR, "node_modules", ".bin");
-	const currentPath = process.env.PATH || "";
+	const currentPath = process.env.PATH || process.env.Path || process.env.path || "";
 	const separator = process.platform === "win32" ? ";" : ":";
+	const nodeDir = path.dirname(process.execPath);
+	const withNode = nodeDir ? `${nodeDir}${separator}${currentPath}` : currentPath;
+	const augmentedPath = `${GITHUB_BIN_DIR}${separator}${localBin}${separator}${withNode}`;
 
-	return {
+	const env: NodeJS.ProcessEnv = {
 		...process.env,
-		PATH: `${GITHUB_BIN_DIR}${separator}${localBin}${separator}${currentPath}`,
+		PATH: augmentedPath,
 	};
+
+	if (process.platform === "win32") {
+		env.Path = augmentedPath;
+	}
+
+	return env;
 }
 
 // --- Status Check ---

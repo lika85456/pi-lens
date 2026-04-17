@@ -113,4 +113,10 @@ describe("getToolEnvironment PATH", () => {
 		const localBin = path.join(os.homedir(), ".pi-lens", "tools", "node_modules", ".bin");
 		expect(env.PATH).toContain(localBin);
 	});
+
+	it("includes current Node runtime directory in PATH", async () => {
+		const { getToolEnvironment } = await import("../../../clients/installer/index.ts");
+		const env = await getToolEnvironment();
+		expect(env.PATH).toContain(path.dirname(process.execPath));
+	});
 });
