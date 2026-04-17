@@ -74,7 +74,13 @@
       "Bash(sed -n '566,610p' /c/Users/apman/OneDrive/Desktop/pi-lens/clients/formatters.ts)",
       "Bash(sed -n '598,630p' /c/Users/apman/OneDrive/Desktop/pi-lens/clients/formatters.ts)",
       "Bash(git pull *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(cmd.exe *)",
+      "Read(//c/Users/apman/**)",
+      "Bash(/c/Users/apman/.pi-lens/tools/node_modules/.bin/ruff check *)",
+      "Bash(where ruff *)",
+      "Bash(npx htmlhint *)",
+      "Bash(npx htmlhint@latest --help)"
     ]
   }
 }
