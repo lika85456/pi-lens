@@ -100,27 +100,27 @@ const PRIMARY_DISPATCH_GROUPS: Partial<Record<FileKind, RunnerGroup>> = {
 	},
 	html: {
 		mode: "fallback",
-		runnerIds: ["lsp"],
+		runnerIds: ["lsp", "htmlhint"],
 		filterKinds: ["html"],
 	},
 	docker: {
 		mode: "fallback",
-		runnerIds: ["lsp"],
+		runnerIds: ["lsp", "hadolint"],
 		filterKinds: ["docker"],
 	},
 	php: {
 		mode: "fallback",
-		runnerIds: ["lsp"],
+		runnerIds: ["lsp", "php-lint"],
 		filterKinds: ["php"],
 	},
 	powershell: {
 		mode: "fallback",
-		runnerIds: ["lsp"],
+		runnerIds: ["lsp", "psscriptanalyzer"],
 		filterKinds: ["powershell"],
 	},
 	prisma: {
 		mode: "fallback",
-		runnerIds: ["lsp"],
+		runnerIds: ["lsp", "prisma-validate"],
 		filterKinds: ["prisma"],
 	},
 };

@@ -101,7 +101,7 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<FileKind, CapabilityMatrixEntry>
 	},
 	json: {
 		name: "JSON Processing",
-		capabilities: ["format"],
+		capabilities: ["format", "lint"],
 		writeGroups: [primary("json")],
 	},
 	markdown: {
@@ -127,18 +127,12 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<FileKind, CapabilityMatrixEntry>
 	html: {
 		name: "HTML Linting",
 		capabilities: ["lint"],
-		writeGroups: [
-			primary("html"),
-			{ mode: "all", runnerIds: ["htmlhint"], filterKinds: ["html"] },
-		],
+		writeGroups: [primary("html")],
 	},
 	docker: {
 		name: "Dockerfile Linting",
 		capabilities: ["lint"],
-		writeGroups: [
-			primary("docker"),
-			{ mode: "all", runnerIds: ["hadolint"], filterKinds: ["docker"] },
-		],
+		writeGroups: [primary("docker")],
 	},
 	php: {
 		name: "PHP Linting",
@@ -148,10 +142,7 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<FileKind, CapabilityMatrixEntry>
 	powershell: {
 		name: "PowerShell Linting",
 		capabilities: ["lint"],
-		writeGroups: [
-			primary("powershell"),
-			{ mode: "all", runnerIds: ["psscriptanalyzer"], filterKinds: ["powershell"] },
-		],
+		writeGroups: [primary("powershell")],
 	},
 	prisma: {
 		name: "Prisma Schema Linting",

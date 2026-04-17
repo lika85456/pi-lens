@@ -65,4 +65,24 @@ describe("dispatch plan exposure", () => {
 		expect(yamlIds).toContain("yamllint");
 		expect(sqlIds).toContain("sqlfluff");
 	});
+
+	it("routes html/docker/powershell/php/prisma through aligned primary plans", () => {
+		expect(flattenRunnerIds(TOOL_PLANS.html)).toEqual(["lsp", "htmlhint"]);
+		expect(flattenRunnerIds(TOOL_PLANS.docker)).toEqual(["lsp", "hadolint"]);
+		expect(flattenRunnerIds(TOOL_PLANS.powershell)).toEqual([
+			"lsp",
+			"psscriptanalyzer",
+		]);
+		expect(flattenRunnerIds(TOOL_PLANS.php)).toEqual(["lsp", "php-lint"]);
+		expect(flattenRunnerIds(TOOL_PLANS.prisma)).toEqual([
+			"lsp",
+			"prisma-validate",
+		]);
+	});
+
+	it("marks JSON as lint-capable when its write path includes diagnostics", () => {
+		expect(LANGUAGE_CAPABILITY_MATRIX.json.capabilities).toEqual(
+			expect.arrayContaining(["format", "lint"]),
+		);
+	});
 });
