@@ -83,6 +83,19 @@ describe("lsp server policy", () => {
 		expect(root).toBe(path.dirname(file));
 	});
 
+	it("falls back to file directory when yaml root markers are missing", async () => {
+		const { YamlServer } = await import("../../../clients/lsp/server.js");
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-yaml-fallback-root-"));
+		dirs.push(tmp);
+
+		const file = path.join(tmp, "cases", "service.yaml");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "settings:\n  enabled: true\n");
+
+		const root = await YamlServer.root(file);
+		expect(root).toBe(path.dirname(file));
+	});
+
 	it("resolves relative file roots without hanging", async () => {
 		const { NearestRoot } = await import("../../../clients/lsp/server.js");
 		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-relative-root-"));

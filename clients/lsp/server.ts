@@ -1175,10 +1175,17 @@ export const YamlServer: LSPServerInfo = {
 	id: "yaml",
 	name: "YAML Language Server",
 	extensions: [".yaml", ".yml"],
-	root: PriorityRoot([[".yamllint", "yamllint.yml", "yamllint.yaml", "pyproject.toml"], [".git"]]),
+	root: RootWithFallback(
+		PriorityRoot([[".yamllint", "yamllint.yml", "yamllint.yaml", "pyproject.toml"], [".git"]]),
+	),
 	spawn(root, options) {
 		return resolveAndLaunch(
-			{ candidates: ["yaml-language-server"], args: ["--stdio"], cwd: root, managedToolId: "yaml-language-server" },
+			{
+				candidates: nodeBinCandidates(root, "yaml-language-server"),
+				args: ["--stdio"],
+				cwd: root,
+				managedToolId: "yaml-language-server",
+			},
 			options?.allowInstall,
 		);
 	},
