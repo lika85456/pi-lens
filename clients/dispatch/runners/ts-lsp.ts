@@ -8,7 +8,6 @@
  */
 
 import { getLSPService } from "../../lsp/index.js";
-import { TypeScriptClient } from "../../typescript-client.js";
 import { resolveRunnerPath } from "../runner-context.js";
 import type {
 	Diagnostic,
@@ -18,6 +17,20 @@ import type {
 } from "../types.js";
 import { PRIORITY } from "../priorities.js";
 import { readFileContent } from "./utils.js";
+
+type TypeScriptClientModule = typeof import("../../typescript-client.js");
+let tsClientModulePromise:
+	| Promise<TypeScriptClientModule | null>
+	| undefined;
+
+async function loadTypeScriptClient(): Promise<TypeScriptClientModule | null> {
+	if (!tsClientModulePromise) {
+		tsClientModulePromise = import("../../typescript-client.js").catch(
+			() => null,
+		);
+	}
+	return tsClientModulePromise;
+}
 
 const tsLspRunner: RunnerDefinition = {
 	id: "ts-lsp",
@@ -104,7 +117,11 @@ async function runWithBuiltinClient(
 	ctx: DispatchContext,
 ): Promise<RunnerResult> {
 	const diagnosticPath = resolveRunnerPath(ctx.cwd, ctx.filePath);
-	const tsClient = new TypeScriptClient();
+	const tsClientMod = await loadTypeScriptClient();
+	if (!tsClientMod) {
+		return { status: "skipped", diagnostics: [], semantic: "none" };
+	}
+	const tsClient = new tsClientMod.TypeScriptClient();
 
 	const content = readFileContent(ctx.filePath);
 	if (!content) {
