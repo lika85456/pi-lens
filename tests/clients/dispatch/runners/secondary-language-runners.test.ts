@@ -5,20 +5,23 @@ import { FactStore } from "../../../../clients/dispatch/fact-store.js";
 import { setupTestEnvironment } from "../../test-utils.js";
 
 const safeSpawnAsync = vi.fn();
+let availabilityCheck: (command: string) => boolean = () => true;
 
 vi.mock("../../../../clients/safe-spawn.js", () => ({
 	safeSpawnAsync,
 }));
 
+vi.mock("../../../../clients/dispatch/runners/utils/runner-helpers.js", () => ({
+	createAvailabilityChecker: (command: string) => ({
+		isAvailable: () => availabilityCheck(command),
+		getCommand: () => command,
+	}),
+}));
+
 function mockRunnerHelpers(
 	isAvailable: (command: string) => boolean = () => true,
 ): void {
-	vi.doMock("../../../../clients/dispatch/runners/utils/runner-helpers.js", () => ({
-		createAvailabilityChecker: (command: string) => ({
-			isAvailable: () => isAvailable(command),
-			getCommand: () => command,
-		}),
-	}));
+	availabilityCheck = isAvailable;
 }
 
 function createCtx(
@@ -43,6 +46,7 @@ describe("secondary language fallback runners", () => {
 	beforeEach(() => {
 		vi.resetModules();
 		safeSpawnAsync.mockReset();
+		availabilityCheck = () => true;
 		mockRunnerHelpers();
 	});
 
