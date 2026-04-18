@@ -173,12 +173,14 @@ async function findInVendorBin(
 	cwd: string,
 ): Promise<string | null> {
 	const isWin = process.platform === "win32";
-	const name = isWin ? `${binary}.bat` : binary;
+	const names = isWin ? [`${binary}.bat`, binary] : [binary];
 	let dir = cwd;
 	const root = path.parse(dir).root;
 	while (dir !== root) {
-		const full = path.join(dir, "vendor", "bin", name);
-		if (await fileExists(full)) return full;
+		for (const name of names) {
+			const full = path.join(dir, "vendor", "bin", name);
+			if (await fileExists(full)) return full;
+		}
 		const parent = path.dirname(dir);
 		if (parent === dir) break;
 		dir = parent;

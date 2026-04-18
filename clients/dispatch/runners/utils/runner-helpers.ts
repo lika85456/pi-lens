@@ -161,13 +161,12 @@ export function isSgAvailable(): boolean {
 
 	// 1. Local node_modules/.bin/sg
 	const isWin = process.platform === "win32";
-	const localSg = path.join(
-		process.cwd(),
-		"node_modules",
-		".bin",
-		isWin ? "sg.cmd" : "sg",
-	);
-	if (fs.existsSync(localSg)) {
+	const sgCandidates = isWin
+		? ["sg.cmd", "sg.ps1", "sg.exe", "sg"]
+		: ["sg"];
+	for (const candidate of sgCandidates) {
+		const localSg = path.join(process.cwd(), "node_modules", ".bin", candidate);
+		if (!fs.existsSync(localSg)) continue;
 		const check = safeSpawn(localSg, ["--version"], { timeout: 5000 });
 		if (!check.error && check.status === 0) {
 			sgCmd = localSg;
