@@ -18,8 +18,12 @@ const GRAMMARS = [
     "tree-sitter-rust.wasm",
     "tree-sitter-go.wasm",
     "tree-sitter-java.wasm",
+    "tree-sitter-kotlin.wasm",
+    "tree-sitter-dart.wasm",
     "tree-sitter-c.wasm",
     "tree-sitter-cpp.wasm",
+    "tree-sitter-elixir.wasm",
+    "tree-sitter-gleam.wasm",
     "tree-sitter-ruby.wasm",
 ];
 function findGrammarsDir() {
