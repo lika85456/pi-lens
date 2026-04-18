@@ -63,29 +63,15 @@ pi
 
 # Optional switches
 pi --no-lsp              # Disable unified LSP, use language-specific fallbacks
-pi --lens-guard           # Block git commit/push when unresolved blockers exist
 pi --no-autoformat        # Skip auto-formatting
-pi --no-autofix           # Skip auto-fix (Biome, Ruff, ESLint)
-pi --no-autofix-biome   # Skip Biome autofix only
-pi --no-autofix-ruff    # Skip Ruff autofix only
+pi --no-autofix           # Skip auto-fix (Biome, Ruff, ESLint, stylelint, sqlfluff, RuboCop)
 pi --no-tests             # Skip test runner
-pi --lens-blocking-only    # Only show blocking issues
-pi --no-biome             # Disable Biome runner
-pi --no-oxlint            # Disable oxlint runner
-pi --no-ast-grep          # Disable ast-grep runner
-pi --no-ruff              # Disable Ruff runner
 pi --no-shellcheck        # Disable shellcheck runner
-pi --no-madge             # Disable circular dependency detection
-pi --no-go                # Disable Go-specific runners
-pi --no-rust              # Disable Rust-specific runners
-pi --auto-install         # Auto-install missing tools without prompting
-pi --lens-eslint-core     # Use eslint-core rules only
 ```
 
 ## Key Commands
 
 - `/lens-booboo` — full quality report for current project state
-- `/lens-tdi` — technical debt index with 5-factor breakdown
 - `/lens-health` — runtime health, latency, and diagnostic telemetry
 
 ## Language Coverage
