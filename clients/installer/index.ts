@@ -1145,6 +1145,7 @@ async function installNpmTool(
 			? ["install", packageName]
 			: ["install", "--ignore-scripts", packageName];
 
+		const INSTALL_TIMEOUT_MS = 120_000;
 		const runInstallAttempt = async (
 			args: string[],
 		): Promise<{ ok: boolean; stderr: string }> =>
@@ -1158,8 +1159,13 @@ async function installNpmTool(
 				let stderr = "";
 				proc.stderr?.on("data", (data) => (stderr += data));
 
-				proc.on("exit", (code) => resolve({ ok: code === 0, stderr }));
-				proc.on("error", (err) => resolve({ ok: false, stderr: err.message }));
+				const timer = setTimeout(() => {
+					proc.kill();
+					resolve({ ok: false, stderr: `install timed out after ${INSTALL_TIMEOUT_MS / 1000}s` });
+				}, INSTALL_TIMEOUT_MS);
+
+				proc.on("exit", (code) => { clearTimeout(timer); resolve({ ok: code === 0, stderr }); });
+				proc.on("error", (err) => { clearTimeout(timer); resolve({ ok: false, stderr: err.message }); });
 			});
 
 		let outcome = await runInstallAttempt(baseInstallArgs);
