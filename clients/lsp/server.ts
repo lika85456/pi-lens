@@ -1004,7 +1004,7 @@ export const PHPServer: LSPServerInfo = {
 			options?.allowInstall,
 		);
 		if (!result) return undefined;
-		return { ...result, initialization: { storagePath: path.join(__dirname, ".intelephense") } };
+		return { ...result, initialization: { storagePath: path.join(os.homedir(), ".pi-lens", "intelephense") } };
 	},
 };
 
