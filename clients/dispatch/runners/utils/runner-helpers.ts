@@ -9,7 +9,15 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { safeSpawn } from "../../../safe-spawn.js";
+
+// Resolve pi-lens's own node_modules/.bin regardless of process.cwd()
+const _dirname =
+	typeof __dirname !== "undefined"
+		? __dirname
+		: path.dirname(fileURLToPath(import.meta.url));
+const _piLensRoot = path.resolve(_dirname, "../../../../..");
 
 // =============================================================================
 // VENV-AWARE COMMAND FINDER
@@ -159,20 +167,23 @@ let sgCmdArgs: string[] = [];
 export function isSgAvailable(): boolean {
 	if (sgAvailable !== null) return sgAvailable;
 
-	// 1. Local node_modules/.bin/sg
+	// 1. Local node_modules/.bin/sg — check pi-lens install dir first, then cwd
 	const isWin = process.platform === "win32";
 	const sgCandidates = isWin
 		? ["sg.cmd", "sg.ps1", "sg.exe", "sg"]
 		: ["sg"];
-	for (const candidate of sgCandidates) {
-		const localSg = path.join(process.cwd(), "node_modules", ".bin", candidate);
-		if (!fs.existsSync(localSg)) continue;
-		const check = safeSpawn(localSg, ["--version"], { timeout: 5000 });
-		if (!check.error && check.status === 0) {
-			sgCmd = localSg;
-			sgCmdArgs = [];
-			sgAvailable = true;
-			return true;
+	const binRoots = [_piLensRoot, process.cwd()];
+	for (const root of binRoots) {
+		for (const candidate of sgCandidates) {
+			const localSg = path.join(root, "node_modules", ".bin", candidate);
+			if (!fs.existsSync(localSg)) continue;
+			const check = safeSpawn(localSg, ["--version"], { timeout: 5000 });
+			if (!check.error && check.status === 0) {
+				sgCmd = localSg;
+				sgCmdArgs = [];
+				sgAvailable = true;
+				return true;
+			}
 		}
 	}
 
