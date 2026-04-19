@@ -196,7 +196,7 @@ export function isSgAvailable(): boolean {
 	// .cmd/.ps1 which bash cannot execute. In plain cmd/PowerShell, .cmd is fine.
 	const hasBash = !!(process.env.MSYSTEM || process.env.GIT_SHELL || process.env.BASH);
 	const sgCandidates = isWin
-		? (hasBash ? ["sg", "sg.exe", "sg.cmd", "sg.ps1"] : ["sg.cmd", "sg.ps1", "sg.exe", "sg"])
+		? (hasBash ? ["sg", "sg.exe", "sg.cmd"] : ["sg.cmd", "sg.exe", "sg"])
 		: ["sg"];
 
 	const binRoots = [

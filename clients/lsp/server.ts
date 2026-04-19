@@ -816,7 +816,6 @@ export const PythonServer: LSPServerInfo = {
 		const managedCandidates = isWindows
 			? [
 					path.join(binDir, "pyright-langserver.cmd"),
-					path.join(binDir, "pyright-langserver.ps1"),
 					path.join(binDir, "pyright-langserver"),
 					"pyright-langserver",
 				]
