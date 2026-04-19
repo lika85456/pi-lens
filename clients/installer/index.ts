@@ -898,15 +898,13 @@ async function verifyToolBinary(binPath: string): Promise<boolean> {
 				debugLog(`Verified: ${binPath} (version: ${stdout.trim()})`);
 				resolve(true);
 			} else {
-				console.error(`[auto-install] Verification failed for ${binPath}`);
-				debugLog("Exit code:", code, "stderr:", stderr);
+				logSessionStart(`auto-install verify: failed for ${binPath} (exit=${code})`);
 				resolve(false);
 			}
 		});
 
 		proc.on("error", (err) => {
-			console.error(`[auto-install] Verification failed for ${binPath}`);
-			debugLog("Error:", err.message);
+			logSessionStart(`auto-install verify: error for ${binPath}: ${err.message}`);
 			resolve(false);
 		});
 	});
@@ -960,7 +958,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 	const arch = process.arch;          // "x64" | "arm64" | ...
 	const assetSubstring = spec.assetMatch(platform, arch);
 	if (!assetSubstring) {
-		console.error(`[auto-install] ${tool.name}: no asset for ${platform}/${arch}`);
 		logSessionStart(`github-install ${tool.id}: unsupported platform=${platform} arch=${arch}`);
 		return undefined;
 	}
@@ -975,7 +972,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 		const body = await httpsGet(`https://api.github.com/repos/${spec.repo}/releases/latest`);
 		releaseJson = JSON.parse(body.toString("utf8"));
 	} catch (err) {
-		console.error(`[auto-install] ${tool.name}: failed to fetch GitHub release: ${(err as Error).message}`);
 		logSessionStart(`github-install ${tool.id}: release fetch failed: ${(err as Error).message}`);
 		return undefined;
 	}
@@ -984,7 +980,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 		releaseJson.assets.find((a) => a.name.includes(assetSubstring)) ??
 		deriveHashiCorpReleaseAsset(tool, releaseJson.tag_name, assetSubstring);
 	if (!asset) {
-		console.error(`[auto-install] ${tool.name}: no asset matching "${assetSubstring}" in release`);
 		logSessionStart(`github-install ${tool.id}: no asset matched "${assetSubstring}"`);
 		return undefined;
 	}
@@ -999,7 +994,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 		assetBuffer = await httpsGet(asset.browser_download_url);
 		logSessionStart(`github-install ${tool.id}: downloaded ${asset.name} (${assetBuffer.length} bytes, ${Date.now() - downloadStart}ms)`);
 	} catch (err) {
-		console.error(`[auto-install] ${tool.name}: download failed: ${(err as Error).message}`);
 		logSessionStart(`github-install ${tool.id}: download failed: ${(err as Error).message}`);
 		return undefined;
 	}
@@ -1042,7 +1036,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 
 			if (!extracted) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
-				console.error(`[auto-install] ${tool.name}: tar extraction failed`);
 				logSessionStart(`github-install ${tool.id}: tar extraction failed for ${assetName}`);
 				return undefined;
 			}
@@ -1072,7 +1065,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 
 			if (!extracted) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
-				console.error(`[auto-install] ${tool.name}: zip extraction failed`);
 				logSessionStart(`github-install ${tool.id}: zip extraction failed for ${assetName}`);
 				return undefined;
 			}
@@ -1085,7 +1077,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			);
 			if (!srcBinary) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
-				console.error(`[auto-install] ${tool.name}: binary not found in zip`);
 				logSessionStart(
 					`github-install ${tool.id}: binary candidates ${JSON.stringify(
 						getArchiveBinaryCandidates(archiveBinaryName, platform, assetName),
@@ -1102,7 +1093,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			await fs.writeFile(destPath, assetBuffer, { mode: 0o755 });
 		}
 	} catch (err) {
-		console.error(`[auto-install] ${tool.name}: install failed: ${(err as Error).message}`);
 		logSessionStart(`github-install ${tool.id}: install failed: ${(err as Error).message}`);
 		return undefined;
 	}
@@ -1258,9 +1248,7 @@ async function installNpmTool(
 			}
 		}
 		if (!isValid) {
-			console.error(
-				`[auto-install] ${packageName} installed but verification failed (binary may be corrupted)`,
-			);
+			logSessionStart(`auto-install ${packageName}: installed but verification failed, cleaning up`);
 			// Clean up the broken installation
 			try {
 				const packagePath = path.join(TOOLS_DIR, "node_modules", packageName);
@@ -1278,10 +1266,7 @@ async function installNpmTool(
 
 		return binPath;
 	} catch (err) {
-		console.error(
-			`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`,
-		);
-		debugLog("Full error:", err);
+		logSessionStart(`auto-install npm ${packageName}: exception: ${(err as Error).message}`);
 		return undefined;
 	}
 }
@@ -1415,10 +1400,7 @@ async function installPipTool(
 			`Failed to install ${packageName}: no usable pip command found (${lastError || "unknown error"})`,
 		);
 	} catch (err) {
-		console.error(
-			`[auto-install] Failed to install ${packageName}: ${(err as Error).message}`,
-		);
-		debugLog("Full error:", err);
+		logSessionStart(`auto-install pip ${packageName}: exception: ${(err as Error).message}`);
 		return undefined;
 	}
 }
@@ -1429,12 +1411,10 @@ async function installPipTool(
 export async function installTool(toolId: string): Promise<boolean> {
 	const tool = TOOLS.find((t) => t.id === toolId);
 	if (!tool) {
-		console.error(`[auto-install] Unknown tool: ${toolId}`);
 		logSessionStart(`auto-install ${toolId}: unknown tool id`);
 		return false;
 	}
 
-	console.error(`[auto-install] Installing ${tool.name}...`);
 	const startedAt = Date.now();
 	logSessionStart(
 		`auto-install ${tool.id}: start strategy=${tool.installStrategy} package=${tool.packageName ?? "n/a"}`,
@@ -1473,20 +1453,13 @@ export async function installTool(toolId: string): Promise<boolean> {
 			}
 
 			default:
-				console.error(
-					`[auto-install] Unsupported strategy: ${tool.installStrategy}`,
-				);
 				logSessionStart(`auto-install ${tool.id}: unsupported strategy`);
 				return false;
 		}
 	} catch (err) {
-		console.error(
-			`[auto-install] Failed to install ${tool.name}: ${(err as Error).message}`,
-		);
 		logSessionStart(
 			`auto-install ${tool.id}: exception ${(err as Error).message} (${Date.now() - startedAt}ms)`,
 		);
-		debugLog("Full error:", err);
 		return false;
 	}
 }
