@@ -85,28 +85,35 @@ jobs:
           TARBALL=$(ls pi-lens-*.tgz)
           TMPDIR=$(mktemp -d)
           tar -xzf "$TARBALL" -C "$TMPDIR"
-          PKG="$TMPDIR/package"
 
           check_field() {
             local field="$1" value="$2"
-            local path="$PKG/$value"
-            if [ ! -f "$path" ]; then
+            if [ ! -f "$TMPDIR/package/$value" ]; then
               echo "ERROR: package.json '$field' points to '$value' which is missing from the tarball"
               exit 1
             fi
             echo "OK: $field -> $value"
           }
 
-          MAIN=$(node -p "require('$PKG/package.json').main || ''" 2>/dev/null)
+          # Pass PKG dir via env var so Node gets the right path on all platforms
+          export PI_LENS_PKG_DIR="$TMPDIR/package"
+          MAIN=$(node -p "require(process.env.PI_LENS_PKG_DIR + '/package.json').main || ''" 2>/dev/null)
           [ -n "$MAIN" ] && check_field "main" "$MAIN"
 
           # Check exports map entries (string values only)
           node -e "
-            const pkg = require('$PKG/package.json');
+            const path = require('path');
+            const fs = require('fs');
+            const pkgDir = process.env.PI_LENS_PKG_DIR;
+            const pkg = require(path.join(pkgDir, 'package.json'));
             const exp = pkg.exports;
             if (!exp) process.exit(0);
             const collect = (v) => typeof v === 'string' ? [v] : typeof v === 'object' ? Object.values(v).flatMap(collect) : [];
-            collect(exp).forEach(f => { const fs = require('fs'); if (!fs.existsSync('$PKG/' + f)) { console.error('ERROR: exports entry missing from tarball: ' + f); process.exit(1); } else { console.log('OK: exports -> ' + f); } });
+            collect(exp).forEach(f => {
+              const full = path.join(pkgDir, f);
+              if (!fs.existsSync(full)) { console.error('ERROR: exports entry missing from tarball: ' + f); process.exit(1); }
+              else { console.log('OK: exports -> ' + f); }
+            });
           "
           rm -rf "$TMPDIR"
 
