@@ -33,18 +33,13 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           TAG="v$VERSION"
 
-          SHOULD_RELEASE=false
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SHOULD_RELEASE=true
-          else
-            if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" | grep -q '^package.json$'; then
-              SHOULD_RELEASE=true
-            fi
-          fi
-
+          # Release if the version tag doesn't exist yet. The tag check is the
+          # sole guard — no need to also require package.json in the diff, which
+          # breaks when the version bump and changelog land in separate commits.
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             SHOULD_RELEASE=false
+          else
+            SHOULD_RELEASE=true
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
