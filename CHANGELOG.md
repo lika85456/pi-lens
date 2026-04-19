@@ -2,6 +2,17 @@
 
 All notable changes to pi-lens will be documented in this file.
 
+## [3.8.28] - 2026-04-19
+
+### Fixed
+- **Session startup no longer blocks the Node event loop** — tool availability probes (biome, ast-grep, ruff, knip, jscpd, madge) now run via async `ensureAvailable()` in a fire-and-forget IIFE instead of `setImmediate` + `spawnSync`, eliminating ~8–10 s of main-thread freeze on startup.
+- **Biome binary lookup extended** — `getBiomeBinary()` now checks `~/.pi-lens/tools/node_modules/.bin/biome` so the async probe finds the pre-installed binary without falling back to `npx`.
+- **CSS roots and Windows LSP shims tightened** — improved root resolution for CSS language server on Windows.
+- **Zig compile coverage kept active** — LSP availability check no longer incorrectly disables Zig compile diagnostics.
+- **Ruby LSP startup budgets relaxed** — reduced false-negative LSP attach failures on slower machines.
+- **Kotlin and Zig LSP availability improved** — more reliable server detection across platforms.
+- **Standalone Python and Ruby LSP roots fixed** — correct workspace root used when opening files outside a project directory.
+
 ## [3.8.27] - 2026-04-19
 
 ### Added
