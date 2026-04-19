@@ -296,13 +296,26 @@ function nodeBinCandidates(root: string, baseName: string): string[] {
 	if (process.platform === "win32") {
 		return [
 			`${localBase}.cmd`,
-			`${localBase}.ps1`,
 			`${localBase}.exe`,
-			localBase,
 			baseName,
 		];
 	}
 	return [localBase, baseName];
+}
+
+function normalizeRootKey(root: string): string {
+	return process.platform === "win32"
+		? path.resolve(root).toLowerCase()
+		: path.resolve(root);
+}
+
+function IgnoreHomeRoot(primary: RootFunction): RootFunction {
+	const homeKey = normalizeRootKey(os.homedir());
+	return async (file: string): Promise<string | undefined> => {
+		const root = await primary(file);
+		if (!root) return undefined;
+		return normalizeRootKey(root) === homeKey ? undefined : root;
+	};
 }
 
 function rubyBinCandidates(baseName: string): string[] {
@@ -1268,7 +1281,9 @@ export const HtmlServer: LSPServerInfo = {
 	id: "html",
 	name: "VSCode HTML Language Server",
 	extensions: [".html", ".htm"],
-	root: PriorityRoot([["package.json", "index.html", "vite.config.ts"], [".git"]]),
+	root: RootWithFallback(
+		IgnoreHomeRoot(PriorityRoot([["package.json", "index.html", "vite.config.ts"]])),
+	),
 	spawn(root, options) {
 		return resolveAndLaunch(
 			{ candidates: nodeBinCandidates(root, "vscode-html-language-server"), args: ["--stdio"], cwd: root, managedToolId: "vscode-html-languageserver-bin" },
@@ -1372,7 +1387,11 @@ export const CssServer: LSPServerInfo = {
 	id: "css",
 	name: "CSS Language Server",
 	extensions: [".css", ".scss", ".sass", ".less"],
-	root: PriorityRoot([["package.json", "postcss.config.js", "tailwind.config.js", "vite.config.ts"], [".git"]]),
+	root: RootWithFallback(
+		IgnoreHomeRoot(
+			PriorityRoot([["package.json", "postcss.config.js", "tailwind.config.js", "vite.config.ts"]]),
+		),
+	),
 	spawn(root, options) {
 		return resolveAndLaunch(
 			{ candidates: nodeBinCandidates(root, "vscode-css-language-server"), args: ["--stdio"], cwd: root, managedToolId: "vscode-css-languageserver" },

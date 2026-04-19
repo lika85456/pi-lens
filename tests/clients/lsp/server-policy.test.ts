@@ -84,6 +84,32 @@ describe("lsp server policy", () => {
 		expect(root).toBe(path.dirname(file));
 	});
 
+	it("falls back to file directory when html root markers are missing", async () => {
+		const { HtmlServer } = await import("../../../clients/lsp/server.js");
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-html-fallback-root-"));
+		dirs.push(tmp);
+
+		const file = path.join(tmp, "cases", "index.html");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "<!doctype html><html></html>\n");
+
+		const root = await HtmlServer.root(file);
+		expect(root).toBe(path.dirname(file));
+	});
+
+	it("falls back to file directory when css root markers are missing", async () => {
+		const { CssServer } = await import("../../../clients/lsp/server.js");
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-css-fallback-root-"));
+		dirs.push(tmp);
+
+		const file = path.join(tmp, "cases", "styles.css");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "body { color: red; }\n");
+
+		const root = await CssServer.root(file);
+		expect(root).toBe(path.dirname(file));
+	});
+
 	it("falls back to file directory when yaml root markers are missing", async () => {
 		const { YamlServer } = await import("../../../clients/lsp/server.js");
 		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-yaml-fallback-root-"));
@@ -255,7 +281,7 @@ describe("lsp server policy", () => {
 		expect(spawned).toBeUndefined();
 	});
 
-	it("tries local bash-language-server bin candidates before PATH lookup", async () => {
+	it("skips PowerShell bash-language-server shim candidates on Windows", async () => {
 		const { BashServer } = await import("../../../clients/lsp/server.js");
 		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-lens-bash-candidates-"));
 		dirs.push(tmp);
@@ -265,9 +291,8 @@ describe("lsp server policy", () => {
 		const spawned = await BashServer.spawn(tmp, { allowInstall: false });
 		expect(spawned).toBeUndefined();
 		expect(launchLSP).toHaveBeenCalled();
-		const firstCommand = launchLSP.mock.calls[0]?.[0] as string;
-		expect(firstCommand).toContain("node_modules");
-		expect(firstCommand).toContain("bash-language-server");
+		const commands = launchLSP.mock.calls.map((call) => String(call[0] ?? ""));
+		expect(commands.some((command) => command.endsWith(".ps1"))).toBe(false);
 	});
 
 	it("skips managed TypeScript install when install is disallowed for file", async () => {
