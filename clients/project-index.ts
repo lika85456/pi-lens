@@ -27,6 +27,7 @@ export interface IndexEntry {
 	transitionCount: number; // For guardrail filtering
 	lastModified: number; // mtime for cache invalidation
 	exports: string[]; // All exports from file
+	line: number; // Line number (1-based)
 }
 
 export interface SimilarityMatch {
@@ -113,7 +114,7 @@ async function indexFile(
 		// Extract function declarations
 		if (ts.isFunctionDeclaration(node) && node.name) {
 			const functionName = node.name.text;
-			const _isExported = hasExportModifier(node);
+			hasExportModifier(node); // Side effect: validates export status
 
 			// For now, index all named functions (we can filter to exports only later)
 			const id = `${relativePath}:${functionName}`;
@@ -124,6 +125,9 @@ async function indexFile(
 
 			// Skip trivial functions (<20 transitions)
 			if (transitionCount >= 20) {
+				const { line } = sourceFile.getLineAndCharacterOfPosition(
+					node.getStart(sourceFile),
+				);
 				entries.push({
 					id,
 					filePath: relativePath,
@@ -133,6 +137,7 @@ async function indexFile(
 					transitionCount,
 					lastModified: stats.mtimeMs,
 					exports,
+					line: line + 1, // 1-based
 				});
 			}
 		}
@@ -188,6 +193,9 @@ function extractArrowFunctions(
 			continue;
 		}
 
+		const { line } = sourceFile.getLineAndCharacterOfPosition(
+			func.getStart(sourceFile),
+		);
 		entries.push({
 			id,
 			filePath: relativePath,
@@ -197,6 +205,7 @@ function extractArrowFunctions(
 			transitionCount,
 			lastModified: stats.mtimeMs,
 			exports,
+			line: line + 1, // 1-based
 		});
 	}
 }
@@ -308,7 +317,7 @@ export function findSimilarFunctions(
 			matches.push({
 				targetId: entry.id,
 				targetName: entry.functionName,
-				targetLocation: `${entry.filePath}:1`, // TODO: get actual line
+				targetLocation: `${entry.filePath}:${entry.line}`,
 				similarity,
 				signature: entry.signature,
 				targetTransitionCount: entry.transitionCount,
