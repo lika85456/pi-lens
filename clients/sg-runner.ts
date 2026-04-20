@@ -61,7 +61,7 @@ export class SgRunner {
 		if (this.available !== null) return this.available;
 
 		// Check if available in PATH (fast)
-		const pathResult = safeSpawn("sg", ["--version"], {
+		const pathResult = await safeSpawnAsync("sg", ["--version"], {
 			timeout: 5000,
 		});
 		if (!pathResult.error && pathResult.status === 0) {

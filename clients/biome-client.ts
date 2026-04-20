@@ -137,7 +137,7 @@ export class BiomeClient {
 		if (this.biomeAvailable !== null) return this.biomeAvailable;
 
 		// Check if already available
-		const result = this.spawnBiome(["--version"], 10000);
+		const result = await this.spawnBiomeAsync(["--version"], 10000);
 		if (!result.error && result.status === 0) {
 			this.biomeAvailable = true;
 			return true;

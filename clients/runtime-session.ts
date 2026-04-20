@@ -538,7 +538,8 @@ export async function handleSessionStart(
 	}
 
 	if (allowBootstrapTasks) {
-		await probePrettierInstall(ensureTool, dbg, analysisRoot);
+		// Fire-and-forget like other tool probes
+		void probePrettierInstall(ensureTool, dbg, analysisRoot);
 	} else {
 		dbg("session_start: skipping prettier preinstall probe (startup mode)");
 	}
