@@ -119,17 +119,6 @@ function getLanguageInstallHints(
 
 // --- Session-start helpers ---
 
-function applyEnvFlags(
-	getFlag: SessionStartDeps["getFlag"],
-	_dbg: SessionStartDeps["dbg"],
-): void {
-	if (getFlag("no-lsp-install")) {
-		process.env.PI_LENS_DISABLE_LSP_INSTALL = "1";
-	} else {
-		delete process.env.PI_LENS_DISABLE_LSP_INSTALL;
-	}
-}
-
 function firePreinstallDefaults(
 	ensureTool: SessionStartDeps["ensureTool"],
 	dbg: SessionStartDeps["dbg"],
@@ -417,8 +406,6 @@ export async function handleSessionStart(
 			"session_start: phase0 workspace diagnostics observation enabled (capability probe only)",
 		);
 	}
-
-	applyEnvFlags(getFlag, dbg);
 
 	const hasWorkspaceCwd = typeof ctxCwd === "string" && ctxCwd.length > 0;
 	const cwd = ctxCwd ?? process.cwd();

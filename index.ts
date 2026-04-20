@@ -179,12 +179,6 @@ export default function (pi: ExtensionAPI) {
 		default: false,
 	});
 
-	pi.registerFlag("no-lsp-install", {
-		description: "Disable automatic LSP server installation prompts",
-		type: "boolean",
-		default: false,
-	});
-
 	pi.registerFlag("lens-guard", {
 		description:
 			"Experimental: block git commit/push when unresolved pi-lens blockers exist",
