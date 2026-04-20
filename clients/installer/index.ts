@@ -290,8 +290,10 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "hadolint/hadolint",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "linux.aarch64" : "linux.x86_64";
-				if (platform === "darwin") return arch === "arm64" ? "macos-arm64" : "macos-x86_64";
+				if (platform === "linux")
+					return arch === "arm64" ? "linux.aarch64" : "linux.x86_64";
+				if (platform === "darwin")
+					return arch === "arm64" ? "macos-arm64" : "macos-x86_64";
 				if (platform === "win32") return "windows-x86_64.exe";
 				return undefined;
 			},
@@ -389,8 +391,14 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "koalaman/shellcheck",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "linux.aarch64.tar.xz" : "linux.x86_64.tar.xz";
-				if (platform === "darwin") return arch === "arm64" ? "darwin.aarch64.tar.xz" : "darwin.x86_64.tar.xz";
+				if (platform === "linux")
+					return arch === "arm64"
+						? "linux.aarch64.tar.xz"
+						: "linux.x86_64.tar.xz";
+				if (platform === "darwin")
+					return arch === "arm64"
+						? "darwin.aarch64.tar.xz"
+						: "darwin.x86_64.tar.xz";
 				if (platform === "win32") return "zip";
 				return undefined;
 			},
@@ -407,9 +415,12 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "mvdan/sh",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "linux_arm64" : "linux_amd64";
-				if (platform === "darwin") return arch === "arm64" ? "darwin_arm64" : "darwin_amd64";
-				if (platform === "win32") return arch === "arm64" ? "windows_arm64.exe" : "windows_amd64.exe";
+				if (platform === "linux")
+					return arch === "arm64" ? "linux_arm64" : "linux_amd64";
+				if (platform === "darwin")
+					return arch === "arm64" ? "darwin_arm64" : "darwin_amd64";
+				if (platform === "win32")
+					return arch === "arm64" ? "windows_arm64.exe" : "windows_amd64.exe";
 				return undefined;
 			},
 			// bare binary, no archive
@@ -425,8 +436,14 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "rust-lang/rust-analyzer",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "aarch64-unknown-linux-gnu.gz" : "x86_64-unknown-linux-gnu.gz";
-				if (platform === "darwin") return arch === "arm64" ? "aarch64-apple-darwin.gz" : "x86_64-apple-darwin.gz";
+				if (platform === "linux")
+					return arch === "arm64"
+						? "aarch64-unknown-linux-gnu.gz"
+						: "x86_64-unknown-linux-gnu.gz";
+				if (platform === "darwin")
+					return arch === "arm64"
+						? "aarch64-apple-darwin.gz"
+						: "x86_64-apple-darwin.gz";
 				if (platform === "win32") return "x86_64-pc-windows-msvc.zip";
 				return undefined;
 			},
@@ -443,9 +460,14 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "golangci/golangci-lint",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "linux-arm64.tar.gz" : "linux-amd64.tar.gz";
-				if (platform === "darwin") return arch === "arm64" ? "darwin-arm64.tar.gz" : "darwin-amd64.tar.gz";
-				if (platform === "win32") return arch === "arm64" ? "windows-arm64.zip" : "windows-amd64.zip";
+				if (platform === "linux")
+					return arch === "arm64" ? "linux-arm64.tar.gz" : "linux-amd64.tar.gz";
+				if (platform === "darwin")
+					return arch === "arm64"
+						? "darwin-arm64.tar.gz"
+						: "darwin-amd64.tar.gz";
+				if (platform === "win32")
+					return arch === "arm64" ? "windows-arm64.zip" : "windows-amd64.zip";
 				return undefined;
 			},
 			binaryInArchive: "golangci-lint",
@@ -480,9 +502,12 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "terraform-linters/tflint",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "linux_arm64.zip" : "linux_amd64.zip";
-				if (platform === "darwin") return arch === "arm64" ? "darwin_arm64.zip" : "darwin_amd64.zip";
-				if (platform === "win32") return arch === "arm64" ? "windows_arm64.zip" : "windows_amd64.zip";
+				if (platform === "linux")
+					return arch === "arm64" ? "linux_arm64.zip" : "linux_amd64.zip";
+				if (platform === "darwin")
+					return arch === "arm64" ? "darwin_arm64.zip" : "darwin_amd64.zip";
+				if (platform === "win32")
+					return arch === "arm64" ? "windows_arm64.zip" : "windows_amd64.zip";
 				return undefined;
 			},
 			binaryInArchive: "tflint",
@@ -498,8 +523,14 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "tamasfe/taplo",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "taplo-linux-aarch64.gz" : "taplo-linux-x86_64.gz";
-				if (platform === "darwin") return arch === "arm64" ? "taplo-darwin-aarch64.gz" : "taplo-darwin-x86_64.gz";
+				if (platform === "linux")
+					return arch === "arm64"
+						? "taplo-linux-aarch64.gz"
+						: "taplo-linux-x86_64.gz";
+				if (platform === "darwin")
+					return arch === "arm64"
+						? "taplo-darwin-aarch64.gz"
+						: "taplo-darwin-x86_64.gz";
 				if (platform === "win32") return "taplo-windows-x86_64.gz";
 				return undefined;
 			},
@@ -516,9 +547,12 @@ const TOOLS: ToolDefinition[] = [
 			repo: "hashicorp/terraform-ls",
 			hashiCorpReleaseProduct: "terraform-ls",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "linux_arm64.zip" : "linux_amd64.zip";
-				if (platform === "darwin") return arch === "arm64" ? "darwin_arm64.zip" : "darwin_amd64.zip";
-				if (platform === "win32") return arch === "arm64" ? "windows_arm64.zip" : "windows_amd64.zip";
+				if (platform === "linux")
+					return arch === "arm64" ? "linux_arm64.zip" : "linux_amd64.zip";
+				if (platform === "darwin")
+					return arch === "arm64" ? "darwin_arm64.zip" : "darwin_amd64.zip";
+				if (platform === "win32")
+					return arch === "arm64" ? "windows_arm64.zip" : "windows_amd64.zip";
 				return undefined;
 			},
 			binaryInArchive: "terraform-ls",
@@ -534,9 +568,18 @@ const TOOLS: ToolDefinition[] = [
 		github: {
 			repo: "zigtools/zls",
 			assetMatch: (platform, arch) => {
-				if (platform === "linux") return arch === "arm64" ? "aarch64-linux.tar.xz" : "x86_64-linux.tar.xz";
-				if (platform === "darwin") return arch === "arm64" ? "aarch64-macos.tar.xz" : "x86_64-macos.tar.xz";
-				if (platform === "win32") return arch === "arm64" ? "aarch64-windows.zip" : "x86_64-windows.zip";
+				if (platform === "linux")
+					return arch === "arm64"
+						? "aarch64-linux.tar.xz"
+						: "x86_64-linux.tar.xz";
+				if (platform === "darwin")
+					return arch === "arm64"
+						? "aarch64-macos.tar.xz"
+						: "x86_64-macos.tar.xz";
+				if (platform === "win32")
+					return arch === "arm64"
+						? "aarch64-windows.zip"
+						: "x86_64-windows.zip";
 				return undefined;
 			},
 			binaryInArchive: "zls",
@@ -569,6 +612,69 @@ async function isCommandAvailable(
 			: spawn(command, args, { stdio: "ignore" });
 		proc.on("exit", (code) => resolve(code === 0));
 		proc.on("error", () => resolve(false));
+	});
+}
+
+// --- Verification Functions
+
+/**
+ * Verify a tool binary actually works by running --version
+ * This catches broken symlinks, partial installs, and corrupted binaries
+ */
+async function verifyToolBinary(binPath: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const isWindows = process.platform === "win32";
+		const hasKnownWindowsExt = /\.(cmd|exe|ps1)$/i.test(binPath);
+
+		// On Windows, resolve the best executable path:
+		// - extensionless → prefer .cmd (cmd.exe-safe)
+		// - .ps1 → prefer .cmd sibling to avoid PowerShell execution-policy hangs
+		// - .cmd / .exe → use as-is
+		let execPath =
+			isWindows && !hasKnownWindowsExt ? `${binPath}.cmd` : binPath;
+		let useShell = isWindows && /\.(cmd|bat)$/i.test(execPath);
+
+		if (isWindows && /\.ps1$/i.test(execPath)) {
+			const cmdSibling = `${execPath.slice(0, -4)}.cmd`;
+			if (require("node:fs").existsSync(cmdSibling)) {
+				execPath = cmdSibling;
+				useShell = true;
+			} else {
+				// Fall back to running without shell — cmd.exe can't run .ps1
+				useShell = false;
+			}
+		}
+
+		const proc = spawn(execPath, ["--version"], {
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "pipe"],
+			shell: useShell,
+		});
+
+		let stdout = "";
+		let stderr = "";
+
+		proc.stdout?.on("data", (data) => (stdout += data));
+		proc.stderr?.on("data", (data) => (stderr += data));
+
+		proc.on("exit", (code) => {
+			if (code === 0) {
+				debugLog(`Verified: ${binPath} (version: ${stdout.trim()})`);
+				resolve(true);
+			} else {
+				logSessionStart(
+					`auto-install verify: failed for ${binPath} (exit=${code})`,
+				);
+				resolve(false);
+			}
+		});
+
+		proc.on("error", (err) => {
+			logSessionStart(
+				`auto-install verify: error for ${binPath}: ${err.message}`,
+			);
+			resolve(false);
+		});
 	});
 }
 
@@ -613,27 +719,45 @@ export async function getToolPath(toolId: string): Promise<string | undefined> {
 		return undefined;
 	}
 
-	// Check local npm tools dir
-	const localBase = path.join(TOOLS_DIR, "node_modules", ".bin", tool.binaryName || tool.id);
+	// Check local npm tools dir - with verification that binary actually works
+	const localBase = path.join(
+		TOOLS_DIR,
+		"node_modules",
+		".bin",
+		tool.binaryName || tool.id,
+	);
 	if (process.platform === "win32") {
 		// Prefer .cmd over extensionless — Node.js can't execute POSIX shell scripts on Windows
 		const cmdPath = `${localBase}.cmd`;
 		try {
 			await fs.access(cmdPath);
-			return cmdPath;
+			if (await verifyToolBinary(cmdPath)) {
+				return cmdPath;
+			}
+			logSessionStart(
+				`auto-install verify: ${cmdPath} exists but is broken, will reinstall`,
+			);
 		} catch {
 			// fall through to extensionless
 		}
 	}
 	try {
 		await fs.access(localBase);
-		return localBase;
+		if (await verifyToolBinary(localBase)) {
+			return localBase;
+		}
+		logSessionStart(
+			`auto-install verify: ${localBase} exists but is broken, will reinstall`,
+		);
 	} catch {
-		return undefined;
+		// fall through
 	}
+	return undefined;
 }
 
-async function findGitHubToolPath(binaryName: string): Promise<string | undefined> {
+async function findGitHubToolPath(
+	binaryName: string,
+): Promise<string | undefined> {
 	const isWindows = process.platform === "win32";
 	const candidates = isWindows
 		? [
@@ -852,64 +976,6 @@ async function getPythonUserBaseCandidates(): Promise<string[]> {
 	return candidates;
 }
 
-// --- Verification Functions
-
-/**
- * Verify a tool binary actually works by running --version
- * This catches broken symlinks, partial installs, and corrupted binaries
- */
-async function verifyToolBinary(binPath: string): Promise<boolean> {
-	return new Promise((resolve) => {
-		const isWindows = process.platform === "win32";
-		const hasKnownWindowsExt = /\.(cmd|exe|ps1)$/i.test(binPath);
-
-		// On Windows, resolve the best executable path:
-		// - extensionless → prefer .cmd (cmd.exe-safe)
-		// - .ps1 → prefer .cmd sibling to avoid PowerShell execution-policy hangs
-		// - .cmd / .exe → use as-is
-		let execPath = isWindows && !hasKnownWindowsExt ? `${binPath}.cmd` : binPath;
-		let useShell = isWindows && /\.(cmd|bat)$/i.test(execPath);
-
-		if (isWindows && /\.ps1$/i.test(execPath)) {
-			const cmdSibling = `${execPath.slice(0, -4)}.cmd`;
-			if (require("node:fs").existsSync(cmdSibling)) {
-				execPath = cmdSibling;
-				useShell = true;
-			} else {
-				// Fall back to running without shell — cmd.exe can't run .ps1
-				useShell = false;
-			}
-		}
-
-		const proc = spawn(execPath, ["--version"], {
-			timeout: 10000,
-			stdio: ["ignore", "pipe", "pipe"],
-			shell: useShell,
-		});
-
-		let stdout = "";
-		let stderr = "";
-
-		proc.stdout?.on("data", (data) => (stdout += data));
-		proc.stderr?.on("data", (data) => (stderr += data));
-
-		proc.on("exit", (code) => {
-			if (code === 0) {
-				debugLog(`Verified: ${binPath} (version: ${stdout.trim()})`);
-				resolve(true);
-			} else {
-				logSessionStart(`auto-install verify: failed for ${binPath} (exit=${code})`);
-				resolve(false);
-			}
-		});
-
-		proc.on("error", (err) => {
-			logSessionStart(`auto-install verify: error for ${binPath}: ${err.message}`);
-			resolve(false);
-		});
-	});
-}
-
 // --- Installation Functions
 
 /**
@@ -918,29 +984,45 @@ async function verifyToolBinary(binPath: string): Promise<boolean> {
  */
 function httpsGet(url: string, maxRedirects = 5): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
-		https.get(url, { headers: { "User-Agent": "pi-lens/1.0" } }, (res) => {
-			if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-				if (maxRedirects === 0) return reject(new Error("Too many redirects"));
-				return resolve(httpsGet(res.headers.location, maxRedirects - 1));
-			}
-			if (res.statusCode !== 200) {
-				res.resume();
-				return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-			}
-			const chunks: Buffer[] = [];
-			res.on("data", (chunk: Buffer) => chunks.push(chunk));
-			res.on("end", () => resolve(Buffer.concat(chunks)));
-			res.on("error", reject);
-		}).on("error", reject);
+		https
+			.get(url, { headers: { "User-Agent": "pi-lens/1.0" } }, (res) => {
+				if (
+					res.statusCode &&
+					res.statusCode >= 300 &&
+					res.statusCode < 400 &&
+					res.headers.location
+				) {
+					if (maxRedirects === 0)
+						return reject(new Error("Too many redirects"));
+					return resolve(httpsGet(res.headers.location, maxRedirects - 1));
+				}
+				if (res.statusCode !== 200) {
+					res.resume();
+					return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+				}
+				const chunks: Buffer[] = [];
+				res.on("data", (chunk: Buffer) => chunks.push(chunk));
+				res.on("end", () => resolve(Buffer.concat(chunks)));
+				res.on("error", reject);
+			})
+			.on("error", reject);
 	});
 }
 
 /**
  * Run a shell command and return true on exit code 0.
  */
-function runCommand(command: string, args: string[], cwd: string): Promise<boolean> {
+function runCommand(
+	command: string,
+	args: string[],
+	cwd: string,
+): Promise<boolean> {
 	return new Promise((resolve) => {
-		const proc = spawn(command, args, { cwd, stdio: "ignore", shell: process.platform === "win32" });
+		const proc = spawn(command, args, {
+			cwd,
+			stdio: "ignore",
+			shell: process.platform === "win32",
+		});
 		proc.on("exit", (code) => resolve(code === 0));
 		proc.on("error", () => resolve(false));
 	});
@@ -950,29 +1032,39 @@ function runCommand(command: string, args: string[], cwd: string): Promise<boole
  * Download and install a tool from a GitHub release.
  * Returns the path to the installed binary, or undefined on failure.
  */
-async function installGitHubTool(tool: ToolDefinition): Promise<string | undefined> {
+async function installGitHubTool(
+	tool: ToolDefinition,
+): Promise<string | undefined> {
 	const spec = tool.github;
 	if (!spec) return undefined;
 
 	const platform = process.platform; // "linux" | "darwin" | "win32"
-	const arch = process.arch;          // "x64" | "arm64" | ...
+	const arch = process.arch; // "x64" | "arm64" | ...
 	const assetSubstring = spec.assetMatch(platform, arch);
 	if (!assetSubstring) {
-		logSessionStart(`github-install ${tool.id}: unsupported platform=${platform} arch=${arch}`);
+		logSessionStart(
+			`github-install ${tool.id}: unsupported platform=${platform} arch=${arch}`,
+		);
 		return undefined;
 	}
 
 	// Fetch latest release metadata from GitHub API
-	logSessionStart(`github-install ${tool.id}: fetching release metadata from ${spec.repo}`);
+	logSessionStart(
+		`github-install ${tool.id}: fetching release metadata from ${spec.repo}`,
+	);
 	let releaseJson: {
 		tag_name?: string;
 		assets: Array<{ name: string; browser_download_url: string }>;
 	};
 	try {
-		const body = await httpsGet(`https://api.github.com/repos/${spec.repo}/releases/latest`);
+		const body = await httpsGet(
+			`https://api.github.com/repos/${spec.repo}/releases/latest`,
+		);
 		releaseJson = JSON.parse(body.toString("utf8"));
 	} catch (err) {
-		logSessionStart(`github-install ${tool.id}: release fetch failed: ${(err as Error).message}`);
+		logSessionStart(
+			`github-install ${tool.id}: release fetch failed: ${(err as Error).message}`,
+		);
 		return undefined;
 	}
 
@@ -980,21 +1072,29 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 		releaseJson.assets.find((a) => a.name.includes(assetSubstring)) ??
 		deriveHashiCorpReleaseAsset(tool, releaseJson.tag_name, assetSubstring);
 	if (!asset) {
-		logSessionStart(`github-install ${tool.id}: no asset matched "${assetSubstring}"`);
+		logSessionStart(
+			`github-install ${tool.id}: no asset matched "${assetSubstring}"`,
+		);
 		return undefined;
 	}
 
 	logSessionStart(`github-install ${tool.id}: downloading ${asset.name}`);
-	debugLog(`[github] downloading ${asset.name} from ${asset.browser_download_url}`);
+	debugLog(
+		`[github] downloading ${asset.name} from ${asset.browser_download_url}`,
+	);
 
 	// Download the asset
 	const downloadStart = Date.now();
 	let assetBuffer: Buffer;
 	try {
 		assetBuffer = await httpsGet(asset.browser_download_url);
-		logSessionStart(`github-install ${tool.id}: downloaded ${asset.name} (${assetBuffer.length} bytes, ${Date.now() - downloadStart}ms)`);
+		logSessionStart(
+			`github-install ${tool.id}: downloaded ${asset.name} (${assetBuffer.length} bytes, ${Date.now() - downloadStart}ms)`,
+		);
 	} catch (err) {
-		logSessionStart(`github-install ${tool.id}: download failed: ${(err as Error).message}`);
+		logSessionStart(
+			`github-install ${tool.id}: download failed: ${(err as Error).message}`,
+		);
 		return undefined;
 	}
 
@@ -1023,7 +1123,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 				gunzip.end(assetBuffer);
 			});
 			await fs.writeFile(destPath, decompressed, { mode: 0o755 });
-
 		} else if (assetName.endsWith(".tar.gz") || assetName.endsWith(".tar.xz")) {
 			// Write archive to temp file, extract with system tar
 			const tmpArchive = path.join(GITHUB_BIN_DIR, `_tmp_${assetName}`);
@@ -1031,12 +1130,18 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			const tmpDir = path.join(GITHUB_BIN_DIR, `_tmp_extract_${tool.id}`);
 			await fs.mkdir(tmpDir, { recursive: true });
 
-			const extracted = await runCommand("tar", ["xf", tmpArchive, "-C", tmpDir, "--strip-components=1"], GITHUB_BIN_DIR);
+			const extracted = await runCommand(
+				"tar",
+				["xf", tmpArchive, "-C", tmpDir, "--strip-components=1"],
+				GITHUB_BIN_DIR,
+			);
 			await fs.rm(tmpArchive, { force: true });
 
 			if (!extracted) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
-				logSessionStart(`github-install ${tool.id}: tar extraction failed for ${assetName}`);
+				logSessionStart(
+					`github-install ${tool.id}: tar extraction failed for ${assetName}`,
+				);
 				return undefined;
 			}
 
@@ -1045,7 +1150,6 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			await fs.rename(srcBinary, destPath);
 			await fs.rm(tmpDir, { recursive: true, force: true });
 			if (!isWindows) await fs.chmod(destPath, 0o755);
-
 		} else if (assetName.endsWith(".zip")) {
 			// Write zip to temp, extract with unzip (Linux/macOS) or Expand-Archive (Windows)
 			const tmpArchive = path.join(GITHUB_BIN_DIR, `_tmp_${assetName}`);
@@ -1056,16 +1160,26 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			const extracted = isWindows
 				? await runCommand(
 						"powershell",
-						["-NoProfile", "-Command", `Expand-Archive -LiteralPath '${tmpArchive}' -DestinationPath '${tmpDir}' -Force`],
+						[
+							"-NoProfile",
+							"-Command",
+							`Expand-Archive -LiteralPath '${tmpArchive}' -DestinationPath '${tmpDir}' -Force`,
+						],
 						GITHUB_BIN_DIR,
 					)
-				: await runCommand("unzip", ["-q", "-o", tmpArchive, "-d", tmpDir], GITHUB_BIN_DIR);
+				: await runCommand(
+						"unzip",
+						["-q", "-o", tmpArchive, "-d", tmpDir],
+						GITHUB_BIN_DIR,
+					);
 
 			await fs.rm(tmpArchive, { force: true });
 
 			if (!extracted) {
 				await fs.rm(tmpDir, { recursive: true, force: true });
-				logSessionStart(`github-install ${tool.id}: zip extraction failed for ${assetName}`);
+				logSessionStart(
+					`github-install ${tool.id}: zip extraction failed for ${assetName}`,
+				);
 				return undefined;
 			}
 
@@ -1087,13 +1201,14 @@ async function installGitHubTool(tool: ToolDefinition): Promise<string | undefin
 			await fs.rename(srcBinary, destPath);
 			await fs.rm(tmpDir, { recursive: true, force: true });
 			if (!isWindows) await fs.chmod(destPath, 0o755);
-
 		} else {
 			// Bare binary (e.g. shfmt_*_linux_amd64)
 			await fs.writeFile(destPath, assetBuffer, { mode: 0o755 });
 		}
 	} catch (err) {
-		logSessionStart(`github-install ${tool.id}: install failed: ${(err as Error).message}`);
+		logSessionStart(
+			`github-install ${tool.id}: install failed: ${(err as Error).message}`,
+		);
 		return undefined;
 	}
 
@@ -1188,11 +1303,20 @@ async function installNpmTool(
 
 				const timer = setTimeout(() => {
 					proc.kill();
-					resolve({ ok: false, stderr: `install timed out after ${INSTALL_TIMEOUT_MS / 1000}s` });
+					resolve({
+						ok: false,
+						stderr: `install timed out after ${INSTALL_TIMEOUT_MS / 1000}s`,
+					});
 				}, INSTALL_TIMEOUT_MS);
 
-				proc.on("exit", (code) => { clearTimeout(timer); resolve({ ok: code === 0, stderr }); });
-				proc.on("error", (err) => { clearTimeout(timer); resolve({ ok: false, stderr: err.message }); });
+				proc.on("exit", (code) => {
+					clearTimeout(timer);
+					resolve({ ok: code === 0, stderr });
+				});
+				proc.on("error", (err) => {
+					clearTimeout(timer);
+					resolve({ ok: false, stderr: err.message });
+				});
 			});
 
 		let outcome = await runInstallAttempt(baseInstallArgs);
@@ -1248,7 +1372,9 @@ async function installNpmTool(
 			}
 		}
 		if (!isValid) {
-			logSessionStart(`auto-install ${packageName}: installed but verification failed, cleaning up`);
+			logSessionStart(
+				`auto-install ${packageName}: installed but verification failed, cleaning up`,
+			);
 			// Clean up the broken installation
 			try {
 				const packagePath = path.join(TOOLS_DIR, "node_modules", packageName);
@@ -1266,7 +1392,9 @@ async function installNpmTool(
 
 		return binPath;
 	} catch (err) {
-		logSessionStart(`auto-install npm ${packageName}: exception: ${(err as Error).message}`);
+		logSessionStart(
+			`auto-install npm ${packageName}: exception: ${(err as Error).message}`,
+		);
 		return undefined;
 	}
 }
@@ -1281,7 +1409,10 @@ async function installPipTool(
 		const pipCandidates = isWindows
 			? [
 					{ command: "pip", args: ["install", "--user", packageName] },
-					{ command: "py", args: ["-m", "pip", "install", "--user", packageName] },
+					{
+						command: "py",
+						args: ["-m", "pip", "install", "--user", packageName],
+					},
 					{
 						command: "python",
 						args: ["-m", "pip", "install", "--user", packageName],
@@ -1294,41 +1425,50 @@ async function installPipTool(
 						command: "python3",
 						args: ["-m", "pip", "install", "--user", packageName],
 					},
-					{ command: "python", args: ["-m", "pip", "install", "--user", packageName] },
+					{
+						command: "python",
+						args: ["-m", "pip", "install", "--user", packageName],
+					},
 				];
 
 		let lastError = "";
 		for (const candidate of pipCandidates) {
-			const outcome = await new Promise<{ ok: boolean; error: string }>((resolve) => {
-				const proc = spawn(candidate.command, candidate.args, {
-					stdio: ["ignore", "pipe", "pipe"],
-					shell: isWindows, // Required for .cmd files on Windows
-				});
+			const outcome = await new Promise<{ ok: boolean; error: string }>(
+				(resolve) => {
+					const proc = spawn(candidate.command, candidate.args, {
+						stdio: ["ignore", "pipe", "pipe"],
+						shell: isWindows, // Required for .cmd files on Windows
+					});
 
-				let stderr = "";
-				proc.stderr?.on("data", (data) => (stderr += data));
+					let stderr = "";
+					proc.stderr?.on("data", (data) => (stderr += data));
 
-				proc.on("exit", (code) => {
-					if (code === 0) {
-						resolve({ ok: true, error: "" });
-					} else {
-						resolve({ ok: false, error: stderr.trim() });
-					}
-				});
+					proc.on("exit", (code) => {
+						if (code === 0) {
+							resolve({ ok: true, error: "" });
+						} else {
+							resolve({ ok: false, error: stderr.trim() });
+						}
+					});
 
-				proc.on("error", (err) => {
-					resolve({ ok: false, error: err.message });
-				});
-			});
+					proc.on("error", (err) => {
+						resolve({ ok: false, error: err.message });
+					});
+				},
+			);
 
 			if (outcome.ok) {
 				// Ensure user-level scripts directory is available in current process PATH.
 				// This helps tools installed via `pip install --user` become immediately callable.
 				const userBaseResult = await new Promise<string>((resolve) => {
-					const probe = spawn(candidate.command, ["-m", "site", "--user-base"], {
-						stdio: ["ignore", "pipe", "pipe"],
-						shell: isWindows,
-					});
+					const probe = spawn(
+						candidate.command,
+						["-m", "site", "--user-base"],
+						{
+							stdio: ["ignore", "pipe", "pipe"],
+							shell: isWindows,
+						},
+					);
 					let stdout = "";
 					probe.stdout?.on("data", (data) => (stdout += data));
 					probe.on("exit", (code) => {
@@ -1375,7 +1515,10 @@ async function installPipTool(
 							await fs.access(scriptsDir);
 							if (!normalizedPath.includes(scriptsDir.toLowerCase())) {
 								const existingPath =
-									process.env.PATH || process.env.Path || process.env.path || "";
+									process.env.PATH ||
+									process.env.Path ||
+									process.env.path ||
+									"";
 								const updatedPath = `${scriptsDir}${separator}${existingPath}`;
 								process.env.PATH = updatedPath;
 								if (isWindows) {
@@ -1400,7 +1543,9 @@ async function installPipTool(
 			`Failed to install ${packageName}: no usable pip command found (${lastError || "unknown error"})`,
 		);
 	} catch (err) {
-		logSessionStart(`auto-install pip ${packageName}: exception: ${(err as Error).message}`);
+		logSessionStart(
+			`auto-install pip ${packageName}: exception: ${(err as Error).message}`,
+		);
 		return undefined;
 	}
 }
@@ -1486,7 +1631,9 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
 
 	const inFlight = ensureInFlight.get(toolId);
 	if (inFlight) {
-		logSessionStart(`auto-install ensure ${toolId}: waiting for in-flight install`);
+		logSessionStart(
+			`auto-install ensure ${toolId}: waiting for in-flight install`,
+		);
 		return inFlight;
 	}
 
@@ -1525,10 +1672,13 @@ export async function ensureTool(toolId: string): Promise<string | undefined> {
  */
 export async function getToolEnvironment(): Promise<NodeJS.ProcessEnv> {
 	const localBin = path.join(TOOLS_DIR, "node_modules", ".bin");
-	const currentPath = process.env.PATH || process.env.Path || process.env.path || "";
+	const currentPath =
+		process.env.PATH || process.env.Path || process.env.path || "";
 	const separator = process.platform === "win32" ? ";" : ":";
 	const nodeDir = path.dirname(process.execPath);
-	const withNode = nodeDir ? `${nodeDir}${separator}${currentPath}` : currentPath;
+	const withNode = nodeDir
+		? `${nodeDir}${separator}${currentPath}`
+		: currentPath;
 	const augmentedPath = `${GITHUB_BIN_DIR}${separator}${localBin}${separator}${withNode}`;
 
 	const env: NodeJS.ProcessEnv = {
@@ -1589,7 +1739,11 @@ export function resolveGitHubInstalledBinaryName(
 ): string | undefined {
 	const tool = TOOLS.find((t) => t.id === toolId);
 	if (!tool) return undefined;
-	return getGitHubInstalledBinaryName(tool.binaryName ?? tool.id, platform, assetName);
+	return getGitHubInstalledBinaryName(
+		tool.binaryName ?? tool.id,
+		platform,
+		assetName,
+	);
 }
 
 export function resolveGitHubArchiveBinaryCandidates(
