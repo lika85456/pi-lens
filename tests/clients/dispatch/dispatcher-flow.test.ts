@@ -13,12 +13,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
 	clearCoverageNoticeState,
 	createDispatchContext,
-	dispatchForFile as runDispatchForFile,
 	RunnerRegistry,
+	dispatchForFile as runDispatchForFile,
 } from "../../../clients/dispatch/dispatcher.js";
 import { FactStore } from "../../../clients/dispatch/fact-store.js";
-import { normalizeMapKey } from "../../../clients/path-utils.js";
 import type { RunnerGroup } from "../../../clients/dispatch/types.js";
+import { normalizeMapKey } from "../../../clients/path-utils.js";
 import {
 	createCleanRunner,
 	createConditionalRunner,
@@ -624,8 +624,9 @@ describe("Dispatch Flow", () => {
 				createConditionalRunner("conditional", (ctx) => ctx.autofix),
 			);
 
+			// autofix is now always false (per-tool autofix flags removed)
 			const mockPi = {
-				getFlag: (f: string) => f === "autofix-biome",
+				getFlag: () => false,
 			};
 			const ctx = createDispatchContext(
 				"test.ts",
@@ -639,8 +640,10 @@ describe("Dispatch Flow", () => {
 
 			const result = await dispatchForFile(ctx, groups);
 
-			expect(ctx.autofix).toBe(true);
-			expect(result.diagnostics).toHaveLength(1);
+			// autofix is always false now (feature removed)
+			expect(ctx.autofix).toBe(false);
+			// Conditional runner skips when autofix is false
+			expect(result.diagnostics).toHaveLength(0);
 		});
 
 		it("should skip conditional runner when condition false", async () => {
