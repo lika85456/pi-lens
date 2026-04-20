@@ -23,7 +23,7 @@ import { initLSPConfig } from "./clients/lsp/config.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { captureSnapshot } from "./clients/metrics-history.js";
 import { findSimilarFunctions } from "./clients/project-index.js";
-import { formatRulesForPrompt } from "./clients/rules-scanner.js";
+
 import {
 	consumeSessionStartGuidance,
 	consumeTurnEndFindings,
@@ -791,16 +791,6 @@ export default function (pi: ExtensionAPI) {
 			formatBehaviorWarnings: (warnings) =>
 				agentBehaviorClient.formatWarnings(warnings as any),
 		});
-	});
-	// --- Inject project rules into system prompt ---
-	pi.on("before_agent_start", async (event) => {
-		updateRuntimeIdentityFromEvent(event);
-		if (!runtime.projectRulesScan.hasCustomRules) return;
-
-		const rulesSection = formatRulesForPrompt(runtime.projectRulesScan);
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n## Project Rules\nRead these files only when relevant:\n${rulesSection}\n`,
-		};
 	});
 
 	// --- Turn end: batch jscpd/madge on collected files, then clear state ---

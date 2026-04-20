@@ -87,36 +87,6 @@ function resolveStartupMode(): StartupMode {
 	return "full";
 }
 
-function getLanguageInstallHints(
-	languageProfile: ReturnType<typeof detectProjectLanguageProfile>,
-): string[] {
-	const hints: string[] = [];
-	const hasStrongSignal = (
-		kind: "go" | "rust" | "ruby",
-		minCount = 3,
-	): boolean => {
-		if (!hasLanguage(languageProfile, kind)) return false;
-		if (isLanguageConfigured(languageProfile, kind)) return true;
-		return (languageProfile.counts[kind] ?? 0) >= minCount;
-	};
-
-	if (hasStrongSignal("go") && !isCommandAvailable("gopls")) {
-		hints.push(
-			"Go detected: install gopls (`go install golang.org/x/tools/gopls@latest`).",
-		);
-	}
-	if (hasStrongSignal("rust") && !isCommandAvailable("rust-analyzer")) {
-		hints.push(
-			"Rust detected: install rust-analyzer (`rustup component add rust-analyzer`).",
-		);
-	}
-	if (hasStrongSignal("ruby") && !isCommandAvailable("ruby-lsp")) {
-		hints.push("Ruby detected: install ruby-lsp (`gem install ruby-lsp`).");
-	}
-
-	return hints;
-}
-
 // --- Session-start helpers ---
 
 function firePreinstallDefaults(
@@ -373,7 +343,7 @@ export async function handleSessionStart(
 		ruffClient,
 		knipClient,
 		jscpdClient,
-		typeCoverageClient,
+		typeCoverageClient: _typeCoverageClient,
 		depChecker,
 		architectClient,
 		testRunnerClient,
@@ -554,7 +524,6 @@ export async function handleSessionStart(
 	log(`Active tools: ${tools.join(", ")}`);
 	dbg(`session_start tools: ${tools.join(", ")}`);
 
-	const startupNotes: string[] = [];
 	const agentStartupGuidance = [
 		"📌 pi-lens active — as you work on this project, fix any errors you encounter (including pre-existing). Prefer: lsp_navigation for definitions/references, ast_grep_search for code patterns, grep for text/TODO search.",
 	];
@@ -568,21 +537,8 @@ export async function handleSessionStart(
 		dbg(
 			`session_start: found ${ruleCount} project rule(s) from ${sources.join(", ")}`,
 		);
-		startupNotes.push(
-			`📋 Project rules found: ${ruleCount} file(s) in ${sources.join(", ")}. These apply alongside pi-lens defaults.`,
-		);
 	} else {
 		dbg("session_start: no project rules found");
-	}
-
-	if (hasWorkspaceCwd) {
-		const installHints = getLanguageInstallHints(languageProfile);
-		dbg(`session_start tooling hints count: ${installHints.length}`);
-		if (installHints.length > 0) {
-			startupNotes.push(`🧰 Tooling hints: ${installHints.join(" ")}`);
-		}
-	} else {
-		dbg("session_start: skipping tooling hints (workspace cwd unavailable)");
 	}
 
 	cacheManager.writeCache(
@@ -612,13 +568,7 @@ export async function handleSessionStart(
 		);
 	}
 
-	dbg(
-		`session_start: background scans launched (${startupNotes.length} startup note(s))`,
-	);
-
-	if (startupNotes.length > 0) {
-		notify(startupNotes.join("\n"), "info");
-	}
+	dbg("session_start: background scans launched");
 
 	dbg(`session_start total: ${Date.now() - sessionStartMs}ms`);
 }
