@@ -191,10 +191,7 @@ const biomeCheckJsonRunner: RunnerDefinition = {
 
 		const parsed =
 			checkResult.status === 0 || checkResult.status === 1
-				? parseBiomeJson(
-						checkResult.stdout || checkResult.stderr || "",
-						ctx.filePath,
-					)
+				? parseBiomeJson(checkResult.stdout || "", ctx.filePath)
 				: { diagnostics: [] as Diagnostic[] };
 
 		if (parsed.parseError) {
