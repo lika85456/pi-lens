@@ -5,6 +5,14 @@ All notable changes to pi-lens will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **New diagnostic commands** — added `/lens-tools` and `/lens-health` for system visibility:
+  - `/lens-tools` — shows tool installation status: globally installed, pi-lens auto-installed, or npx fallback
+  - `/lens-health` — shows runtime health: pipeline crashes, slow runners, diagnostic stats
+  - Both provide actionable visibility into the pi-lens toolchain
+- **Streamlined ast-grep skill** — reduced skill from 7,759 bytes to 2,313 bytes (~70% reduction):
+  - Removed verbose CLI tips and YAML rule authoring sections (agent uses tools, not CLI)
+  - Removed redundant testing documentation
+  - Kept essential: Golden Rules, Quick Reference, Common Gotchas
 - **Configurable log cleanup** — automatic retention and rotation for `~/.pi-lens/*.log` files:
   - Environment variable `PI_LENS_LOG_RETENTION_DAYS` (default: 7) — days to keep log files
   - Environment variable `PI_LENS_MAX_LOG_SIZE_MB` (default: 10) — max size before rotation
@@ -13,6 +21,11 @@ All notable changes to pi-lens will be documented in this file.
   - Project-level logs (`{cwd}/.pi-lens/*`) intentionally excluded from cleanup
 
 ### Changed (Breaking)
+- **Simplified agent prompts** — removed verbose prompt sections to reduce token burn:
+  - Removed startup notes about project rules count (now just logged, not shown)
+  - Removed tooling hints for missing language tools (Go/Rust/Ruby install suggestions)
+  - Removed project rules section from system prompt (no longer injects `## Project Rules` block)
+  - Updated core guidance to clarify: automated checks run on edits/writes, blocking errors shown inline must be fixed
 - **Simplified CLI flags** — removed 16 flags to reduce surface area and cognitive load:
   - Removed per-tool disable flags: `--no-biome`, `--no-ast-grep`, `--no-shellcheck`, `--no-madge`, `--no-oxlint`, `--no-ruff`, `--no-go`, `--no-rust`
   - Removed per-tool autofix flags: `--no-autofix-biome`, `--no-autofix-ruff`
@@ -24,6 +37,10 @@ All notable changes to pi-lens will be documented in this file.
 - **Cross-platform line ending handling** — all `.split("\n")` changed to `.split(/\r?\n/)` for Windows CRLF compatibility (11 files updated)
 
 ### Fixed
+- **Biome check runner JSON parsing** — fixed error where biome's stderr warnings broke JSON parsing:
+  - Changed from parsing `stdout || stderr` to parsing `stdout` only
+  - Biome outputs text warnings (e.g., "couldn't find ignore file") to stderr which broke the JSON parser
+  - Fixes biome-check-json runner failing with parse errors instead of providing lint diagnostics
 - **Auto-install verification gap** — `getToolPath()` now verifies tool binaries actually work before using them:
   - Runs `--version` check on local npm tools (not just file existence)
   - Detects broken/corrupted installations (e.g., wrapper exists but package missing)
