@@ -11,13 +11,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { resolvePackagePath } from "../../package-root.js";
 import { classifyDefect } from "../diagnostic-taxonomy.js";
+import { PRIORITY } from "../priorities.js";
 import type {
 	Diagnostic,
 	DispatchContext,
 	RunnerDefinition,
 	RunnerResult,
 } from "../types.js";
-import { PRIORITY } from "../priorities.js";
 import {
 	calculateRuleComplexity,
 	hasUnsupportedConditions,
@@ -134,7 +134,9 @@ function hasEslintConfig(cwd: string): boolean {
 		if (fs.existsSync(path.join(cwd, cfg))) return true;
 	}
 	try {
-		const pkg = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf-8"));
+		const pkg = JSON.parse(
+			fs.readFileSync(path.join(cwd, "package.json"), "utf-8"),
+		);
 		if (pkg.eslintConfig) return true;
 	} catch {
 		// ignore invalid or missing package.json
@@ -341,7 +343,9 @@ function getCandidatesForAll(
 		if (sub.pattern) {
 			try {
 				return rootNode.findAll(sub.pattern);
-			} catch { /* invalid pattern — fall through to scan all */ }
+			} catch {
+				/* invalid pattern — fall through to scan all */
+			}
 		}
 	}
 	// No narrowing possible, scan all
@@ -395,10 +399,6 @@ const astGrepNapiRunner: RunnerDefinition = {
 	skipTestFiles: true,
 
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
-		if (ctx.pi.getFlag("no-ast-grep")) {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
-		}
-
 		if (!canHandle(ctx.filePath)) {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
@@ -460,9 +460,7 @@ const astGrepNapiRunner: RunnerDefinition = {
 		const seenRuleIds = new Set<string>();
 		const suppressLinterOverlap =
 			ctx.kind === "jsts" &&
-			(hasEslintConfig(ctx.cwd) ||
-				!!ctx.pi.getFlag("lens-eslint-core") ||
-				!ctx.pi.getFlag("no-biome"));
+			(hasEslintConfig(ctx.cwd) || !!ctx.pi.getFlag("lens-eslint-core"));
 
 		const ruleDirs = [
 			path.join(process.cwd(), "rules", "ast-grep-rules", "rules"),

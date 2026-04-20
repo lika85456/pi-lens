@@ -8,10 +8,11 @@ import type { ArchitectClient } from "../clients/architect-client.js";
 import type { AstGrepClient } from "../clients/ast-grep-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
 import type { DependencyChecker } from "../clients/dependency-checker.js";
-import {
-	getKnipIgnorePatterns,
-	isTestFile,
-} from "../clients/file-utils.js";
+import { createDispatchContext } from "../clients/dispatch/dispatcher.js";
+import { evaluateRules } from "../clients/dispatch/fact-rule-runner.js";
+import { runProviders } from "../clients/dispatch/fact-runner.js";
+import { FactStore } from "../clients/dispatch/fact-store.js";
+import { getKnipIgnorePatterns, isTestFile } from "../clients/file-utils.js";
 import type { JscpdClient } from "../clients/jscpd-client.js";
 import type { KnipClient } from "../clients/knip-client.js";
 import { validateProductionReadiness } from "../clients/production-readiness.js";
@@ -35,10 +36,6 @@ import type { TodoScanner } from "../clients/todo-scanner.js";
 import { TreeSitterClient } from "../clients/tree-sitter-client.js";
 import { queryLoader } from "../clients/tree-sitter-query-loader.js";
 import type { TypeCoverageClient } from "../clients/type-coverage-client.js";
-import { FactStore } from "../clients/dispatch/fact-store.js";
-import { runProviders } from "../clients/dispatch/fact-runner.js";
-import { evaluateRules } from "../clients/dispatch/fact-rule-runner.js";
-import { createDispatchContext } from "../clients/dispatch/dispatcher.js";
 // Side-effect import: registers all fact providers and fact rules
 import "../clients/dispatch/integration.js";
 
@@ -52,9 +49,14 @@ function getSharedTreeSitterClient(): TreeSitterClient {
 }
 
 const EXT_TO_LANG: Record<string, string> = {
-	".ts": "typescript", ".mts": "typescript", ".cts": "typescript",
+	".ts": "typescript",
+	".mts": "typescript",
+	".cts": "typescript",
 	".tsx": "typescript",
-	".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript",
+	".js": "javascript",
+	".mjs": "javascript",
+	".cjs": "javascript",
+	".jsx": "javascript",
 	".py": "python",
 	".go": "go",
 	".rs": "rust",
@@ -114,8 +116,7 @@ export async function handleBooboo(
 	const targetPath = path.resolve(requestedPath);
 	const reviewRoot = targetPath;
 
-	const categoryKey = (name: string) =>
-		name.toLowerCase().replace(/\s+/g, "-");
+	const categoryKey = (name: string) => name.toLowerCase().replace(/\s+/g, "-");
 
 	// Detect project metadata for richer reporting
 	const projectMeta = detectProjectMetadata(targetPath);
@@ -304,7 +305,8 @@ export async function handleBooboo(
 				}
 
 				const filteredIssues = issues.filter(
-					(issue) => !isFalsePositive(categoryKey("ast-grep"), issue.file, issue.line),
+					(issue) =>
+						!isFalsePositive(categoryKey("ast-grep"), issue.file, issue.line),
 				);
 
 				if (filteredIssues.length > 0) {
@@ -642,12 +644,24 @@ export async function handleBooboo(
 
 				if (DEDUP_PER_FILE.has(query.id)) {
 					if (!bucket.some((h) => h.file === relFile)) {
-						bucket.push({ file: relFile, line: matches[0].line ?? 1, ruleId: query.id, severity: query.severity, message: query.message });
+						bucket.push({
+							file: relFile,
+							line: matches[0].line ?? 1,
+							ruleId: query.id,
+							severity: query.severity,
+							message: query.message,
+						});
 						findings++;
 					}
 				} else {
 					for (const m of matches) {
-						bucket.push({ file: relFile, line: m.line ?? 1, ruleId: query.id, severity: query.severity, message: query.message });
+						bucket.push({
+							file: relFile,
+							line: m.line ?? 1,
+							ruleId: query.id,
+							severity: query.severity,
+							message: query.message,
+						});
 						findings++;
 					}
 				}
@@ -657,7 +671,9 @@ export async function handleBooboo(
 
 		if (findings === 0) return { findings: 0, status: "done" };
 
-		const errorCount = [...byRule.values()].flat().filter((i) => i.severity === "error").length;
+		const errorCount = [...byRule.values()]
+			.flat()
+			.filter((i) => i.severity === "error").length;
 		summaryItems.push({
 			category: "Tree-sitter Patterns",
 			count: findings,
@@ -666,7 +682,9 @@ export async function handleBooboo(
 		});
 
 		// Sort rules by hit count descending
-		const sorted = [...byRule.entries()].sort((a, b) => b[1].length - a[1].length);
+		const sorted = [...byRule.entries()].sort(
+			(a, b) => b[1].length - a[1].length,
+		);
 		let fullSection = `## Tree-sitter Patterns\n\n**${findings} issue(s) across ${byRule.size} rule(s)**\n\n`;
 		for (const [ruleId, issues] of sorted) {
 			const sev = issues[0].severity === "error" ? "🔴" : "🟡";
@@ -676,7 +694,8 @@ export async function handleBooboo(
 			for (const issue of issues.slice(0, 10)) {
 				fullSection += `| ${issue.file} | ${issue.line} |\n`;
 			}
-			if (issues.length > 10) fullSection += `| ... | +${issues.length - 10} more |\n`;
+			if (issues.length > 10)
+				fullSection += `| ... | +${issues.length - 10} more |\n`;
 			fullSection += "\n";
 		}
 		fullReport.push(fullSection);
@@ -689,18 +708,28 @@ export async function handleBooboo(
 	// using the same provider/rule pipeline as the per-write dispatch system.
 	await tracker.run("fact rules", async () => {
 		const boobooFacts = new FactStore();
-		const tsFiles = allFiles.filter(
-			(f) => /\.tsx?$/.test(f) && !isTestFile(f),
-		);
+		const tsFiles = allFiles.filter((f) => /\.tsx?$/.test(f) && !isTestFile(f));
 		if (tsFiles.length === 0) return { findings: 0, status: "skipped" };
 
-		interface FactIssue { file: string; line: number; ruleId: string; severity: string; message: string }
+		interface FactIssue {
+			file: string;
+			line: number;
+			ruleId: string;
+			severity: string;
+			message: string;
+		}
 		const byRule = new Map<string, FactIssue[]>();
 		let findings = 0;
 
 		for (const filePath of tsFiles) {
 			boobooFacts.clearFileFactsFor(filePath);
-			const ctx = createDispatchContext(filePath, targetPath, pi, boobooFacts, false);
+			const ctx = createDispatchContext(
+				filePath,
+				targetPath,
+				pi,
+				boobooFacts,
+				false,
+			);
 
 			try {
 				await runProviders(ctx);
@@ -712,7 +741,13 @@ export async function handleBooboo(
 			for (const diag of diagnostics) {
 				const relFile = path.relative(targetPath, filePath);
 				const bucket = byRule.get(diag.rule ?? diag.id) ?? [];
-				bucket.push({ file: relFile, line: diag.line ?? 1, ruleId: diag.rule ?? diag.id, severity: diag.severity ?? "warning", message: diag.message ?? "" });
+				bucket.push({
+					file: relFile,
+					line: diag.line ?? 1,
+					ruleId: diag.rule ?? diag.id,
+					severity: diag.severity ?? "warning",
+					message: diag.message ?? "",
+				});
 				byRule.set(diag.rule ?? diag.id, bucket);
 				findings++;
 			}
@@ -720,7 +755,9 @@ export async function handleBooboo(
 
 		if (findings === 0) return { findings: 0, status: "done" };
 
-		const errorCount = [...byRule.values()].flat().filter((i) => i.severity === "error").length;
+		const errorCount = [...byRule.values()]
+			.flat()
+			.filter((i) => i.severity === "error").length;
 		summaryItems.push({
 			category: "Fact Rules",
 			count: findings,
@@ -728,7 +765,9 @@ export async function handleBooboo(
 			fixable: true,
 		});
 
-		const sorted = [...byRule.entries()].sort((a, b) => b[1].length - a[1].length);
+		const sorted = [...byRule.entries()].sort(
+			(a, b) => b[1].length - a[1].length,
+		);
 		let fullSection = `## Fact Rules (Semantic Analysis)\n\n**${findings} issue(s) across ${byRule.size} rule(s)**\n\n`;
 		for (const [ruleId, issues] of sorted) {
 			const sev = issues[0].severity === "error" ? "🔴" : "🟡";
@@ -738,7 +777,8 @@ export async function handleBooboo(
 			for (const issue of issues.slice(0, 10)) {
 				fullSection += `| ${issue.file} | ${issue.line} |\n`;
 			}
-			if (issues.length > 10) fullSection += `| ... | +${issues.length - 10} more |\n`;
+			if (issues.length > 10)
+				fullSection += `| ... | +${issues.length - 10} more |\n`;
 			fullSection += "\n";
 		}
 		fullReport.push(fullSection);
@@ -778,7 +818,10 @@ export async function handleBooboo(
 			return { findings: 0, status: "skipped" };
 		}
 
-		const knipResult = clients.knip.analyze(targetPath, getKnipIgnorePatterns());
+		const knipResult = clients.knip.analyze(
+			targetPath,
+			getKnipIgnorePatterns(),
+		);
 
 		// Filter out test file issues as additional safeguard
 		const filteredIssues = knipResult.issues.filter(
@@ -901,7 +944,7 @@ export async function handleBooboo(
 
 	// Runner 9: Circular deps
 	await tracker.run("circular deps (Madge)", async () => {
-		if (pi.getFlag("no-madge") || !(await clients.depChecker.ensureAvailable())) {
+		if (!(await clients.depChecker.ensureAvailable())) {
 			return { findings: 0, status: "skipped" };
 		}
 
@@ -1071,17 +1114,27 @@ export async function handleBooboo(
 		const langs = new Set(projectMeta.languages);
 
 		// TypeScript: tsc --noEmit
-		if (langs.has("typescript") && nodeFs.existsSync(path.join(targetPath, "tsconfig.json"))) {
-			const result = safeSpawn("npx", ["tsc", "--noEmit", "--pretty", "false"], {
-				cwd: targetPath,
-				timeout: 60_000,
-			});
+		if (
+			langs.has("typescript") &&
+			nodeFs.existsSync(path.join(targetPath, "tsconfig.json"))
+		) {
+			const result = safeSpawn(
+				"npx",
+				["tsc", "--noEmit", "--pretty", "false"],
+				{
+					cwd: targetPath,
+					timeout: 60_000,
+				},
+			);
 			const output = (result.stdout || "") + (result.stderr || "");
 			// tsc --pretty false format: "file(line,col): error TS####: message"
-			const tscRe = /^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.+)$/gm;
+			const tscRe =
+				/^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.+)$/gm;
 			for (const m of output.matchAll(tscRe)) {
 				const [, file, line, col, sev, code, msg] = m;
-				const absFile = path.isAbsolute(file) ? file : path.join(targetPath, file);
+				const absFile = path.isAbsolute(file)
+					? file
+					: path.join(targetPath, file);
 				if (shouldIncludeFile(absFile)) {
 					issues.push({
 						file: path.relative(targetPath, absFile),
@@ -1107,7 +1160,9 @@ export async function handleBooboo(
 			const goRe = /^(.+\.go):(\d+)(?::(\d+))?:\s+(.+)$/gm;
 			for (const m of output.matchAll(goRe)) {
 				const [, file, line, col, msg] = m;
-				const absFile = path.isAbsolute(file) ? file : path.join(targetPath, file);
+				const absFile = path.isAbsolute(file)
+					? file
+					: path.join(targetPath, file);
 				issues.push({
 					file: path.relative(targetPath, absFile),
 					line: parseInt(line, 10),
@@ -1121,11 +1176,18 @@ export async function handleBooboo(
 		}
 
 		// Rust: cargo check --message-format=json
-		if (langs.has("rust") && nodeFs.existsSync(path.join(targetPath, "Cargo.toml"))) {
-			const result = safeSpawn("cargo", ["check", "--message-format=json", "--quiet"], {
-				cwd: targetPath,
-				timeout: 120_000,
-			});
+		if (
+			langs.has("rust") &&
+			nodeFs.existsSync(path.join(targetPath, "Cargo.toml"))
+		) {
+			const result = safeSpawn(
+				"cargo",
+				["check", "--message-format=json", "--quiet"],
+				{
+					cwd: targetPath,
+					timeout: 120_000,
+				},
+			);
 			const output = result.stdout || "";
 			for (const line of output.split("\n")) {
 				if (!line.trim()) continue;
@@ -1134,7 +1196,9 @@ export async function handleBooboo(
 					if (msg.reason !== "compiler-message") continue;
 					const inner = msg.message;
 					if (!inner || !["error", "warning"].includes(inner.level)) continue;
-					const span = inner.spans?.find((s: { is_primary: boolean }) => s.is_primary) ?? inner.spans?.[0];
+					const span =
+						inner.spans?.find((s: { is_primary: boolean }) => s.is_primary) ??
+						inner.spans?.[0];
 					if (!span) continue;
 					const absFile = span.file_name
 						? path.isAbsolute(span.file_name)
@@ -1158,7 +1222,8 @@ export async function handleBooboo(
 
 		// Python: pyright --outputjson (preferred) or mypy
 		if (langs.has("python")) {
-			const hasPyright = safeSpawn("pyright", ["--version"], { timeout: 5_000 }).status === 0;
+			const hasPyright =
+				safeSpawn("pyright", ["--version"], { timeout: 5_000 }).status === 0;
 			if (hasPyright) {
 				const result = safeSpawn("pyright", ["--outputjson", "."], {
 					cwd: targetPath,
@@ -1170,7 +1235,9 @@ export async function handleBooboo(
 					for (const diag of json?.generalDiagnostics ?? []) {
 						if (!["error", "warning"].includes(diag.severity)) continue;
 						const absFile = diag.file
-							? path.isAbsolute(diag.file) ? diag.file : path.join(targetPath, diag.file)
+							? path.isAbsolute(diag.file)
+								? diag.file
+								: path.join(targetPath, diag.file)
 							: targetPath;
 						if (shouldIncludeFile(absFile)) {
 							issues.push({
@@ -1191,12 +1258,21 @@ export async function handleBooboo(
 		}
 
 		// Ruby: rubocop --format json
-		if (langs.has("ruby") && nodeFs.existsSync(path.join(targetPath, "Gemfile"))) {
-			const hasRubocop = safeSpawn("rubocop", ["--version"], { timeout: 5_000 }).status === 0;
+		if (
+			langs.has("ruby") &&
+			nodeFs.existsSync(path.join(targetPath, "Gemfile"))
+		) {
+			const hasRubocop =
+				safeSpawn("rubocop", ["--version"], { timeout: 5_000 }).status === 0;
 			if (hasRubocop) {
 				const result = safeSpawn(
 					"rubocop",
-					["--format", "json", "--no-color", "--display-only-fail-level-offenses"],
+					[
+						"--format",
+						"json",
+						"--no-color",
+						"--display-only-fail-level-offenses",
+					],
 					{ cwd: targetPath, timeout: 60_000 },
 				);
 				const output = result.stdout || "";
@@ -1208,9 +1284,10 @@ export async function handleBooboo(
 							: path.join(targetPath, fileResult.path);
 						if (!shouldIncludeFile(absFile)) continue;
 						for (const offense of fileResult.offenses ?? []) {
-							const sev = offense.severity === "error" || offense.severity === "fatal"
-								? "error"
-								: "warning";
+							const sev =
+								offense.severity === "error" || offense.severity === "fatal"
+									? "error"
+									: "warning";
 							issues.push({
 								file: path.relative(targetPath, absFile),
 								line: offense.location?.line ?? 1,
@@ -1248,7 +1325,8 @@ export async function handleBooboo(
 		let fullSection = `## Compiler Checks\n\n**${issues.length} issue(s) found** (${errorCount} errors)\n\n`;
 		for (const [compiler, compIssues] of Object.entries(byCompiler)) {
 			fullSection += `### ${compiler} (${compIssues.length})\n\n`;
-			fullSection += "| File | Line | Code | Message |\n|------|------|------|---------|\n";
+			fullSection +=
+				"| File | Line | Code | Message |\n|------|------|------|---------|\n";
 			for (const issue of compIssues.slice(0, 30)) {
 				const sev = issue.severity === "error" ? "🔴" : "🟡";
 				fullSection += `| ${issue.file} | ${issue.line} | ${sev} ${issue.code} | ${issue.message} |\n`;
@@ -1476,8 +1554,14 @@ function findTopSimilarPairs(
 
 			// Skip pairs with very different complexity/size; these are often
 			// boilerplate-wrapper false positives (shared try/catch/logging shell).
-			const maxTransitions = Math.max(entry1.transitionCount, entry2.transitionCount);
-			const minTransitions = Math.min(entry1.transitionCount, entry2.transitionCount);
+			const maxTransitions = Math.max(
+				entry1.transitionCount,
+				entry2.transitionCount,
+			);
+			const minTransitions = Math.min(
+				entry1.transitionCount,
+				entry2.transitionCount,
+			);
 			if (minTransitions <= 0) continue;
 			if (maxTransitions / minTransitions > MAX_TRANSITION_RATIO) continue;
 

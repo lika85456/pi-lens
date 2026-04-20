@@ -153,33 +153,9 @@ export default function (pi: ExtensionAPI) {
 		default: false,
 	});
 
-	pi.registerFlag("no-biome", {
-		description: "Disable Biome linting/formatting",
-		type: "boolean",
-		default: false,
-	});
-
-	pi.registerFlag("no-ast-grep", {
-		description: "Disable ast-grep structural analysis",
-		type: "boolean",
-		default: false,
-	});
-
-	pi.registerFlag("no-shellcheck", {
-		description: "Disable shellcheck for shell scripts",
-		type: "boolean",
-		default: false,
-	});
-
 	pi.registerFlag("no-lsp", {
 		description:
 			"Disable unified LSP diagnostics and use language-specific fallbacks (for example ts-lsp, pyright)",
-		type: "boolean",
-		default: false,
-	});
-
-	pi.registerFlag("no-madge", {
-		description: "Disable circular dependency checking via madge",
 		type: "boolean",
 		default: false,
 	});
@@ -235,14 +211,6 @@ export default function (pi: ExtensionAPI) {
 	pi.registerFlag("auto-install", {
 		description:
 			"Auto-install missing LSP servers without prompting (for Go, Rust, YAML, JSON, Bash)",
-		type: "boolean",
-		default: false,
-	});
-
-	// Internal flag for running only blocking rules on file write (performance)
-	pi.registerFlag("lens-blocking-only", {
-		description:
-			"[Internal] Only run BLOCKING rules (severity: error) for fast feedback",
 		type: "boolean",
 		default: false,
 	});
