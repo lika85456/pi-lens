@@ -59,7 +59,6 @@ function dbg(msg: string) {
 
 // --- State ---
 
-let _verbose = false;
 const runtime = new RuntimeCoordinator();
 const _lspConfigInitializedCwds = new Set<string>();
 const LSP_TOOLCALL_NAV_TOUCH_BUDGET_MS = Math.max(
@@ -71,10 +70,6 @@ const LSP_TOOLCALL_NAV_TOUCH_BUDGET_MS = Math.max(
 		10,
 	) || 1500,
 );
-
-function log(msg: string) {
-	if (_verbose) console.error(`[pi-lens] ${msg}`);
-}
 
 async function ensureLSPConfigInitialized(cwd: string): Promise<void> {
 	const normalizedCwd = path.resolve(cwd);
@@ -106,7 +101,7 @@ function updateRuntimeIdentityFromEvent(event: unknown): void {
  * on startup and will report phantom "Cannot find module" errors for
  * every deleted file until the cache is cleared.
  *
- * Only called when --lens-lsp is active (that’s when tsserver runs).
+ * Only called when LSP is active (that's when tsserver runs).
  */
 function cleanStaleTsBuildInfo(cwd: string): string[] {
 	const cleaned: string[] = [];
@@ -130,11 +125,11 @@ function cleanStaleTsBuildInfo(cwd: string): string[] {
 					cleaned.push(infoPath);
 				}
 			} catch {
-				// Malformed or unreadable — skip
+				// Malformed or unreadable - skip
 			}
 		}
 	} catch {
-		// readdirSync failed — skip
+		// readdirSync failed - skip
 	}
 	return cleaned;
 }
@@ -146,12 +141,6 @@ export default function (pi: ExtensionAPI) {
 	const cacheManager = new CacheManager();
 
 	// --- Flags ---
-
-	pi.registerFlag("lens-verbose", {
-		description: "Enable verbose pi-lens logging",
-		type: "boolean",
-		default: false,
-	});
 
 	pi.registerFlag("no-lsp", {
 		description:
@@ -190,27 +179,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerFlag("no-tests", {
 		description: "Disable test runner on write",
-		type: "boolean",
-		default: false,
-	});
-
-	pi.registerFlag("error-debt", {
-		description:
-			"Track test failures and block if tests start failing (error debt tracker)",
-		type: "boolean",
-		default: false,
-	});
-
-	pi.registerFlag("lens-lsp", {
-		description:
-			"Enable LSP (Language Server Protocol) for semantic analysis (Phase 3)",
-		type: "boolean",
-		default: true,
-	});
-
-	pi.registerFlag("auto-install", {
-		description:
-			"Auto-install missing LSP servers without prompting (for Go, Rust, YAML, JSON, Bash)",
 		type: "boolean",
 		default: false,
 	});
@@ -292,8 +260,8 @@ export default function (pi: ExtensionAPI) {
 				tdi.score <= 30
 					? "✅ Codebase is healthy!"
 					: tdi.score <= 60
-						? "⚠️ Moderate debt — consider refactoring"
-						: "🔴 High debt — run /lens-booboo-refactor",
+						? "⚠️ Moderate debt - consider refactoring"
+						: "🔴 High debt - run /lens-booboo-refactor",
 			];
 
 			ctx.ui.notify(lines.join("\n"), "info");
@@ -429,7 +397,6 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (event, ctx) => {
 		try {
-			_verbose = !!pi.getFlag("lens-verbose");
 			dbg("session_start fired");
 			updateRuntimeIdentityFromEvent(event);
 			try {
@@ -519,7 +486,7 @@ export default function (pi: ExtensionAPI) {
 				: path.resolve(ctx.cwd ?? runtime.projectRoot, rawFilePath)
 			: undefined;
 
-		if (pi.getFlag("lens-lsp") && !pi.getFlag("no-lsp")) {
+		if (!pi.getFlag("no-lsp")) {
 			try {
 				const configCwd = filePath
 					? path.dirname(filePath)
@@ -542,7 +509,6 @@ export default function (pi: ExtensionAPI) {
 				toolName === "write" ||
 				toolName === "edit" ||
 				toolName === "lsp_navigation") &&
-			!!pi.getFlag("lens-lsp") &&
 			!pi.getFlag("no-lsp");
 		if (shouldAutoTouch) {
 			try {
@@ -568,7 +534,7 @@ export default function (pi: ExtensionAPI) {
 
 		const { complexityClient } = await loadBootstrapClients();
 		// Record complexity baseline for historical tracking (booboo/tdi).
-		// Not shown inline — just captured for delta analysis.
+		// Not shown inline - just captured for delta analysis.
 		if (
 			complexityClient.isSupportedFile(filePath) &&
 			!runtime.complexityBaselines.has(filePath)
@@ -624,7 +590,7 @@ export default function (pi: ExtensionAPI) {
 				if (dupeWarnings.length > 0) {
 					return {
 						block: true,
-						reason: `🔴 STOP — Redefining existing export(s). Import instead:\n${dupeWarnings.map((w) => `  • ${w}`).join("\n")}`,
+						reason: `🔴 STOP - Redefining existing export(s). Import instead:\n${dupeWarnings.map((w) => `  • ${w}`).join("\n")}`,
 					};
 				}
 
@@ -707,7 +673,7 @@ export default function (pi: ExtensionAPI) {
 							};
 						}
 					} catch {
-						// Parsing failed — skip similarity check silently
+						// Parsing failed - skip similarity check silently
 					}
 				}
 			}

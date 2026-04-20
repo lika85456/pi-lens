@@ -8,6 +8,7 @@
  */
 
 import { getLSPService } from "../../lsp/index.js";
+import { PRIORITY } from "../priorities.js";
 import { resolveRunnerPath } from "../runner-context.js";
 import type {
 	Diagnostic,
@@ -15,13 +16,10 @@ import type {
 	RunnerDefinition,
 	RunnerResult,
 } from "../types.js";
-import { PRIORITY } from "../priorities.js";
 import { readFileContent } from "./utils.js";
 
 type TypeScriptClientModule = typeof import("../../typescript-client.js");
-let tsClientModulePromise:
-	| Promise<TypeScriptClientModule | null>
-	| undefined;
+let tsClientModulePromise: Promise<TypeScriptClientModule | null> | undefined;
 
 async function loadTypeScriptClient(): Promise<TypeScriptClientModule | null> {
 	if (!tsClientModulePromise) {
@@ -44,9 +42,9 @@ const tsLspRunner: RunnerDefinition = {
 			return { status: "skipped", diagnostics: [], semantic: "none" };
 		}
 
-		// When --lens-lsp is active, prefer the unified lsp runner.
+		// When LSP is enabled (not disabled via --no-lsp), prefer the unified lsp runner.
 		// But if LSP service isn't actually available for this file, keep ts fallback.
-		if (ctx.pi.getFlag("lens-lsp") && !ctx.pi.getFlag("no-lsp")) {
+		if (!ctx.pi.getFlag("no-lsp")) {
 			const lspService = getLSPService();
 			const spawned = await lspService.getClientForFile(ctx.filePath);
 			if (spawned) {

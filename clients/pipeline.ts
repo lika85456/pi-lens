@@ -492,7 +492,7 @@ async function syncLspFile(
 	ruffClient: RuffClient,
 	biomeClient: BiomeClient,
 ): Promise<{ completed: boolean; phaseEnded: boolean }> {
-	if (!getFlag("lens-lsp") || getFlag("no-lsp")) {
+	if (getFlag("no-lsp")) {
 		return { completed: true, phaseEnded: false };
 	}
 
@@ -631,7 +631,7 @@ async function resyncLspFile(
 	getFlag: PipelineContext["getFlag"],
 	dbg: PipelineContext["dbg"],
 ): Promise<void> {
-	if (!getFlag("lens-lsp") || getFlag("no-lsp")) return;
+	if (getFlag("no-lsp")) return;
 	if (!needsContentRefresh && lspSyncCompleted) return;
 
 	const limitCheck = exceedsLspSyncLimits(filePath, fileContent);
@@ -655,7 +655,7 @@ async function gatherCascadeDiagnostics(
 	getFlag: PipelineContext["getFlag"],
 	dbg: PipelineContext["dbg"],
 ): Promise<string | undefined> {
-	if (!getFlag("lens-lsp") || getFlag("no-lsp")) return undefined;
+	if (getFlag("no-lsp")) return undefined;
 
 	const MAX_CASCADE_FILES = RUNTIME_CONFIG.pipeline.cascadeMaxFiles;
 	const MAX_DIAGNOSTICS_PER_FILE =

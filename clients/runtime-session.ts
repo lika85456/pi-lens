@@ -120,18 +120,10 @@ function getLanguageInstallHints(
 
 function applyEnvFlags(
 	getFlag: SessionStartDeps["getFlag"],
-	dbg: SessionStartDeps["dbg"],
+	_dbg: SessionStartDeps["dbg"],
 ): void {
-	if (getFlag("auto-install")) {
-		process.env.PI_LENS_AUTO_INSTALL = "1";
-		dbg("session_start: LSP auto-install enabled (PI_LENS_AUTO_INSTALL=1)");
-	} else {
-		delete process.env.PI_LENS_AUTO_INSTALL;
-	}
-
 	if (getFlag("no-lsp-install")) {
 		process.env.PI_LENS_DISABLE_LSP_INSTALL = "1";
-		dbg("session_start: LSP install disabled (PI_LENS_DISABLE_LSP_INSTALL=1)");
 	} else {
 		delete process.env.PI_LENS_DISABLE_LSP_INSTALL;
 	}
@@ -371,64 +363,6 @@ function scheduleStartupScans(
 	});
 }
 
-function runErrorDebtBaseline(
-	deps: Pick<
-		SessionStartDeps,
-		"testRunnerClient" | "cacheManager" | "notify" | "dbg" | "runtime"
-	>,
-	detectedRunner: ReturnType<
-		SessionStartDeps["testRunnerClient"]["detectRunner"]
-	>,
-	analysisRoot: string,
-	allowBootstrapTasks: boolean,
-	getFlag: SessionStartDeps["getFlag"],
-): void {
-	const { testRunnerClient, cacheManager, notify, dbg, runtime } = deps;
-	const errorDebtEnabled = allowBootstrapTasks && getFlag("error-debt");
-	const pendingDebt = cacheManager.readCache<{
-		pendingCheck: boolean;
-		baselineTestsPassed: boolean;
-	}>("errorDebt", analysisRoot);
-
-	if (errorDebtEnabled && detectedRunner && pendingDebt?.data?.pendingCheck) {
-		dbg("session_start: running pending error debt check");
-		const testResult = testRunnerClient.runTestFile(
-			".",
-			analysisRoot,
-			detectedRunner.runner,
-			detectedRunner.config,
-		);
-		const testsPassed = testResult.failed === 0 && !testResult.error;
-		const baselinePassed = pendingDebt.data.baselineTestsPassed;
-
-		if (baselinePassed && !testsPassed) {
-			const msg = `🔴 ERROR DEBT: Tests were passing but now failing (${testResult.failed} failure(s)). Fix before continuing.`;
-			dbg(`session_start ERROR DEBT: ${msg}`);
-			notify(msg, "warning");
-		}
-
-		runtime.errorDebtBaseline = { testsPassed, buildPassed: true };
-		cacheManager.writeCache(
-			"errorDebt",
-			{ pendingCheck: false, baselineTestsPassed: testsPassed },
-			analysisRoot,
-		);
-	} else if (errorDebtEnabled && detectedRunner) {
-		dbg("session_start: establishing fresh error debt baseline");
-		const testResult = testRunnerClient.runTestFile(
-			".",
-			analysisRoot,
-			detectedRunner.runner,
-			detectedRunner.config,
-		);
-		const testsPassed = testResult.failed === 0 && !testResult.error;
-		runtime.errorDebtBaseline = { testsPassed, buildPassed: true };
-		dbg(
-			`session_start error debt baseline: testsPassed=${runtime.errorDebtBaseline.testsPassed}`,
-		);
-	}
-}
-
 export async function handleSessionStart(
 	deps: SessionStartDeps,
 ): Promise<void> {
@@ -469,7 +403,7 @@ export async function handleSessionStart(
 	runtime.resetForSession();
 	dbg(`session_start startup mode: ${startupMode}`);
 
-	if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
+	if (!getFlag("no-lsp")) {
 		resetLSPService();
 		dbg("session_start: LSP service reset");
 		dbg(
@@ -484,7 +418,7 @@ export async function handleSessionStart(
 	if (quickMode) {
 		runtime.projectRoot = cwd;
 		const quickTools: string[] = [];
-		if (getFlag("lens-lsp") && !getFlag("no-lsp")) {
+		if (!getFlag("no-lsp")) {
 			quickTools.push("LSP Service");
 		}
 		log(`Active tools: ${quickTools.join(", ")}`);
@@ -499,7 +433,7 @@ export async function handleSessionStart(
 	}
 
 	const tools: string[] = [];
-	if (getFlag("lens-lsp") && !getFlag("no-lsp")) tools.push("LSP Service");
+	if (!getFlag("no-lsp")) tools.push("LSP Service");
 
 	// Warm tool availability caches off the critical startup path. The previous
 	// version used `setImmediate` + sync `isAvailable()`, which still blocked
@@ -534,7 +468,7 @@ export async function handleSessionStart(
 		);
 	})();
 
-	if (allowBootstrapTasks && getFlag("lens-lsp") && !getFlag("no-lsp")) {
+	if (allowBootstrapTasks && !getFlag("no-lsp")) {
 		const cleaned = cleanStaleTsBuildInfo(ctxCwd ?? process.cwd());
 		if (cleaned.length > 0) {
 			notify(
@@ -569,7 +503,7 @@ export async function handleSessionStart(
 		dbg(`session_start: monorepo analysis root override -> ${analysisRoot}`);
 	}
 
-	const lensLspEnabled = !!getFlag("lens-lsp") && !getFlag("no-lsp");
+	const lensLspEnabled = !!!getFlag("no-lsp");
 	const startupDefaults = getDefaultStartupTools(languageProfile).filter(
 		(tool) => {
 			if (
@@ -668,14 +602,6 @@ export async function handleSessionStart(
 
 	dbg(
 		`session_start: background scans launched (${startupNotes.length} startup note(s))`,
-	);
-
-	runErrorDebtBaseline(
-		deps,
-		detectedRunner,
-		analysisRoot,
-		allowBootstrapTasks,
-		getFlag,
 	);
 
 	if (startupNotes.length > 0) {

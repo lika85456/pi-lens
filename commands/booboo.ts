@@ -561,17 +561,6 @@ export async function handleBooboo(
 				fullSection += "\n";
 			}
 
-			// Only show "All Files" table in verbose mode - it's informational noise
-			if (pi.getFlag("lens-verbose")) {
-				fullSection += `### All Files\n\n| File | MI | Cognitive | Cyclomatic | Nesting | Entropy |\n|------|-----|-----------|------------|---------|--------|\n`;
-				for (const f of results.sort(
-					(a, b) => a.maintainabilityIndex - b.maintainabilityIndex,
-				)) {
-					fullSection += `| ${f.filePath} | ${f.maintainabilityIndex.toFixed(1)} | ${f.cognitiveComplexity} | ${f.cyclomaticComplexity} | ${f.maxNestingDepth} | ${f.codeEntropy.toFixed(2)} |\n`;
-				}
-				fullSection += "\n";
-			}
-
 			if (aiSlopIssues.length > 0) {
 				fullSection += `### AI Slop Indicators\n\n`;
 				for (const issue of aiSlopIssues) {
