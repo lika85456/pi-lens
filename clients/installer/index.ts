@@ -678,6 +678,134 @@ async function verifyToolBinary(binPath: string): Promise<boolean> {
 	});
 }
 
+export type ToolSource =
+	| "global-path"
+	| "npm-global"
+	| "pip-user"
+	| "pi-lens-auto"
+	| "github-release"
+	| "npx-fallback"
+	| "not-installed";
+
+export interface ToolStatus {
+	id: string;
+	name: string;
+	installed: boolean;
+	source: ToolSource;
+	path?: string;
+	version?: string;
+	strategy: "npm" | "pip" | "github";
+}
+
+/**
+ * Get detailed status for all tools
+ */
+export async function getAllToolStatuses(): Promise<ToolStatus[]> {
+	const statuses: ToolStatus[] = [];
+
+	for (const tool of TOOLS) {
+		const status: ToolStatus = {
+			id: tool.id,
+			name: tool.name,
+			installed: false,
+			source: "not-installed",
+			strategy: tool.installStrategy,
+		};
+
+		// 1. Check if in PATH (global)
+		if (await isCommandAvailable(tool.checkCommand, tool.checkArgs)) {
+			status.installed = true;
+			status.source = "global-path";
+			status.path = tool.checkCommand;
+			// Try to get version
+			const versionResult = await new Promise<string>((resolve) => {
+				const proc = spawn(tool.checkCommand, ["--version"], {
+					stdio: ["ignore", "pipe", "pipe"],
+					shell: process.platform === "win32",
+					timeout: 5000,
+				});
+				let out = "";
+				proc.stdout?.on("data", (d) => (out += d));
+				proc.stderr?.on("data", (d) => (out += d));
+				proc.on("exit", () =>
+					resolve(out.trim().split("\n")[0]?.slice(0, 30) || ""),
+				);
+				proc.on("error", () => resolve(""));
+			});
+			status.version = versionResult || undefined;
+			statuses.push(status);
+			continue;
+		}
+
+		// 2. Check npm global
+		if (tool.installStrategy === "npm") {
+			const npmPath = await findNpmGlobalToolPath(tool.binaryName || tool.id);
+			if (npmPath) {
+				status.installed = true;
+				status.source = "npm-global";
+				status.path = npmPath;
+				statuses.push(status);
+				continue;
+			}
+		}
+
+		// 3. Check pip user install
+		if (tool.installStrategy === "pip") {
+			const pipPath = await findPipUserToolPath(tool.binaryName || tool.id);
+			if (pipPath) {
+				status.installed = true;
+				status.source = "pip-user";
+				status.path = pipPath;
+				statuses.push(status);
+				continue;
+			}
+		}
+
+		// 4. Check GitHub releases (~/.pi-lens/bin/)
+		if (tool.installStrategy === "github") {
+			const githubPath = await findGitHubToolPath(tool.binaryName || tool.id);
+			if (githubPath) {
+				status.installed = true;
+				status.source = "github-release";
+				status.path = githubPath;
+				statuses.push(status);
+				continue;
+			}
+		}
+
+		// 5. Check pi-lens auto-install (~/.pi-lens/tools/)
+		const localBase = path.join(
+			TOOLS_DIR,
+			"node_modules",
+			".bin",
+			tool.binaryName || tool.id,
+		);
+		const localPath =
+			process.platform === "win32" ? `${localBase}.cmd` : localBase;
+		try {
+			await fs.access(localPath);
+			if (await verifyToolBinary(localPath)) {
+				status.installed = true;
+				status.source = "pi-lens-auto";
+				status.path = localPath;
+				statuses.push(status);
+				continue;
+			}
+		} catch {
+			// fall through to not-installed
+		}
+
+		// 6. Not installed - will use npx fallback if npm strategy
+		if (tool.installStrategy === "npm") {
+			status.source = "npx-fallback";
+		}
+
+		statuses.push(status);
+	}
+
+	return statuses;
+}
+
 /**
  * Check if a tool is installed (globally or locally)
  */

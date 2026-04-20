@@ -18,7 +18,7 @@ import {
 	evaluateGitGuard,
 	isGitCommitOrPushAttempt,
 } from "./clients/git-guard.js";
-import { ensureTool } from "./clients/installer/index.js";
+import { ensureTool, getAllToolStatuses } from "./clients/installer/index.js";
 import { initLSPConfig } from "./clients/lsp/config.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { captureSnapshot } from "./clients/metrics-history.js";
@@ -343,6 +343,101 @@ export default function (pi: ExtensionAPI) {
 
 			if (slopScoreLine) {
 				lines.push("", slopScoreLine);
+			}
+
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	pi.registerCommand("lens-tools", {
+		description:
+			"Show pi-lens tool installation status: globally installed, auto-installed, or npx fallback. Usage: /lens-tools",
+		handler: async (_args, ctx) => {
+			const statuses = await getAllToolStatuses();
+
+			const bySource = {
+				"global-path": statuses.filter((s) => s.source === "global-path"),
+				"npm-global": statuses.filter((s) => s.source === "npm-global"),
+				"pip-user": statuses.filter((s) => s.source === "pip-user"),
+				"pi-lens-auto": statuses.filter((s) => s.source === "pi-lens-auto"),
+				"github-release": statuses.filter((s) => s.source === "github-release"),
+				"npx-fallback": statuses.filter((s) => s.source === "npx-fallback"),
+				"not-installed": statuses.filter((s) => s.source === "not-installed"),
+			};
+
+			const lines: string[] = [
+				"🔧 PI-LENS TOOLS STATUS",
+				"",
+				`Installed: ${statuses.filter((s) => s.installed).length}/${statuses.length}`,
+			];
+
+			// Global PATH tools
+			if (bySource["global-path"].length > 0) {
+				lines.push("", `📍 Global PATH (${bySource["global-path"].length}):`);
+				for (const tool of bySource["global-path"]) {
+					const version = tool.version ? ` (${tool.version})` : "";
+					lines.push(`  ✓ ${tool.name}${version}`);
+				}
+			}
+
+			// npm global tools
+			if (bySource["npm-global"].length > 0) {
+				lines.push("", `📦 npm global (${bySource["npm-global"].length}):`);
+				for (const tool of bySource["npm-global"]) {
+					lines.push(`  ✓ ${tool.name}`);
+				}
+			}
+
+			// pip user tools
+			if (bySource["pip-user"].length > 0) {
+				lines.push("", `🐍 pip user (${bySource["pip-user"].length}):`);
+				for (const tool of bySource["pip-user"]) {
+					lines.push(`  ✓ ${tool.name}`);
+				}
+			}
+
+			// GitHub releases
+			if (bySource["github-release"].length > 0) {
+				lines.push(
+					"",
+					`⬇️ GitHub releases (${bySource["github-release"].length}):`,
+				);
+				for (const tool of bySource["github-release"]) {
+					lines.push(`  ✓ ${tool.name}`);
+				}
+			}
+
+			// pi-lens auto-installed
+			if (bySource["pi-lens-auto"].length > 0) {
+				lines.push(
+					"",
+					`🤖 Auto-installed (${bySource["pi-lens-auto"].length}):`,
+				);
+				for (const tool of bySource["pi-lens-auto"]) {
+					lines.push(`  ✓ ${tool.name}`);
+				}
+			}
+
+			// npx fallback
+			if (bySource["npx-fallback"].length > 0) {
+				lines.push(
+					"",
+					`📦 npx fallback (${bySource["npx-fallback"].length} - on-demand install):`,
+				);
+				for (const tool of bySource["npx-fallback"]) {
+					lines.push(`  ⬜ ${tool.name}`);
+				}
+			}
+
+			// Not installed (should be empty for npm tools, they'll use npx)
+			const trulyMissing = bySource["not-installed"].filter(
+				(s) => s.strategy !== "npm",
+			);
+			if (trulyMissing.length > 0) {
+				lines.push("", `❌ Missing (${trulyMissing.length}):`);
+				for (const tool of trulyMissing) {
+					lines.push(`  ✗ ${tool.name} (${tool.strategy})`);
+				}
 			}
 
 			ctx.ui.notify(lines.join("\n"), "info");
