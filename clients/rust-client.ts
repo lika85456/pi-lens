@@ -209,7 +209,7 @@ export class RustClient {
 		if (!output.trim()) return [];
 
 		const diags: RustDiagnostic[] = [];
-		const lines = output.split("\n").filter((l) => l.trim());
+		const lines = output.split(/\r?\n/).filter((l) => l.trim());
 
 		for (const line of lines) {
 			try {

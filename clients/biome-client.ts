@@ -568,8 +568,8 @@ export class BiomeClient {
 	}
 
 	private computeDiff(original: string, formatted: string): string {
-		const origLines = original.split("\n");
-		const formLines = formatted.split("\n");
+		const origLines = original.split(/\r?\n/);
+		const formLines = formatted.split(/\r?\n/);
 
 		let changedLines = 0;
 		const changes: string[] = [];

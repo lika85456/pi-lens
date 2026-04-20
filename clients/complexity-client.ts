@@ -213,7 +213,7 @@ export class ComplexityClient {
 		sourceFile: ts.SourceFile;
 	}): FileComplexity {
 		const { absolutePath, content, sourceFile } = parsed;
-		const lines = content.split("\n");
+		const lines = content.split(/\r?\n/);
 
 		// Line counts and function collection
 		const { codeLines, commentLines } = this.countLines(sourceFile, lines);
@@ -393,7 +393,7 @@ export class ComplexityClient {
 			/\/\*\*?\s*(Overview|Summary|Description|Example|Usage)\s*\*?\//i,
 		];
 
-		const lines = sourceText.split("\n");
+		const lines = sourceText.split(/\r?\n/);
 		for (const line of lines) {
 			// Only check comment lines
 			const trimmed = line.trim();
@@ -583,9 +583,10 @@ export class ComplexityClient {
 		let match;
 		while ((match = commentRegex.exec(text)) !== null) {
 			const lineStart = text.lastIndexOf("\n", match.index) + 1;
-			const startLine = text.substring(0, lineStart).split("\n").length - 1;
+			const startLine = text.substring(0, lineStart).split(/\r?\n/).length - 1;
 			const endLine =
-				text.substring(0, match.index + match[0].length).split("\n").length - 1;
+				text.substring(0, match.index + match[0].length).split(/\r?\n/).length -
+				1;
 			for (let i = startLine; i <= endLine; i++) {
 				commentPositions.add(i);
 			}
