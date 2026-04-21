@@ -462,7 +462,7 @@ export function createLspNavigationTool(
 				}
 
 				const allDiagnostics = await lspService.getAllDiagnostics();
-				const result = Array.from(allDiagnostics.entries()).map(([trackedFile, diags]) => ({
+				const result = Array.from(allDiagnostics.entries()).map(([trackedFile, { diags }]) => ({
 					filePath: trackedFile,
 					diagnostics: diags,
 					count: diags.length,

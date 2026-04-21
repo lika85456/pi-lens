@@ -828,14 +828,22 @@ export class LSPService {
 	 * Get all diagnostics across all tracked files (for cascade checking)
 	 */
 	async getAllDiagnostics(): Promise<
-		Map<string, import("./client.js").LSPDiagnostic[]>
+		Map<string, { diags: import("./client.js").LSPDiagnostic[]; ts: number }>
 	> {
-		const all = new Map<string, import("./client.js").LSPDiagnostic[]>();
+		const all = new Map<
+			string,
+			{ diags: import("./client.js").LSPDiagnostic[]; ts: number }
+		>();
 		for (const [_key, client] of this.state.clients) {
 			const clientDiags = client.getAllDiagnostics();
-			for (const [filePath, diags] of clientDiags) {
-				const existing = all.get(filePath) ?? [];
-				all.set(filePath, [...existing, ...diags]);
+			for (const [filePath, entry] of clientDiags) {
+				const existing = all.get(filePath);
+				if (existing) {
+					existing.diags.push(...entry.diags);
+					existing.ts = Math.max(existing.ts, entry.ts);
+				} else {
+					all.set(filePath, { diags: [...entry.diags], ts: entry.ts });
+				}
 			}
 		}
 		return all;

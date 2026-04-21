@@ -139,8 +139,8 @@ export interface LSPClientInfo {
 	};
 	getDiagnostics(filePath: string): LSPDiagnostic[];
 	waitForDiagnostics(filePath: string, timeoutMs?: number): Promise<void>;
-	/** Get all tracked diagnostics (for cascade checking) */
-	getAllDiagnostics(): Map<string, LSPDiagnostic[]>;
+	/** Get all tracked diagnostics with timestamps (for cascade checking) */
+	getAllDiagnostics(): Map<string, { diags: LSPDiagnostic[]; ts: number }>;
 	/** Capability snapshot for workspace diagnostics support */
 	getWorkspaceDiagnosticsSupport(): LSPWorkspaceDiagnosticsSupport;
 	/** Capability snapshot for navigation/edit operations */
@@ -289,6 +289,7 @@ interface LSPClientState {
 	lastError: Error | undefined;
 	readonly connection: MessageConnection;
 	readonly diagnostics: Map<string, LSPDiagnostic[]>;
+	readonly diagnosticTimestamps: Map<string, number>;
 	readonly pendingDiagnostics: Map<string, ReturnType<typeof setTimeout>>;
 	readonly diagnosticEmitter: EventEmitter;
 	readonly documentVersions: Map<string, number>;
@@ -333,6 +334,7 @@ function setupIncomingHandlers(
 
 			const timer = setTimeout(() => {
 				state.diagnostics.set(normalizedPath, newDiags);
+				state.diagnosticTimestamps.set(normalizedPath, Date.now());
 				state.pendingDiagnostics.delete(normalizedPath);
 				state.diagnosticEmitter.emit("diagnostics", normalizedPath);
 			}, DIAGNOSTICS_DEBOUNCE_MS);
@@ -392,7 +394,9 @@ async function clientRequestPullDiagnostics(
 
 		const normalizedPath = normalizeMapKey(filePath);
 		const primaryItems = report.items ?? [];
+		const now = Date.now();
 		state.diagnostics.set(normalizedPath, primaryItems);
+		state.diagnosticTimestamps.set(normalizedPath, now);
 		let totalCount = primaryItems.length;
 
 		if (report.relatedDocuments) {
@@ -402,6 +406,7 @@ async function clientRequestPullDiagnostics(
 				const relatedPath = uriToPath(relatedUri);
 				const relatedItems = related?.items ?? [];
 				state.diagnostics.set(normalizeMapKey(relatedPath), relatedItems);
+				state.diagnosticTimestamps.set(normalizeMapKey(relatedPath), now);
 				totalCount += relatedItems.length;
 			}
 		}
@@ -670,6 +675,7 @@ export async function createLSPClient(options: {
 		lastError: undefined,
 		connection,
 		diagnostics: new Map(),
+		diagnosticTimestamps: new Map(),
 		pendingDiagnostics: new Map(),
 		diagnosticEmitter,
 		documentVersions: new Map(),
@@ -784,7 +790,14 @@ export async function createLSPClient(options: {
 		},
 
 		getAllDiagnostics() {
-			return new Map(state.diagnostics);
+			const result = new Map<string, { diags: LSPDiagnostic[]; ts: number }>();
+			for (const [key, diags] of state.diagnostics) {
+				result.set(key, {
+					diags,
+					ts: state.diagnosticTimestamps.get(key) ?? 0,
+				});
+			}
+			return result;
 		},
 
 		getWorkspaceDiagnosticsSupport() {

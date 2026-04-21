@@ -667,20 +667,26 @@ async function gatherCascadeDiagnostics(
 	const cascadeStart = Date.now();
 
 	try {
+		const CASCADE_TTL_MS = 240_000;
 		const lspService = getLSPService();
 		const allDiags = await lspService.getAllDiagnostics();
 		const normalizedEditedPath = resolveRunnerPath(cwd, filePath);
+		const now = Date.now();
 		let stalePathsSkipped = 0;
 		const otherFileErrors: Array<{
 			file: string;
 			errors: import("./lsp/client.js").LSPDiagnostic[];
 		}> = [];
 
-		for (const [diagPath, diags] of allDiags) {
+		for (const [diagPath, { diags, ts }] of allDiags) {
 			const normalizedDiagPath = resolveRunnerPath(cwd, diagPath);
 			if (normalizeMapKey(normalizedDiagPath) === normalizedEditedPath)
 				continue;
 			if (!nodeFs.existsSync(normalizedDiagPath)) {
+				stalePathsSkipped++;
+				continue;
+			}
+			if (now - ts > CASCADE_TTL_MS) {
 				stalePathsSkipped++;
 				continue;
 			}
