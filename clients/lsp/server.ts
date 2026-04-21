@@ -567,7 +567,6 @@ function dotnetToolCandidates(tool: string): string[] {
 	const home = os.homedir();
 	return [
 		path.join(PI_LENS_BIN_DIR, `${tool}.exe`),
-		path.join(PI_LENS_BIN_DIR, `${tool}.cmd`),
 		path.join(PI_LENS_BIN_DIR, tool),
 		path.join(home, ".dotnet", "tools", `${tool}.exe`),
 		path.join(home, ".dotnet", "tools", tool),
