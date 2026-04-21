@@ -157,12 +157,6 @@ const biomeCheckJsonRunner: RunnerDefinition = {
 	async run(ctx: DispatchContext): Promise<RunnerResult> {
 		const cwd = ctx.cwd || path.dirname(ctx.filePath);
 
-		// Biome does not parse Vue/Svelte files — skip to avoid false parse errors
-		const ext = path.extname(ctx.filePath).toLowerCase();
-		if (ext === ".vue" || ext === ".svelte") {
-			return { status: "skipped", diagnostics: [], semantic: "none" };
-		}
-
 		// Defer to ESLint/oxlint if the project has explicitly configured one —
 		// biome runs as the default linter only when no alternative is present.
 		if (!hasUserBiomeConfig(cwd) && hasAlternateLinter(cwd)) {
