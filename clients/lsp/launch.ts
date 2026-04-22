@@ -27,7 +27,6 @@ export interface LSPProcess {
 
 const isWindows = process.platform === "win32";
 const DEFAULT_STARTUP_FAILURE_WINDOW_MS = 50;
-const WINDOWS_SHELL_STARTUP_FAILURE_WINDOW_MS = 250;
 const WINDOWS_NAV_STARTUP_FAILURE_WINDOW_MS = 500;
 const SESSIONSTART_LOG_DIR = path.join(os.homedir(), ".pi-lens");
 const SESSIONSTART_LOG = path.join(SESSIONSTART_LOG_DIR, "sessionstart.log");

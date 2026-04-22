@@ -627,7 +627,6 @@ export async function dispatchForFile(
 ): Promise<DispatchResult> {
 	const _overallStart = Date.now();
 	const allDiagnostics: Diagnostic[] = [];
-	const _fixed: Diagnostic[] = [];
 	let stopped = false;
 	const runnerLatencies: RunnerLatency[] = [];
 

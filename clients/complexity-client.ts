@@ -363,7 +363,6 @@ export class ComplexityClient {
 	 * Calculate max parameters across all functions
 	 */
 	private calculateMaxParams(functions: FunctionMetrics[]): number {
-		const _maxParams = 0;
 		// We stored function params in the metrics during analysis
 		// For now, estimate based on function length (longer functions often have more params)
 		return Math.min(

@@ -75,7 +75,7 @@ function looksLikeEnvVarName(value: string): boolean {
  * Returns null if no quoted value found.
  */
 function extractQuotedValue(line: string): string | null {
-	// Match content inside quotes after : or = 
+	// Match content inside quotes after : or =
 	const match = line.match(/[:=]\s*["']([^"']+)["']/);
 	return match ? match[1] : null;
 }
@@ -163,7 +163,6 @@ export function scanForSecrets(
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
-		let _matched = false;
 		for (const pattern of SECRET_PATTERNS) {
 			// Reset lastIndex before each test (important for global regex)
 			const regex = new RegExp(pattern.pattern.source, pattern.pattern.flags);
@@ -184,7 +183,6 @@ export function scanForSecrets(
 					line: i + 1,
 					message: pattern.message,
 				});
-				_matched = true;
 				break; // One finding per line
 			}
 		}

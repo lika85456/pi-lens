@@ -22,13 +22,6 @@ import type {
 import { resolvePackagePath } from "./package-root.js";
 import { SgRunner } from "./sg-runner.js";
 
-const _getExtensionDir = () => {
-	if (typeof __dirname !== "undefined") {
-		return __dirname;
-	}
-	return ".";
-};
-
 // --- Client ---
 
 export class AstGrepClient {

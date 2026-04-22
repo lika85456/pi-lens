@@ -43,7 +43,7 @@ const LSP_MAX_FILE_BYTES = RUNTIME_CONFIG.pipeline.lspMaxFileBytes;
 const LSP_MAX_FILE_LINES = RUNTIME_CONFIG.pipeline.lspMaxFileLines;
 
 function exceedsLspSyncLimits(
-	filePath: string,
+	_filePath: string,
 	content: string,
 ): {
 	tooLarge: boolean;
@@ -495,11 +495,11 @@ async function tryRubocopFix(filePath: string, cwd: string): Promise<number> {
 async function syncLspFile(
 	filePath: string,
 	fileContent: string,
-	cwd: string,
+	_cwd: string,
 	getFlag: PipelineContext["getFlag"],
 	dbg: PipelineContext["dbg"],
-	ruffClient: RuffClient,
-	biomeClient: BiomeClient,
+	_ruffClient: RuffClient,
+	_biomeClient: BiomeClient,
 ): Promise<{ completed: boolean; phaseEnded: boolean }> {
 	if (getFlag("no-lsp")) {
 		return { completed: true, phaseEnded: false };

@@ -18,12 +18,9 @@ import {
 	evaluateGitGuard,
 	isGitCommitOrPushAttempt,
 } from "./clients/git-guard.js";
-import { ensureTool, getAllToolStatuses } from "./clients/installer/index.js";
+import { getAllToolStatuses } from "./clients/installer/index.js";
 import { initLSPConfig } from "./clients/lsp/config.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
-import { captureSnapshot } from "./clients/metrics-history.js";
-import { findSimilarFunctions } from "./clients/project-index.js";
-
 import {
 	consumeSessionStartGuidance,
 	consumeTurnEndFindings,
@@ -36,13 +33,6 @@ import { handleBooboo } from "./commands/booboo.js";
 import { createAstGrepReplaceTool } from "./tools/ast-grep-replace.js";
 import { createAstGrepSearchTool } from "./tools/ast-grep-search.js";
 import { createLspNavigationTool } from "./tools/lsp-navigation.js";
-
-const _getExtensionDir = () => {
-	if (typeof __dirname !== "undefined") {
-		return __dirname;
-	}
-	return ".";
-};
 
 const DEBUG_LOG_DIR = path.join(os.homedir(), ".pi-lens");
 const DEBUG_LOG = path.join(DEBUG_LOG_DIR, "sessionstart.log");
@@ -457,16 +447,6 @@ export default function (pi: ExtensionAPI) {
 	// See tools/ast-grep-search.ts, tools/ast-grep-replace.ts, tools/lsp-navigation.ts
 
 	// Runtime state is managed by RuntimeCoordinator.
-
-	// Delta baselines: store pre-write diagnostics to diff against post-write
-	const _astGrepBaselines = new Map<
-		string,
-		import("./clients/ast-grep-types.js").AstGrepDiagnostic[]
-	>();
-	const _biomeBaselines = new Map<
-		string,
-		import("./clients/biome-client.js").BiomeDiagnostic[]
-	>();
 
 	// Project rules scan result and per-turn state live in RuntimeCoordinator.
 

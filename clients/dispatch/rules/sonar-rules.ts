@@ -34,7 +34,7 @@ function createSourceFile(filePath: string, content: string): ts.SourceFile {
 }
 
 function makeD(
-	id: string,
+	_id: string,
 	rule: string,
 	filePath: string,
 	line: number,

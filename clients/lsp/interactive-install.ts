@@ -309,8 +309,7 @@ function isAutoInstallEnabled(): boolean {
  * - "manual": can't auto-install — print the command and return false
  */
 async function installTool(config: LanguageConfig): Promise<boolean> {
-	const { toolId, toolName, installCommand, packageName, installStrategy } =
-		config;
+	const { installCommand, packageName, installStrategy } = config;
 
 	if (installStrategy === "manual") {
 		return false;
@@ -422,6 +421,3 @@ export function getInstallStrategy(
 export function supportsInteractiveInstall(language: string): boolean {
 	return language in COMMON_LANGUAGES;
 }
-
-
-

@@ -8,8 +8,8 @@
  * - Request/response handling
  */
 
-import { EventEmitter } from "node:events";
 import { spawn as nodeSpawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { pathToFileURL } from "node:url";
 import type { MessageConnection } from "vscode-jsonrpc";
 import {
@@ -348,17 +348,15 @@ function setupIncomingHandlers(
 	]);
 	state.connection.onRequest("client/registerCapability", async () => {});
 	state.connection.onRequest("client/unregisterCapability", async () => {});
-	state.connection.onRequest(
-		"workspace/configuration",
-		async () => [initialization ?? {}],
-	);
+	state.connection.onRequest("workspace/configuration", async () => [
+		initialization ?? {},
+	]);
 	state.connection.onRequest("window/workDoneProgress/create", async () => {});
 }
 
 function setupConnectionLifecycle(state: LSPClientState): void {
 	state.connection.onError(([error]: [Error, ...unknown[]]) => {
-		state.lastError =
-			error instanceof Error ? error : new Error(String(error));
+		state.lastError = error instanceof Error ? error : new Error(String(error));
 		state.isConnected = false;
 		state.isDestroyed = true;
 		disposeClientConnection(state);
@@ -370,7 +368,7 @@ function setupConnectionLifecycle(state: LSPClientState): void {
 		disposeClientConnection(state);
 	});
 
-	state.lspProcess.process.on("exit", (code) => {
+	state.lspProcess.process.on("exit", (_code) => {
 		state.isConnected = false;
 		state.isDestroyed = true;
 		disposeClientConnection(state);
@@ -477,7 +475,10 @@ async function handleNotifyOpen(
 	const uri = pathToFileURL(filePath).href;
 	const normalizedPath = normalizeMapKey(filePath);
 
-	if (state.openDocuments.has(normalizedPath) || state.pendingOpens.has(normalizedPath)) {
+	if (
+		state.openDocuments.has(normalizedPath) ||
+		state.pendingOpens.has(normalizedPath)
+	) {
 		const version = (state.documentVersions.get(normalizedPath) ?? 0) + 1;
 		state.documentVersions.set(normalizedPath, version);
 		await safeSendNotification(state.connection, "textDocument/didChange", {
@@ -613,11 +614,17 @@ export async function createLSPClient(options: {
 		if (startupState.stderr.length >= 4096) return;
 		startupState.stderr += chunk.toString();
 	};
-	const onProcessExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+	const onProcessExit = (
+		code: number | null,
+		signal: NodeJS.Signals | null,
+	): void => {
 		startupState.exitCode = code;
 		startupState.exitSignal = signal;
 	};
-	const onProcessClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+	const onProcessClose = (
+		code: number | null,
+		signal: NodeJS.Signals | null,
+	): void => {
 		startupState.closeCode = code;
 		startupState.closeSignal = signal;
 	};
@@ -635,7 +642,7 @@ export async function createLSPClient(options: {
 	// vscode-jsonrpc covers stdin/stdout during the connection lifetime but
 	// removes its listeners on dispose(). Our permanent listeners cover the gap.
 	const streamErrorHandler =
-		(label: string) => (err: Error & { code?: string }) => {
+		(_label: string) => (err: Error & { code?: string }) => {
 			if (
 				err.code === "ERR_STREAM_DESTROYED" ||
 				err.code === "ERR_STREAM_WRITE_AFTER_END" ||
@@ -682,7 +689,8 @@ export async function createLSPClient(options: {
 		openDocuments: new Set(),
 		pendingOpens: new Set(),
 		// these are filled in after initialize — cast to avoid two-phase init
-		workspaceDiagnosticsSupport: undefined as unknown as LSPWorkspaceDiagnosticsSupport,
+		workspaceDiagnosticsSupport:
+			undefined as unknown as LSPWorkspaceDiagnosticsSupport,
 		operationSupport: undefined as unknown as LSPOperationSupport,
 		serverId,
 		root,
@@ -699,7 +707,9 @@ export async function createLSPClient(options: {
 			safeSendRequest(connection, "initialize", {
 				processId: process.pid,
 				rootUri: pathToFileURL(root).href,
-				workspaceFolders: [{ name: "workspace", uri: pathToFileURL(root).href }],
+				workspaceFolders: [
+					{ name: "workspace", uri: pathToFileURL(root).href },
+				],
 				capabilities: {
 					window: { workDoneProgress: true },
 					workspace: {
@@ -758,8 +768,9 @@ export async function createLSPClient(options: {
 		);
 	}
 
-	(state as { workspaceDiagnosticsSupport: LSPWorkspaceDiagnosticsSupport }).workspaceDiagnosticsSupport =
-		detectWorkspaceDiagnosticsSupport(initResult);
+	(
+		state as { workspaceDiagnosticsSupport: LSPWorkspaceDiagnosticsSupport }
+	).workspaceDiagnosticsSupport = detectWorkspaceDiagnosticsSupport(initResult);
 	(state as { operationSupport: LSPOperationSupport }).operationSupport =
 		detectOperationSupport(initResult);
 
@@ -808,7 +819,10 @@ export async function createLSPClient(options: {
 			return state.operationSupport;
 		},
 
-		async waitForDiagnostics(filePath, timeoutMs = DIAGNOSTICS_WAIT_TIMEOUT_MS) {
+		async waitForDiagnostics(
+			filePath,
+			timeoutMs = DIAGNOSTICS_WAIT_TIMEOUT_MS,
+		) {
 			return clientWaitForDiagnostics(state, filePath, timeoutMs);
 		},
 
@@ -816,7 +830,10 @@ export async function createLSPClient(options: {
 			const result = await navRequest<LSPLocation | LSPLocation[]>(
 				state,
 				"textDocument/definition",
-				{ textDocument: { uri: pathToFileURL(filePath).href }, position: { line, character } },
+				{
+					textDocument: { uri: pathToFileURL(filePath).href },
+					position: { line, character },
+				},
 			);
 			if (!result) return [];
 			return Array.isArray(result) ? result : [result];
@@ -826,17 +843,20 @@ export async function createLSPClient(options: {
 			const result = await navRequest<LSPLocation[]>(
 				state,
 				"textDocument/references",
-				{ textDocument: { uri: pathToFileURL(filePath).href }, position: { line, character }, context: { includeDeclaration } },
+				{
+					textDocument: { uri: pathToFileURL(filePath).href },
+					position: { line, character },
+					context: { includeDeclaration },
+				},
 			);
 			return result ?? [];
 		},
 
 		async hover(filePath, line, character) {
-			const result = await navRequest<LSPHover>(
-				state,
-				"textDocument/hover",
-				{ textDocument: { uri: pathToFileURL(filePath).href }, position: { line, character } },
-			);
+			const result = await navRequest<LSPHover>(state, "textDocument/hover", {
+				textDocument: { uri: pathToFileURL(filePath).href },
+				position: { line, character },
+			});
 			return result ?? null;
 		},
 
@@ -844,7 +864,10 @@ export async function createLSPClient(options: {
 			const result = await navRequest<LSPSignatureHelp>(
 				state,
 				"textDocument/signatureHelp",
-				{ textDocument: { uri: pathToFileURL(filePath).href }, position: { line, character } },
+				{
+					textDocument: { uri: pathToFileURL(filePath).href },
+					position: { line, character },
+				},
 			);
 			return result ?? null;
 		},
@@ -881,8 +904,7 @@ export async function createLSPClient(options: {
 						end: { line: endLine, character: endCharacter },
 					},
 					context: {
-						diagnostics:
-							state.diagnostics.get(normalizeMapKey(filePath)) ?? [],
+						diagnostics: state.diagnostics.get(normalizeMapKey(filePath)) ?? [],
 					},
 				},
 			);
@@ -897,7 +919,11 @@ export async function createLSPClient(options: {
 			const result = await navRequest<LSPWorkspaceEdit>(
 				state,
 				"textDocument/rename",
-				{ textDocument: { uri: pathToFileURL(filePath).href }, position: { line, character }, newName },
+				{
+					textDocument: { uri: pathToFileURL(filePath).href },
+					position: { line, character },
+					newName,
+				},
 			);
 			return result ?? null;
 		},
@@ -906,7 +932,10 @@ export async function createLSPClient(options: {
 			const result = await navRequest<LSPLocation | LSPLocation[]>(
 				state,
 				"textDocument/implementation",
-				{ textDocument: { uri: pathToFileURL(filePath).href }, position: { line, character } },
+				{
+					textDocument: { uri: pathToFileURL(filePath).href },
+					position: { line, character },
+				},
 			);
 			if (!result) return [];
 			return Array.isArray(result) ? result : [result];
@@ -1007,23 +1036,6 @@ function isStreamError(err: unknown): boolean {
 }
 
 // Using shared path utilities from path-utils.ts
-
-function severityFromNumber(
-	sev: number,
-): "error" | "warning" | "info" | "hint" {
-	switch (sev) {
-		case 1:
-			return "error";
-		case 2:
-			return "warning";
-		case 3:
-			return "info";
-		case 4:
-			return "hint";
-		default:
-			return "error";
-	}
-}
 
 async function withTimeout<T>(
 	promise: Promise<T>,

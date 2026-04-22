@@ -22,7 +22,6 @@ import {
 } from "../clients/project-index.js";
 import {
 	detectProjectMetadata,
-	formatProjectMetadata,
 	getAvailableCommands,
 } from "../clients/project-metadata.js";
 import { RunnerTracker } from "../clients/runner-tracker.js";
@@ -78,25 +77,6 @@ function shouldIncludeFile(filePath: string): boolean {
 	return !isTestFile(filePath);
 }
 
-/** Standard test file glob exclusions for CLI tools */
-const _TEST_FILE_EXCLUDES = [
-	"!**/*.test.ts",
-	"!**/*.test.tsx",
-	"!**/*.test.js",
-	"!**/*.test.jsx",
-	"!**/*.spec.ts",
-	"!**/*.spec.tsx",
-	"!**/*.spec.js",
-	"!**/*.spec.jsx",
-	"!**/*.poc.test.ts",
-	"!**/*.poc.test.tsx",
-	"!**/test-utils.ts",
-	"!**/test-*.ts",
-	"!**/__tests__/**",
-	"!**/tests/**",
-	"!**/test/**",
-];
-
 export async function handleBooboo(
 	args: string,
 	ctx: ExtensionContext,
@@ -124,7 +104,6 @@ export async function handleBooboo(
 
 	// Detect project metadata for richer reporting
 	const projectMeta = detectProjectMetadata(targetPath);
-	const _metaDisplay = formatProjectMetadata(projectMeta);
 
 	// No noisy notification at start - just run the review silently
 
@@ -1493,7 +1472,7 @@ ${fullReport.join("\n")}`;
 	if (summaryItems.length === 0) {
 		ctx.ui.notify("✓ Code review clean", "info");
 	} else {
-		const { totalIssues, fixableCount, refactorNeeded } = jsonReport.meta;
+		const { totalIssues } = jsonReport.meta;
 
 		// Build runner lines for terminal output
 		const runnerLines = tracker

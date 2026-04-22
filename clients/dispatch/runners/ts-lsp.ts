@@ -59,55 +59,6 @@ const tsLspRunner: RunnerDefinition = {
 };
 
 /**
- * Run with new LSP client (Phase 3)
- */
-async function runWithLSPClient(ctx: DispatchContext): Promise<RunnerResult> {
-	const diagnosticPath = resolveRunnerPath(ctx.cwd, ctx.filePath);
-	const lspService = getLSPService();
-
-	// Check if we have LSP available for this file
-	const hasLSP = await lspService.hasLSP(ctx.filePath);
-	if (!hasLSP) {
-		return { status: "skipped", diagnostics: [], semantic: "none" };
-	}
-
-	// Read file content
-	const content = readFileContent(ctx.filePath);
-	if (!content) {
-		return { status: "skipped", diagnostics: [], semantic: "none" };
-	}
-
-	// Open file in LSP and get diagnostics
-	await lspService.openFile(ctx.filePath, content);
-	// getDiagnostics() internally calls waitForDiagnostics() with bus
-	// subscription + 150ms debounce + 3s timeout
-	const lspDiags = await lspService.getDiagnostics(ctx.filePath);
-
-	// Convert LSP diagnostics to our format
-	// Defensive: filter out malformed diagnostics that may lack range
-	const diagnostics: Diagnostic[] = lspDiags
-		.filter((d) => d.range?.start?.line !== undefined)
-		.map((d) => ({
-			id: `ts-lsp:${d.code ?? "unknown"}:${d.range.start.line}`,
-			message: d.message,
-			filePath: diagnosticPath,
-			line: d.range.start.line + 1,
-			column: d.range.start.character + 1,
-			severity:
-				d.severity === 1 ? "error" : d.severity === 2 ? "warning" : "info",
-			semantic: d.severity === 1 ? "blocking" : "warning",
-			tool: "ts-lsp",
-			code: String(d.code ?? ""),
-		}));
-
-	return {
-		status: "failed",
-		diagnostics,
-		semantic: "blocking",
-	};
-}
-
-/**
  * Run with deprecated built-in TypeScriptClient
  * @deprecated Use runWithLSPClient instead
  */

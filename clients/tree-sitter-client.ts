@@ -51,9 +51,6 @@ interface TreeSitterParserInstance {
 	parse: (content: string) => TreeSitterTree;
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: Module type
-const _LanguageLoader: any = null;
-
 // --- WASM Grammar Mapping ---
 
 const LANGUAGE_TO_GRAMMAR: Record<string, string> = {
@@ -700,7 +697,10 @@ export class TreeSitterClient {
 		postFilter?: string;
 		postFilterParams?: unknown;
 	} | null> {
-		const cacheKey = this.getQueryCacheKey(`raw:${queryId}:${queryStr}`, languageId);
+		const cacheKey = this.getQueryCacheKey(
+			`raw:${queryId}:${queryStr}`,
+			languageId,
+		);
 
 		if (this.queryCache.has(cacheKey)) {
 			return this.queryCache.get(cacheKey);
@@ -770,8 +770,7 @@ export class TreeSitterClient {
 				if (!bodyNode) return true;
 				const bodyText = bodyNode.text;
 				return (
-					bodyText.includes("await") &&
-					/\.\s*(then|catch)\s*\(/.test(bodyText)
+					bodyText.includes("await") && /\.\s*(then|catch)\s*\(/.test(bodyText)
 				);
 			}
 			case "no_super_call": {
@@ -839,10 +838,14 @@ export class TreeSitterClient {
 				]);
 				if (!funcNode) return false;
 				const signature =
-					String(funcNode.text ?? "").split("{", 1)[0]?.trim() ?? "";
+					String(funcNode.text ?? "")
+						.split("{", 1)[0]
+						?.trim() ?? "";
 				const returnPart =
 					signature
-						.match(/func\s*(?:\([^)]*\)\s*)?[A-Za-z_]\w*\s*\([^)]*\)\s*(.*)$/s)?.[1]
+						.match(
+							/func\s*(?:\([^)]*\)\s*)?[A-Za-z_]\w*\s*\([^)]*\)\s*(.*)$/s,
+						)?.[1]
 						?.trim() ?? "";
 				return returnPart.length > 0 && /\berror\b/.test(returnPart);
 			}
@@ -899,10 +902,13 @@ export class TreeSitterClient {
 					/^(md5|sha1)$/i.test(captures.ALG?.text ?? "")
 				);
 			case "ts_insecure_random_source": {
-				if (captures.OBJ?.text !== "Math" || captures.FN?.text !== "random") return false;
+				if (captures.OBJ?.text !== "Math" || captures.FN?.text !== "random")
+					return false;
 				// Only flag when assigned to a security-sensitive variable name
 				const varName = captures.VAR?.text ?? "";
-				return /token|secret|password|key|nonce|salt|csrf|auth|session|credential|hash|otp|pin/i.test(varName);
+				return /token|secret|password|key|nonce|salt|csrf|auth|session|credential|hash|otp|pin/i.test(
+					varName,
+				);
 			}
 			case "ts_detached_async_call":
 				return /(Async$|fetch$|request$)/.test(captures.FN?.text ?? "");
@@ -1120,18 +1126,6 @@ export class TreeSitterClient {
 		return mapping[languageId] || [];
 	}
 }
-
-// --- Pattern Node Types ---
-
-type PatternNode =
-	| {
-			kind: "literal";
-			nodeType: string;
-			text?: string;
-			children: PatternNode[];
-	  }
-	| { kind: "single"; name: string }
-	| { kind: "variadic"; name: string };
 
 // --- Simplified Pattern Search (regex fallback) ---
 

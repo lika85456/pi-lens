@@ -28,17 +28,6 @@ export interface BiomeDiagnostic {
 	fixable: boolean;
 }
 
-interface BiomeJsonDiagnostic {
-	message: string;
-	severity: "error" | "warning" | "info" | "hint";
-	category: string;
-	span?: {
-		start: { line: number; column: number };
-		end: { line: number; column: number };
-	};
-	advice?: Array<{ message: string }>;
-}
-
 // --- Client ---
 
 export class BiomeClient {

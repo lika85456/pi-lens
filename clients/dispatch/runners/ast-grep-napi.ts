@@ -358,7 +358,7 @@ function getCandidatesForAll(
 function executeStructuredRule(
 	rootNode: any,
 	condition: YamlRuleCondition,
-	matches: unknown[] = [],
+	_matches: unknown[] = [],
 	depth = 0,
 ): unknown[] {
 	return findMatchingNodes(rootNode, condition, depth);
