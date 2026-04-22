@@ -16,8 +16,11 @@
  */
 
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { isExcludedDirName } from "./file-utils.js";
+
+const _require = createRequire(import.meta.url);
 import { resolvePackagePath } from "./package-root.js";
 import { TreeCache } from "./tree-sitter-cache.js";
 import { TreeSitterNavigator } from "./tree-sitter-navigator.js";
@@ -177,25 +180,17 @@ export class TreeSitterClient {
 				// Store Language loader from module (not from Parser)
 				this.LanguageLoader = mod.Language;
 
-				// Log what we're trying to load
-				const wasmPath = resolvePackagePath(
-					import.meta.url,
-					"node_modules",
-					"web-tree-sitter",
-					"tree-sitter.wasm",
-				);
+				// Use Node's module resolver so the wasm is found regardless of
+				// whether the consumer uses hoisted (pnpm/npm v7+) or nested installs.
+				const wasmPath = _require.resolve("web-tree-sitter/tree-sitter.wasm");
+				const wasmDir = path.dirname(wasmPath);
 				this.dbg(
 					`Looking for WASM at: ${wasmPath}, exists: ${fs.existsSync(wasmPath)}`,
 				);
 
 				await ParserClass.init({
 					locateFile: (scriptName: string) => {
-						const fullPath = resolvePackagePath(
-							import.meta.url,
-							"node_modules",
-							"web-tree-sitter",
-							scriptName,
-						);
+						const fullPath = path.join(wasmDir, scriptName);
 						this.dbg(`locateFile: ${scriptName} -> ${fullPath}`);
 						return fullPath;
 					},

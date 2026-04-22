@@ -217,6 +217,29 @@ function _findBinaryInNpmGlobal(command: string): string | undefined {
 }
 
 /**
+ * Validate that a .cmd shim's target JS/script exists before attempting to
+ * spawn it. npm-generated .cmd files reference the actual script via a path
+ * like `"%~dp0\..\yaml-language-server\bin\yaml-language-server"`. If that
+ * target is missing the shim will exit immediately with code 1 after a 500ms
+ * startup window — pre-checking avoids the delay.
+ * Returns true if the shim is valid (or we can't determine), false if the
+ * target is definitively missing.
+ */
+function isCmdShimValid(cmdPath: string): boolean {
+	try {
+		const content = fs.readFileSync(cmdPath, "utf-8");
+		// npm cmd shim pattern: "%~dp0\..\<relpath>" or "%~dp0/<relpath>"
+		const match = content.match(/"%~dp0[/\\]\.\.[/\\]([\w./@\\-]+\.(?:mjs|cjs|js))"/i);
+		if (!match) return true; // non-npm shim — let it through
+		const relPath = match[1].replace(/[/\\]/g, path.sep);
+		const target = path.resolve(path.dirname(cmdPath), "..", relPath);
+		return fs.existsSync(target);
+	} catch {
+		return true; // can't read — be permissive
+	}
+}
+
+/**
  * On Windows, npm creates .ps1 wrappers that hang indefinitely when PowerShell
  * execution policy is Restricted or AllSigned. Bypass by preferring the .cmd
  * sibling (runs under cmd.exe, no execution policy) or falling back to direct
@@ -474,6 +497,17 @@ export async function launchLSP(
 					/\.(cmd|bat)$/i.test(spawnCommand) ||
 					!/\.(exe|cmd|bat)$/i.test(spawnCommand));
 		}
+	}
+
+	// Pre-validate .cmd shims: if the underlying script is missing the shim will
+	// exit with code 1 after a 500ms wait. Catching this early avoids the delay.
+	if (isWindows && /\.(cmd|bat)$/i.test(spawnCommand) && !isCmdShimValid(spawnCommand)) {
+		logSessionStart(
+			`lsp cmd-shim-invalid: ${spawnCommand} target missing — skipping candidate`,
+		);
+		throw new Error(
+			`LSP .cmd shim target not found: ${spawnCommand}. The npm package may not be installed.`,
+		);
 	}
 
 	// P0 FIX: Never spawn .ps1 wrappers on Windows — they hang when PowerShell
