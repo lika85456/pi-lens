@@ -8,7 +8,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { appendFile, mkdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1480,6 +1480,18 @@ export const VueServer: LSPServerInfo = {
 	),
 	async spawn(root, options) {
 		const tsserverPath = await findTsserverPath(root, options?.allowInstall);
+
+		// Vue Language Server needs Vue dependencies installed to resolve types.
+		// Without node_modules, navigation requests will timeout or return empty.
+		const hasPackageJson = existsSync(path.join(root, "package.json"));
+		const hasNodeModules = existsSync(path.join(root, "node_modules"));
+		if (hasPackageJson && !hasNodeModules) {
+			logSessionStart(
+				`lsp vue: node_modules missing in ${root} — Vue navigation may be limited. ` +
+					`Run: npm install (or pnpm/yarn install) in this project.`,
+			);
+		}
+
 		const proc = await resolveAndLaunch(
 			{
 				candidates: nodeBinCandidates(root, "vue-language-server"),
