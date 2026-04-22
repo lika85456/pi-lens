@@ -270,6 +270,7 @@ export class LSPService {
 		}
 		if (typeof brokenUntil === "number" && brokenUntil <= Date.now()) {
 			this.state.broken.delete(key);
+			if (isOptionalServer) this.optionalDisabled.delete(key);
 		}
 
 		const inFlight = this.state.inFlight.get(key);
@@ -536,11 +537,22 @@ export class LSPService {
 			return [];
 		}
 
+		// TypeScript LSP pushes two diagnostic batches: syntactic first (fast, often
+		// empty), semantic second (~500ms later). If the first wait resolves quickly
+		// with no results, do a second short wait to catch the semantic batch.
+		const SEMANTIC_SETTLE_THRESHOLD_MS = 200;
+		const SEMANTIC_SETTLE_WAIT_MS = 800;
+
 		const perServer = await Promise.all(
 			spawned.map(async (entry) => {
 				const waitStart = Date.now();
 				await entry.client.waitForDiagnostics(filePath, 5000);
-				const diagnostics = entry.client.getDiagnostics(filePath);
+				let diagnostics = entry.client.getDiagnostics(filePath);
+				const firstWaitMs = Date.now() - waitStart;
+				if (diagnostics.length === 0 && firstWaitMs < SEMANTIC_SETTLE_THRESHOLD_MS) {
+					await entry.client.waitForDiagnostics(filePath, SEMANTIC_SETTLE_WAIT_MS);
+					diagnostics = entry.client.getDiagnostics(filePath);
+				}
 				return {
 					serverId: entry.info.id,
 					waitMs: Date.now() - waitStart,
@@ -572,7 +584,7 @@ export class LSPService {
 		const serversWithDiagnostics = perServer.filter(
 			(entry) => entry.diagnosticCount > 0,
 		).length;
-		const failureKind = merged.length === 0 ? "empty_result" : "success";
+		const failureKind = merged.length === 0 ? "ok_empty" : "success";
 
 		logLatency({
 			type: "phase",
@@ -586,7 +598,7 @@ export class LSPService {
 				mergedCount: merged.length,
 				dedupDroppedCount: rawCount - merged.length,
 				failureKind,
-				health: failureKind === "success" ? "ok" : "empty_result",
+				health: failureKind === "success" ? "ok" : "ok_empty",
 				servers: perServer.map((entry) => ({
 					id: entry.serverId,
 					waitMs: entry.waitMs,

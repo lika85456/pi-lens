@@ -35,6 +35,36 @@ let _sharedClient: TreeSitterClient | null = null;
 const blastCooldownByFile = new Map<string, number>();
 const BLAST_COOLDOWN_MS = 5_000;
 
+function runBlastRadiusInBackground(
+	cwd: string,
+	filePath: string,
+	languageId: string,
+	facts: DispatchContext["facts"],
+): void {
+	// Fire-and-forget: graph construction is expensive (~3s) and is enrichment-only.
+	// Running it in background keeps the dispatch result fast.
+	void (async () => {
+		try {
+			const graph = await buildOrUpdateGraph(cwd, [filePath], facts);
+			const impact = computeImpactCascade(graph, filePath);
+			logTreeSitter({
+				phase: "blast_radius",
+				filePath,
+				languageId,
+				metadata: {
+					changedSymbols: impact.changedSymbols,
+					neighborFiles: impact.neighborFiles,
+					directImporters: impact.directImporters,
+					directCallers: impact.directCallers,
+					riskFlags: impact.riskFlags,
+				},
+			});
+		} catch {
+			/* best-effort enrichment */
+		}
+	})();
+}
+
 interface EntityQueryDef {
 	id: string;
 	kind: string;
@@ -534,24 +564,7 @@ const treeSitterRunner: RunnerDefinition = {
 						});
 					} else {
 						blastCooldownByFile.set(filePath, Date.now());
-						const graph = await buildOrUpdateGraph(
-							ctx.cwd,
-							[filePath],
-							ctx.facts,
-						);
-						const impact = computeImpactCascade(graph, filePath);
-						logTreeSitter({
-							phase: "blast_radius",
-							filePath,
-							languageId,
-							metadata: {
-								changedSymbols: impact.changedSymbols,
-								neighborFiles: impact.neighborFiles,
-								directImporters: impact.directImporters,
-								directCallers: impact.directCallers,
-								riskFlags: impact.riskFlags,
-							},
-						});
+						runBlastRadiusInBackground(ctx.cwd, filePath, languageId, ctx.facts);
 					}
 				}
 			} catch {
@@ -612,24 +625,7 @@ const treeSitterRunner: RunnerDefinition = {
 					});
 				} else {
 					blastCooldownByFile.set(filePath, Date.now());
-					const graph = await buildOrUpdateGraph(
-						ctx.cwd,
-						[filePath],
-						ctx.facts,
-					);
-					const impact = computeImpactCascade(graph, filePath);
-					logTreeSitter({
-						phase: "blast_radius",
-						filePath,
-						languageId,
-						metadata: {
-							changedSymbols: impact.changedSymbols,
-							neighborFiles: impact.neighborFiles,
-							directImporters: impact.directImporters,
-							directCallers: impact.directCallers,
-							riskFlags: impact.riskFlags,
-						},
-					});
+					runBlastRadiusInBackground(ctx.cwd, filePath, languageId, ctx.facts);
 				}
 			}
 		} catch {

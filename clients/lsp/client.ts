@@ -282,7 +282,7 @@ function installCrashGuard(): void {
 
 // --- Client State + Module-level helpers ---
 
-interface LSPClientState {
+export interface LSPClientState {
 	isConnected: boolean;
 	isDestroyed: boolean;
 	connectionDisposed: boolean;
@@ -416,7 +416,7 @@ async function clientRequestPullDiagnostics(
 	}
 }
 
-async function clientWaitForDiagnostics(
+export async function clientWaitForDiagnostics(
 	state: LSPClientState,
 	filePath: string,
 	timeoutMs: number,
@@ -465,7 +465,7 @@ async function clientWaitForDiagnostics(
 	});
 }
 
-async function handleNotifyOpen(
+export async function handleNotifyOpen(
 	state: LSPClientState,
 	filePath: string,
 	content: string,
@@ -509,7 +509,7 @@ async function handleNotifyOpen(
 	state.openDocuments.add(normalizedPath);
 }
 
-async function handleNotifyChange(
+export async function handleNotifyChange(
 	state: LSPClientState,
 	filePath: string,
 	content: string,
