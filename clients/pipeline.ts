@@ -27,6 +27,7 @@ import {
 } from "./dispatch/runner-context.js";
 import type { PiAgentAPI } from "./dispatch/types.js";
 import { detectFileKind, getFileKindLabel } from "./file-kinds.js";
+import { detectFileChangedAfterCommand } from "./file-utils.js";
 import type { FormatService } from "./format-service.js";
 import { ensureTool } from "./installer/index.js";
 import { logLatency } from "./latency-logger.js";
@@ -317,37 +318,6 @@ function findRubocopCommand(cwd: string): { cmd: string; args: string[] } {
 		} catch {}
 	}
 	return { cmd: "rubocop", args: [] };
-}
-
-async function detectFileChangedAfterCommand(
-	filePath: string,
-	command: string,
-	args: string[],
-	cwd: string,
-	ignoreStatuses: number[] = [],
-): Promise<number> {
-	let before = "";
-	try {
-		before = nodeFs.readFileSync(filePath, "utf-8");
-	} catch {
-		return 0;
-	}
-
-	const result = await safeSpawnAsync(command, args, {
-		timeout: 30000,
-		cwd,
-	});
-	if (result.error) return 0;
-	if (result.status !== 0 && !ignoreStatuses.includes(result.status ?? -1)) {
-		return 0;
-	}
-
-	try {
-		const after = nodeFs.readFileSync(filePath, "utf-8");
-		return before !== after ? 1 : 0;
-	} catch {
-		return 0;
-	}
 }
 
 /**
