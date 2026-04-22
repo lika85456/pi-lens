@@ -936,7 +936,7 @@ export async function runPipeline(
 		output += `\n\n✅ Auto-fixed ${fixedCount} issue(s)${detail}`;
 	}
 	if (formatChanged || fixedCount > 0) {
-		output += `\n\n⚠️ **File modified by auto-format/fix. Re-read before next edit.**`;
+		output += `\n\n⚠️ **File was modified by auto-format/fix. You MUST re-read the file before making any further edits — the content on disk has changed (whitespace, indentation, quotes, or code). Editing from memory will produce mismatches.**`;
 	}
 	phase.end("dispatch_lint", {
 		hasOutput: !!dispatchResult.output,

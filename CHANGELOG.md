@@ -5,6 +5,7 @@ All notable changes to pi-lens will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- **Stronger auto-format/fix re-read warning** — message now explicitly tells the agent it MUST re-read the file before any further edits, listing what may have changed (whitespace, indentation, quotes, code)
 - **Turn-end findings cap tightened** — reduced `maxLines` from 24 → 20 and `maxChars` from 1600 → 1000 to stay conservative with context budget
 
 ## [3.8.31] - 2026-04-23
