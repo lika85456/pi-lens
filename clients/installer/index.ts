@@ -879,29 +879,17 @@ export async function getToolPath(toolId: string): Promise<string | undefined> {
 		} catch {
 			// fall through to extensionless
 		}
-		try {
-			await fs.access(localBase);
-			if (await verifyToolBinary(localBase)) {
-				return localBase;
-			}
-			logSessionStart(
-				`auto-install verify: ${localBase} exists but is broken, will reinstall`,
-			);
-		} catch {
-			// fall through to global checks
+	}
+	try {
+		await fs.access(localBase);
+		if (await verifyToolBinary(localBase)) {
+			return localBase;
 		}
-	} else {
-		try {
-			await fs.access(localBase);
-			if (await verifyToolBinary(localBase)) {
-				return localBase;
-			}
-			logSessionStart(
-				`auto-install verify: ${localBase} exists but is broken, will reinstall`,
-			);
-		} catch {
-			// fall through to global checks
-		}
+		logSessionStart(
+			`auto-install verify: ${localBase} exists but is broken, will reinstall`,
+		);
+	} catch {
+		// fall through to global checks
 	}
 
 	// Check if global

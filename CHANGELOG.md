@@ -5,8 +5,24 @@ All notable changes to pi-lens will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **LSP race condition in `initLSPConfig`** — `configInFlight` Map deduplicates concurrent initialization calls for the same workspace; parallel session starts no longer double-initialize and race on `workspaceConfigs`
+- **`LSPService` use-after-shutdown** — `isDestroyed` flag added; all public methods (`getClientForFile`, `openFile`, `updateFile`, `waitForDiagnostics`, `getDiagnostics`, `shutdown`) return early once the service has been shut down
+- **`theme.fg` crash during session start** — `updateLspStatus` wraps theme calls in try/catch; theme may not be fully initialized during early session startup events
+- **`isCommandAvailable` hangs on slow tools** — added 5s timeout with `proc.kill()` and a double-resolve guard; probe commands that stall no longer block session startup indefinitely
 - **Tree-sitter `client_unavailable` log spam** — `TreeSitterClient.isAvailable()` now re-evaluates `grammarsDir` when the cached path goes missing, instead of caching an empty string forever. Added `resolveWebTreeSitterAsset()` helper with three strategies: (1) `createRequire` module resolution (hoisted installs — issue #20), (2) `resolvePackagePath(import.meta.url)` fallback (on-the-fly TS compilation by pi), (3) `process.cwd()` fallback. Fixes 108 skipped-runner log lines when the initial grammar probe failed transiently.
 - **Pipeline test assertion drift** — updated `tests/clients/pipeline.test.ts` to match the current auto-format warning text (`File was modified by auto-format/fix...`)
+
+### Added
+- **LSP footer status indicator** — session start and turn end now show `LSP Active (N)` in green or `LSP Inactive` in red; count reflects alive (connected + initialized) clients via `getAliveClientCount()`
+- **Rust monorepo workspace root detection** — `RustServer` walks up from the detected crate root checking parent `Cargo.toml` files for a `[workspace]` section; rust-analyzer now resolves correctly in Cargo workspaces
+- **Opportunistic LSP read range expansion** — single-line `read` tool calls are silently expanded to the full enclosing symbol when a warm LSP client is available; best-effort, no-op if LSP is cold or the lookup doesn't resolve in time
+- **`workspaceSymbol` result filtering and cap** — `lsp_navigation` now filters and caps workspace symbol results at 15 entries to avoid overwhelming the context window
+
+### Performance
+- **Tool path resolution fast path** — `getToolPath` checks the local managed install (`~/.pi-lens/tools/node_modules/.bin/`) before global PATH probes, npm/pip/GitHub lookups; eliminates 2–5s overhead per tool on session start
+- **`jscpd` availability fast path** — `ensureAvailable()` probes the local install with `fs.existsSync` before spawning a process, and deduplicates concurrent calls via `ensureInFlight`
+- **Concurrent project indexing** — `buildProjectIndex` processes files in batches of 8 with `Promise.all` instead of sequentially; large projects index significantly faster
+- **`buildFunctionMatrixFromNode` avoids re-parse** — walks the existing TypeScript AST directly instead of extracting function source text and creating a new `SourceFile`; removes per-function re-parse overhead from similarity indexing
 
 ### Removed
 - **Worthless `diagnostic-logger` tests** — deleted `tests/clients/diagnostic-logger.test.ts` (5 tests that only asserted mock objects equaled what was just assigned; zero behavior coverage)
@@ -18,6 +34,7 @@ All notable changes to pi-lens will be documented in this file.
 - **Turn-end findings cap tightened** — reduced `maxLines` from 24 → 20 and `maxChars` from 1600 → 1000 to stay conservative with context budget
 
 ### Tests
+- **LSP integration tests** — added `tests/clients/lsp/integration.test.ts` with a fake JSON-RPC server (`tests/fixtures/fake-lsp-server.mjs`) covering LSP client lifecycle: initialize handshake, file open/change notifications, diagnostics, and graceful shutdown
 - **Tree-sitter resolution regression tests** — added 3 tests to `tests/clients/tree-sitter-client-init.test.ts`:
   - `TreeSitterClient.isAvailable returns true when grammars are installed` (smoke test)
   - `falls back to resolvePackagePath when require.resolve fails` (on-the-fly compilation scenario)
