@@ -117,7 +117,7 @@ export class TreeSitterClient {
 	/** Debug logging helper */
 	private dbg(msg: string): void {
 		if (this.verbose) {
-			console.error(`[tree-sitter] ${msg}`);
+			console.error(`[tree-sitter] ${msg}`); // pi-lens-ignore: console-statement — intentional verbose logger
 		}
 	}
 
