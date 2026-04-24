@@ -29,6 +29,7 @@ All notable changes to pi-lens will be documented in this file.
 - **Redundant circular-dependency regression tests** — removed 3 no-op import tests from `tests/clients/circular-deps-regression.test.ts` (`expect(module).toBeDefined()` after `await import(...)` adds no value; import failure throws before the assertion)
 
 ### Changed
+- **Test runner moved to turn_end (non-blocking)** — previously fired inline on every write, blocking the pipeline for up to 60s mid-refactor and producing false failures while the codebase was in an inconsistent state. Tests now run once per turn after all edits complete: unique test targets are collected from modified files, fired concurrently as a fire-and-forget `Promise.allSettled`, and failures are written to cache for injection into the next turn's context. Results are discarded if the agent starts a new turn before tests finish, preventing stale failures from clobbering newer results.
 - **Similarity runner skips small edits** — when `modifiedRanges` total lines is below `MIN_FUNCTION_LINES` (8), the similarity runner exits early; a new function can't fit in fewer lines than that, so the ~1100ms scan is wasted on targeted fixes
 - **Stronger auto-format/fix re-read warning** — message now explicitly tells the agent it MUST re-read the file before any further edits, listing what may have changed (whitespace, indentation, quotes, code)
 - **Turn-end findings cap tightened** — reduced `maxLines` from 24 → 20 and `maxChars` from 1600 → 1000 to stay conservative with context budget

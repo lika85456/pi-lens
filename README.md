@@ -13,8 +13,7 @@ On every `write` and `edit`, pi-lens runs a fast, language-aware pipeline (check
 3. **Auto-fix** — safe autofixes from 6 tools (Biome `check --write`, Ruff `check --fix`, ESLint `--fix`, stylelint `--fix`, sqlfluff `fix`, RuboCop `-a`) applied before analysis
 4. **LSP file sync** — opens/updates the file in active language servers
 5. **Dispatch lint** — parallel runner groups: LSP diagnostics, tree-sitter structural rules, ast-grep security/correctness rules, fact rules, language-specific linters, similarity detection, and architect checks
-6. **Test runner** — runs the corresponding test file; reruns known failures first
-7. **Cascade diagnostics** — review-graph impact cascade showing which other files were affected and how diagnostics propagated
+6. **Cascade diagnostics** — review-graph impact cascade showing which other files were affected and how diagnostics propagated
 
 Results are inline and actionable:
 - **Blocking issues** — stop progress until fixed
@@ -42,6 +41,7 @@ At `turn_end`, pi-lens:
 - persists turn findings for next context injection
 - updates debt/diagnostic tracking and cleans transient state
 - renders a review-graph impact cascade showing affected files and diagnostic propagation
+- fires test runs for all modified files (non-blocking); failures are injected into the next turn's context when ready
 - manages LSP server lifecycle with a 240s idle timeout (resets when editing resumes)
 
 ## Install
