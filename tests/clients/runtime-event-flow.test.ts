@@ -120,6 +120,7 @@ describe("runtime event flow", () => {
 				jscpdClient: { ensureAvailable: async () => false },
 				knipClient: { ensureAvailable: async () => false },
 				depChecker: { ensureAvailable: async () => false },
+				testRunnerClient: { getTestRunTarget: () => null },
 				resetLSPService: () => {},
 				resetFormatService: () => {},
 			} as any);

@@ -245,7 +245,6 @@ export default function (pi: ExtensionAPI) {
 				jscpdClient,
 				typeCoverageClient,
 				depChecker,
-				architectClient,
 			} = await loadBootstrapClients();
 			return handleBooboo(
 				args,
@@ -258,7 +257,6 @@ export default function (pi: ExtensionAPI) {
 					jscpd: jscpdClient,
 					typeCoverage: typeCoverageClient,
 					depChecker,
-					architect: architectClient,
 				},
 				pi,
 			);
@@ -538,7 +536,6 @@ export default function (pi: ExtensionAPI) {
 				jscpdClient,
 				typeCoverageClient,
 				depChecker,
-				architectClient,
 				testRunnerClient,
 				goClient,
 				rustClient,
@@ -560,7 +557,6 @@ export default function (pi: ExtensionAPI) {
 				jscpdClient,
 				typeCoverageClient,
 				depChecker,
-				architectClient,
 				testRunnerClient,
 				goClient,
 				rustClient,

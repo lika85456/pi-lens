@@ -3,7 +3,6 @@
  */
 
 import type { RunnerRegistry } from "../types.js";
-import architectRunner from "./architect.js";
 import astGrepNapiRunner from "./ast-grep-napi.js";
 import biomeRunner from "./biome.js";
 import biomeCheckJsonRunner from "./biome-check.js";
@@ -68,7 +67,6 @@ export function registerDefaultRunners(registry: RunnerRegistry): void {
 	// DISABLED: registerRunner(astGrepRunner); // Replaced by ast-grep-napi for dispatch
 	// CLI ast-grep kept for ast_grep_search/ast_grep_replace tools only
 	registry.register(similarityRunner); // Semantic reuse detection (priority 35)
-	registry.register(architectRunner); // Architectural rules (priority 40)
 	registry.register(eslintRunner); // ESLint (priority 12, jsts, config-gated)
 	registry.register(golangciRunner); // golangci-lint (priority 20, go, config-gated)
 	registry.register(rubocopRunner); // RuboCop lint (priority 10, ruby)

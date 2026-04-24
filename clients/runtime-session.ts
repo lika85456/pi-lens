@@ -1,6 +1,5 @@
 import * as nodeFs from "node:fs";
 import * as path from "node:path";
-import type { ArchitectClient } from "./architect-client.js";
 import type { AstGrepClient } from "./ast-grep-client.js";
 import type { BiomeClient } from "./biome-client.js";
 import type { CacheManager } from "./cache-manager.js";
@@ -51,7 +50,6 @@ interface SessionStartDeps {
 	jscpdClient: JscpdClient;
 	typeCoverageClient: TypeCoverageClient;
 	depChecker: DependencyChecker;
-	architectClient: ArchitectClient;
 	testRunnerClient: TestRunnerClient;
 	goClient: GoClient;
 	rustClient: RustClient;
@@ -335,7 +333,6 @@ export async function handleSessionStart(
 		jscpdClient,
 		typeCoverageClient: _typeCoverageClient,
 		depChecker,
-		architectClient,
 		testRunnerClient,
 		goClient,
 		rustClient,
@@ -503,9 +500,6 @@ export async function handleSessionStart(
 	} else {
 		dbg("session_start: skipping prettier preinstall probe (startup mode)");
 	}
-
-	const hasArchitectRules = architectClient.loadConfig(analysisRoot);
-	if (hasArchitectRules) tools.push("Architect rules");
 
 	const detectedRunner = testRunnerClient.detectRunner(analysisRoot);
 	if (detectedRunner) tools.push(`Test runner (${detectedRunner.runner})`);

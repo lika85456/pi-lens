@@ -4,7 +4,6 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import type { ArchitectClient } from "../clients/architect-client.js";
 import type { AstGrepClient } from "../clients/ast-grep-client.js";
 import type { ComplexityClient } from "../clients/complexity-client.js";
 import type { DependencyChecker } from "../clients/dependency-checker.js";
@@ -88,7 +87,6 @@ export async function handleBooboo(
 		jscpd: JscpdClient;
 		typeCoverage: TypeCoverageClient;
 		depChecker: DependencyChecker;
-		architect: ArchitectClient;
 	},
 	pi: ExtensionAPI,
 ) {
@@ -957,49 +955,6 @@ export async function handleBooboo(
 		}
 
 		return { findings: filteredCircular.length, status: "done" };
-	});
-
-	// Runner 10: Arch rules
-	await tracker.run("architectural rules", async () => {
-		// Always refresh config for the requested target path.
-		clients.architect.loadConfig(targetPath);
-
-		if (!clients.architect.hasConfig()) {
-			return { findings: 0, status: "skipped" };
-		}
-
-		const archViolations: Array<{ file: string; message: string }> = [];
-
-		// Use pre-collected sourceFiles (already filtered for artifacts and exclusions)
-		for (const fullPath of sourceFiles) {
-			if (isTestFile(fullPath)) continue;
-			const relPath = path.relative(targetPath, fullPath).replace(/\\/g, "/");
-			const content = nodeFs.readFileSync(fullPath, "utf-8");
-			const lineCount = content.split("\n").length;
-			for (const v of clients.architect.checkFile(relPath, content)) {
-				archViolations.push({ file: relPath, message: v.message });
-			}
-			const sizeV = clients.architect.checkFileSize(relPath, lineCount);
-			if (sizeV) archViolations.push({ file: relPath, message: sizeV.message });
-		}
-
-		if (archViolations.length > 0) {
-			summaryItems.push({
-				category: "Architectural",
-				count: archViolations.length,
-				severity: "🔴",
-				fixable: false,
-			});
-
-			let fullSection = `## Architectural Rules\n\n`;
-			fullSection += `**${archViolations.length} violation(s) found**\n\n`;
-			for (const v of archViolations) {
-				fullSection += `- **${v.file}**: ${v.message}\n`;
-			}
-			fullReport.push(`${fullSection}\n`);
-		}
-
-		return { findings: archViolations.length, status: "done" };
 	});
 
 	// Runner 11: Production Readiness (inspired by pi-validate)

@@ -388,7 +388,6 @@ function buildCoverageNotice(
 		"ast-grep-napi",
 		"similarity",
 		"spellcheck",
-		"architect",
 		"fact-rules",
 	]);
 	const anyLinterHasCoverage = runnerLatencies.some(
