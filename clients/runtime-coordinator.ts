@@ -2,7 +2,7 @@ import * as path from "node:path";
 import type { FileComplexity } from "./complexity-client.js";
 import { normalizeMapKey } from "./path-utils.js";
 import type { ProjectIndex } from "./project-index.js";
-import type { ReadGuard } from "./read-guard.js";
+import { ReadGuard } from "./read-guard.js";
 import type { RuleScanResult } from "./rules-scanner.js";
 import { RUNTIME_CONFIG } from "./runtime-config.js";
 
@@ -248,12 +248,8 @@ export class RuntimeCoordinator {
 
 	get readGuard(): ReadGuard {
 		if (!this._readGuard) {
-			// Lazy import to avoid circular dependency issues
-			const { ReadGuard } = require("./read-guard.js") as {
-				ReadGuard: typeof import("./read-guard.js").ReadGuard;
-			};
 			this._readGuard = new ReadGuard(this._telemetrySessionId);
 		}
-		return this._readGuard!;
+		return this._readGuard;
 	}
 }

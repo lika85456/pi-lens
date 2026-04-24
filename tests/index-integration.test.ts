@@ -3,6 +3,61 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock read-guard for integration tests to avoid dynamic require issues
+vi.mock("../clients/read-guard.js", () => ({
+	ReadGuard: class MockReadGuard {
+		isNewFile() {
+			return false;
+		}
+		checkEdit() {
+			return { action: "allow" };
+		}
+		recordRead() {}
+		getReadHistory() {
+			return [];
+		}
+		getEditHistory() {
+			return [];
+		}
+		addExemption() {}
+		getSummary() {
+			return {
+				totalEdits: 0,
+				totalBlocks: 0,
+				byReason: {},
+				byFile: {},
+				lspExpansionsHelped: 0,
+			};
+		}
+	},
+	createReadGuard: () =>
+		new (class MockReadGuard {
+			isNewFile() {
+				return false;
+			}
+			checkEdit() {
+				return { action: "allow" };
+			}
+			recordRead() {}
+			getReadHistory() {
+				return [];
+			}
+			getEditHistory() {
+				return [];
+			}
+			addExemption() {}
+			getSummary() {
+				return {
+					totalEdits: 0,
+					totalBlocks: 0,
+					byReason: {},
+					byFile: {},
+					lspExpansionsHelped: 0,
+				};
+			}
+		})(),
+}));
+
 type Handler = (event: any, ctx: any) => unknown;
 
 interface MockPi {
@@ -180,15 +235,6 @@ describe("index.ts integration", () => {
 				deps.runtime.cachedProjectIndex = {
 					entries: new Map([["existing", { id: "existing" }]]),
 				};
-				// Ensure readGuard exists for tests that don't explicitly mock it
-				if (!deps.runtime.readGuard) {
-					deps.runtime.readGuard = {
-						isNewFile: () => false,
-						checkEdit: () => ({ action: "allow" }),
-						recordRead: () => {},
-						getReadHistory: () => [],
-					};
-				}
 			},
 		}));
 		vi.doMock("../clients/metrics-history.js", () => ({
