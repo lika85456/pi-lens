@@ -123,7 +123,7 @@ pi-lens supports **35+ languages** through dispatch runners and LSP integration:
 
 ## Fact Rules Pipeline
 
-Language-specific. Dispatch includes a fact-rule engine that extracts function-level metrics (cyclomatic complexity, nesting depth, outgoing calls) and evaluates quality rules inline:
+Covers JavaScript/TypeScript, Python, Go, Rust, Ruby, Shell, and CMake. Dispatch includes a fact-rule engine that extracts function-level metrics (cyclomatic complexity, nesting depth, outgoing calls) and evaluates quality rules inline:
 
 - **high-complexity** — flags functions exceeding configurable CC thresholds
 - **unsafe-boundary** — detects dangerous boundary crossings (unvalidated user input → trusted context)
