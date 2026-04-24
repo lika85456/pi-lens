@@ -25,6 +25,7 @@ import { initLSPConfig } from "./clients/lsp/config.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import {
 	consumeSessionStartGuidance,
+	consumeTestFindings,
 	consumeTurnEndFindings,
 } from "./clients/runtime-context.js";
 import { RuntimeCoordinator } from "./clients/runtime-coordinator.js";
@@ -928,9 +929,11 @@ export default function (pi: ExtensionAPI) {
 				const cwd = ctx.cwd ?? process.cwd();
 				const turnEndFindings = consumeTurnEndFindings(cacheManager, cwd);
 				const sessionGuidance = consumeSessionStartGuidance(cacheManager, cwd);
+				const testFindings = consumeTestFindings(cacheManager, cwd);
 				const injectedMessages = [
 					...(sessionGuidance?.messages ?? []),
 					...(turnEndFindings?.messages ?? []),
+					...(testFindings?.messages ?? []),
 				];
 				if (injectedMessages.length === 0) return;
 

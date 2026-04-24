@@ -286,8 +286,8 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 			}
 		}
 		if (targets.length > 0) {
-			dbg(`turn_end: running tests for ${targets.length} target(s)`);
-			const results = await Promise.allSettled(
+			dbg(`turn_end: firing ${targets.length} test target(s) async (non-blocking)`);
+			Promise.allSettled(
 				targets.map((t) =>
 					testRunnerClient.runTestFileAsync(
 						t.testFile,
@@ -296,13 +296,20 @@ export async function handleTurnEnd(deps: TurnEndDeps): Promise<void> {
 						t.config,
 					),
 				),
-			);
-			for (const r of results) {
-				if (r.status === "fulfilled" && r.value.failed > 0) {
-					const formatted = testRunnerClient.formatResult(r.value);
-					if (formatted) blockerParts.push(formatted);
+			).then((results) => {
+				const failures: string[] = [];
+				for (const r of results) {
+					if (r.status === "fulfilled" && r.value.failed > 0) {
+						const formatted = testRunnerClient.formatResult(r.value);
+						if (formatted) failures.push(formatted);
+					}
 				}
-			}
+				if (failures.length > 0) {
+					const content = failures.join("\n\n");
+					cacheManager.writeCache("test-runner-findings", { content }, cwd);
+					dbg(`turn_end: test failures cached for next context injection`);
+				}
+			}).catch(() => {});
 		}
 	}
 
