@@ -40,6 +40,10 @@ import { createLspNavigationTool } from "./tools/lsp-navigation.js";
 const DEBUG_LOG_DIR = path.join(os.homedir(), ".pi-lens");
 const DEBUG_LOG = path.join(DEBUG_LOG_DIR, "sessionstart.log");
 function dbg(msg: string) {
+	// Skip file logging during tests to isolate test output from production logs
+	if (process.env.PI_LENS_TEST_MODE === "1" || process.env.VITEST) {
+		return;
+	}
 	const line = `[${new Date().toISOString()}] ${msg}\n`;
 	try {
 		nodeFs.mkdirSync(DEBUG_LOG_DIR, { recursive: true });
@@ -566,7 +570,7 @@ export default function (pi: ExtensionAPI) {
 				resetDispatchBaselines,
 				resetLSPService,
 			});
-			updateLspStatus(ctx.ui.setStatus, ctx.ui.theme);
+			ctx.ui && updateLspStatus(ctx.ui.setStatus, ctx.ui.theme);
 		} catch (sessionErr) {
 			dbg(`session_start crashed: ${sessionErr}`);
 			dbg(`session_start crash stack: ${(sessionErr as Error).stack}`);
@@ -647,7 +651,11 @@ export default function (pi: ExtensionAPI) {
 						false,
 						maxClientWaitMs,
 					)
-					.then(() => updateLspStatus(ctx.ui.setStatus, ctx.ui.theme))
+					.then(() => {
+						if (ctx.ui) {
+							ctx.ui && updateLspStatus(ctx.ui.setStatus, ctx.ui.theme);
+						}
+					})
 					.catch((err) => dbg(`lsp auto-touch failed for ${filePath}: ${err}`));
 			} catch {
 				// Best effort only; never block tool calls.
@@ -855,12 +863,8 @@ export default function (pi: ExtensionAPI) {
 	// biome-ignore lint/suspicious/noExplicitAny: pi.on overload mismatch for tool_result event type
 	(pi as any).on("tool_result", async (event: any) => {
 		updateRuntimeIdentityFromEvent(event);
-		const {
-			biomeClient,
-			ruffClient,
-			metricsClient,
-			agentBehaviorClient,
-		} = await loadBootstrapClients();
+		const { biomeClient, ruffClient, metricsClient, agentBehaviorClient } =
+			await loadBootstrapClients();
 		return handleToolResult({
 			event: event as any,
 			getFlag: (name: string) => pi.getFlag(name),
@@ -901,7 +905,7 @@ export default function (pi: ExtensionAPI) {
 				resetLSPService,
 				resetFormatService,
 			});
-			updateLspStatus(ctx.ui.setStatus, ctx.ui.theme);
+			ctx.ui && updateLspStatus(ctx.ui.setStatus, ctx.ui.theme);
 		} catch (turnEndErr) {
 			dbg(`turn_end crashed: ${turnEndErr}`);
 			dbg(`turn_end crash stack: ${(turnEndErr as Error).stack}`);
