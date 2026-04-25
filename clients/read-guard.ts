@@ -12,6 +12,7 @@
 
 import * as fs from "node:fs";
 import { createFileTime, type FileTime } from "./file-time.js";
+import { logReadGuardEvent } from "./read-guard-logger.js";
 
 // --- Types ---
 
@@ -85,8 +86,10 @@ export class ReadGuard {
 	private edits = new Map<string, EditRecord[]>();
 	private fileTime: FileTime;
 	private exemptions = new Set<string>(); // One-time exemptions via /lens-allow-edit
+	private readonly sessionId: string;
 
 	constructor(sessionId: string, config: Partial<ReadGuardConfig> = {}) {
+		this.sessionId = sessionId;
 		this.config = { ...DEFAULT_CONFIG, ...config };
 		this.fileTime = createFileTime(sessionId);
 	}
@@ -101,6 +104,26 @@ export class ReadGuard {
 		const arr = this.reads.get(record.filePath) ?? [];
 		arr.push(record);
 		this.reads.set(record.filePath, arr);
+
+		logReadGuardEvent({
+			event: "read_recorded",
+			sessionId: this.sessionId,
+			filePath: record.filePath,
+			requestedOffset: record.requestedOffset,
+			requestedLimit: record.requestedLimit,
+			effectiveOffset: record.effectiveOffset,
+			effectiveLimit: record.effectiveLimit,
+			symbol: record.enclosingSymbol?.name,
+			symbolKind: record.enclosingSymbol?.kind,
+			symbolStartLine: record.enclosingSymbol?.startLine,
+			symbolEndLine: record.enclosingSymbol?.endLine,
+			metadata: {
+				expandedByLsp: record.expandedByLsp,
+				turnIndex: record.turnIndex,
+				writeIndex: record.writeIndex,
+				readCountForFile: arr.length,
+			},
+		});
 
 		// Also update FileTime stamp for this file
 		this.fileTime.read(record.filePath);
@@ -118,7 +141,9 @@ export class ReadGuard {
 		if (this.exemptions.has(filePath)) {
 			this.exemptions.delete(filePath); // One-time use
 			const verdict = this.allow();
-			this.recordEdit(filePath, "edit", touchedLines ?? [1, 1], verdict);
+			this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+				reasonKind: "manual_exemption",
+			});
 			return verdict;
 		}
 
@@ -126,7 +151,10 @@ export class ReadGuard {
 		const exemptionMode = this.getExemptionMode(filePath);
 		if (exemptionMode === "allow") {
 			const verdict = this.allow();
-			this.recordEdit(filePath, "edit", touchedLines ?? [1, 1], verdict);
+			this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+				reasonKind: "pattern_exemption",
+				exemptionMode,
+			});
 			return verdict;
 		}
 
@@ -137,7 +165,9 @@ export class ReadGuard {
 				"zero-read",
 				`🔴 BLOCKED — Edit without read\n\nYou are trying to edit \`${filePath}\` but have not read it in this conversation.\n\nTo proceed:\n  1. Read the file first: \`read path="${filePath}"\`\n  2. Or run \`/lens-allow-edit ${filePath}\` to override (use sparingly)`,
 			);
-			this.recordEdit(filePath, "edit", touchedLines ?? [1, 1], verdict);
+			this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+				reasonKind: "zero_read",
+			});
 			return verdict;
 		}
 
@@ -148,14 +178,19 @@ export class ReadGuard {
 				"file-modified",
 				`🔴 BLOCKED — File modified since read\n\nYou last read \`${filePath}\` at ${new Date(lastRead.timestamp).toISOString()}.\nThe file has been modified on disk since then (auto-format, external tool, or previous edit).\n\nYour mental model is out of sync with the actual file content.\nTo proceed:\n  1. Re-read the file: \`read path="${filePath}"\``,
 			);
-			this.recordEdit(filePath, "edit", touchedLines ?? [1, 1], verdict);
+			this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+				reasonKind: "file_modified",
+				lastReadTimestamp: lastRead.timestamp,
+			});
 			return verdict;
 		}
 
 		// If no line range specified, we can only check zero-read and FileTime
 		if (!touchedLines) {
 			const verdict = this.allow();
-			this.recordEdit(filePath, "edit", [1, 1], verdict);
+			this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+				reasonKind: "no_line_info",
+			});
 			return verdict;
 		}
 
@@ -164,7 +199,10 @@ export class ReadGuard {
 
 		if (coverage.covered) {
 			const verdict = this.allow();
-			this.recordEdit(filePath, "edit", touchedLines, verdict);
+			this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+				reasonKind: coverage.viaSymbol ? "symbol_coverage" : "range_coverage",
+				viaSymbol: coverage.viaSymbol,
+			});
 			return verdict;
 		}
 
@@ -190,7 +228,9 @@ export class ReadGuard {
 					})),
 			},
 		);
-		this.recordEdit(filePath, "edit", touchedLines, verdict);
+		this.recordVerdict(filePath, "edit", touchedLines, verdict, {
+			reasonKind: "out_of_range",
+		});
 		return verdict;
 	}
 
@@ -212,6 +252,14 @@ export class ReadGuard {
 	 */
 	addExemption(filePath: string): void {
 		this.exemptions.add(filePath);
+		logReadGuardEvent({
+			event: "exemption_added",
+			sessionId: this.sessionId,
+			filePath,
+			metadata: {
+				source: "lens-allow-edit",
+			},
+		});
 	}
 
 	/**
@@ -316,10 +364,16 @@ export class ReadGuard {
 
 		// Second pass: merge all read intervals and check if their union covers
 		// [editStart, editEnd]. Handles multi-chunk reads (e.g. 1-100 + 101-200).
-		const intervals = reads.map((read) => [
-			Math.max(1, read.effectiveOffset - this.config.contextLines),
-			read.effectiveOffset + read.effectiveLimit - 1 + this.config.contextLines,
-		] as [number, number]);
+		const intervals = reads.map(
+			(read) =>
+				[
+					Math.max(1, read.effectiveOffset - this.config.contextLines),
+					read.effectiveOffset +
+						read.effectiveLimit -
+						1 +
+						this.config.contextLines,
+				] as [number, number],
+		);
 
 		intervals.sort((a, b) => a[0] - b[0]);
 
@@ -327,7 +381,10 @@ export class ReadGuard {
 		const merged: Array<[number, number]> = [];
 		for (const [s, e] of intervals) {
 			if (merged.length > 0 && s <= merged[merged.length - 1][1] + 1) {
-				merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+				merged[merged.length - 1][1] = Math.max(
+					merged[merged.length - 1][1],
+					e,
+				);
 			} else {
 				merged.push([s, e]);
 			}
@@ -400,6 +457,46 @@ export class ReadGuard {
 			reason: verdict.reason,
 		});
 		this.edits.set(filePath, arr);
+	}
+
+	private recordVerdict(
+		filePath: string,
+		tool: "write" | "edit",
+		touchedLines: [number, number] | undefined,
+		verdict: ReadGuardVerdict,
+		metadata: Record<string, unknown> = {},
+	): void {
+		const normalizedTouchedLines = touchedLines ?? [1, 1];
+		this.recordEdit(filePath, tool, normalizedTouchedLines, verdict);
+		const reads = this.reads.get(filePath) ?? [];
+		logReadGuardEvent({
+			event:
+				verdict.action === "allow"
+					? "edit_allowed"
+					: verdict.action === "warn"
+						? "edit_warned"
+						: "edit_blocked",
+			sessionId: this.sessionId,
+			filePath,
+			metadata: {
+				tool,
+				touchedLines: touchedLines ?? null,
+				normalizedTouchedLines,
+				readCount: reads.length,
+				reads: reads.map((read) => ({
+					requestedOffset: read.requestedOffset,
+					requestedLimit: read.requestedLimit,
+					effectiveOffset: read.effectiveOffset,
+					effectiveLimit: read.effectiveLimit,
+					expandedByLsp: read.expandedByLsp,
+					enclosingSymbol: read.enclosingSymbol ?? null,
+					timestamp: read.timestamp,
+				})),
+				verdictAction: verdict.action,
+				details: verdict.details,
+				...metadata,
+			},
+		});
 	}
 }
 

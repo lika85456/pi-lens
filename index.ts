@@ -13,17 +13,23 @@ import {
 	getLatencyReports,
 	resetDispatchBaselines,
 } from "./clients/dispatch/integration.js";
+import { detectFileKind } from "./clients/file-kinds.js";
 import { resetFormatService } from "./clients/format-service.js";
 import {
 	evaluateGitGuard,
 	isGitCommitOrPushAttempt,
 } from "./clients/git-guard.js";
 import { getAllToolStatuses } from "./clients/installer/index.js";
+import { LANGUAGE_POLICY } from "./clients/language-policy.js";
 import { logLatency } from "./clients/latency-logger.js";
 import type { LSPSymbol } from "./clients/lsp/client.js";
 import { initLSPConfig } from "./clients/lsp/config.js";
 import { getLSPService, resetLSPService } from "./clients/lsp/index.js";
 import { logReadGuardEvent } from "./clients/read-guard-logger.js";
+import {
+	countFileLines,
+	getTouchedLinesForGuard,
+} from "./clients/read-guard-tool-lines.js";
 import {
 	consumeSessionStartGuidance,
 	consumeTestFindings,
@@ -73,6 +79,10 @@ const LSP_TOOLCALL_NAV_TOUCH_BUDGET_MS = Math.max(
 		10,
 	) || 1500,
 );
+const LSP_TOOLCALL_TOUCH_BUDGET_MS = Math.max(
+	0,
+	Number.parseInt(process.env.PI_LENS_TOOLCALL_TOUCH_MS ?? "750", 10) || 750,
+);
 
 async function ensureLSPConfigInitialized(cwd: string): Promise<void> {
 	const normalizedCwd = path.resolve(cwd);
@@ -94,16 +104,6 @@ function updateRuntimeIdentityFromEvent(event: unknown): void {
 		model: raw.model,
 		sessionId: raw.sessionId ?? raw.session?.id ?? raw.id,
 	});
-}
-
-function countFileLines(filePath: string): number {
-	try {
-		const content = nodeFs.readFileSync(filePath, "utf-8");
-		if (content.length === 0) return 1;
-		return content.split(/\r?\n/).length;
-	} catch {
-		return 1;
-	}
 }
 
 function normalizeCommandArgs(args: unknown): string[] {
@@ -183,39 +183,10 @@ function getEffectiveReadLimit(
 	);
 }
 
-function getTouchedLinesForGuard(
-	event: unknown,
-	filePath?: string,
-): [number, number] | undefined {
-	if (isToolCallEventType("edit", event as any)) {
-		const editInput = (event as { input?: unknown }).input as {
-			oldRange?: { start: { line: number }; end: { line: number } };
-			edits?: Array<{
-				range?: { start: { line: number }; end: { line: number } };
-			}>;
-		};
-		if (editInput.oldRange) {
-			return [editInput.oldRange.start.line, editInput.oldRange.end.line];
-		}
-		if (editInput.edits?.length) {
-			const lines = editInput.edits.flatMap((edit) => [
-				edit.range?.start?.line ?? 1,
-				edit.range?.end?.line ?? 1,
-			]);
-			return [Math.min(...lines), Math.max(...lines)];
-		}
-		return undefined;
-	}
-
-	if (isToolCallEventType("write", event as any)) {
-		// Use the actual file line count so the coverage check is realistic.
-		// MAX_SAFE_INTEGER caused every write to be blocked unless the agent
-		// had read an impossibly large range.
-		const lineCount = filePath ? countFileLines(filePath) : 1;
-		return [1, lineCount];
-	}
-
-	return undefined;
+function isLspCapableFile(filePath: string): boolean {
+	const kind = detectFileKind(filePath);
+	if (!kind) return true;
+	return LANGUAGE_POLICY[kind]?.lspCapable !== false;
 }
 
 function getNewContentFromToolCall(event: unknown): string | undefined {
@@ -789,14 +760,23 @@ export default function (pi: ExtensionAPI) {
 		);
 		if (!nodeFs.existsSync(filePath)) return;
 
+		const lspCapableFile = isLspCapableFile(filePath);
 		const shouldWarmReadLsp =
-			toolName === "read" && runtime.shouldWarmLspOnRead(filePath);
+			toolName === "read" &&
+			lspCapableFile &&
+			runtime.shouldWarmLspOnRead(filePath);
 		const shouldAutoTouch =
 			(toolName === "write" ||
 				toolName === "edit" ||
 				toolName === "lsp_navigation" ||
 				shouldWarmReadLsp) &&
-			!pi.getFlag("no-lsp");
+			!pi.getFlag("no-lsp") &&
+			lspCapableFile;
+		if (!lspCapableFile && !pi.getFlag("no-lsp")) {
+			dbg(
+				`lsp auto-touch skipped: ${path.basename(filePath)} (file kind not LSP-capable)`,
+			);
+		}
 		if (toolName === "read" && !pi.getFlag("no-lsp") && !shouldWarmReadLsp) {
 			dbg(
 				`lsp read warm skipped: ${path.basename(filePath)} (already warming or warmed recently)`,
@@ -808,7 +788,7 @@ export default function (pi: ExtensionAPI) {
 				const maxClientWaitMs =
 					toolName === "lsp_navigation"
 						? LSP_TOOLCALL_NAV_TOUCH_BUDGET_MS
-						: undefined;
+						: LSP_TOOLCALL_TOUCH_BUDGET_MS;
 				if (toolName === "read") {
 					runtime.markLspReadWarmStarted(filePath);
 					dbg(`lsp read warm started: ${path.basename(filePath)}`);
@@ -862,6 +842,19 @@ export default function (pi: ExtensionAPI) {
 				turnIndex: runtime.turnIndex,
 				writeIndex: runtime.nextWriteIndex(),
 				timestamp: Date.now(),
+			});
+			logReadGuardEvent({
+				event: "read_recorded_bridge",
+				sessionId: runtime.telemetrySessionId,
+				filePath,
+				requestedOffset: requestedReadOffset,
+				requestedLimit: requestedReadLimit ?? effectiveReadLimit!,
+				effectiveOffset: requestedReadOffset,
+				effectiveLimit: effectiveReadLimit!,
+				metadata: {
+					tool: "read",
+					turnIndex: runtime.turnIndex,
+				},
 			});
 		}
 
@@ -973,7 +966,21 @@ export default function (pi: ExtensionAPI) {
 				typeof readGuard?.isNewFile !== "function" ||
 				!readGuard.isNewFile(filePath);
 			if (readGuard && isExistingFile) {
-				const touchedLines = getTouchedLinesForGuard(event, filePath);
+				const touchedLines = getTouchedLinesForGuard(
+					event,
+					filePath,
+					runtime.telemetrySessionId,
+				);
+				logReadGuardEvent({
+					event: "edit_check_started",
+					sessionId: runtime.telemetrySessionId,
+					filePath,
+					metadata: {
+						tool: isToolCallEventType("write", event) ? "write" : "edit",
+						touchedLines: touchedLines ?? null,
+						isExistingFile,
+					},
+				});
 				const verdict =
 					typeof readGuard.checkEdit === "function"
 						? readGuard.checkEdit(filePath, touchedLines)

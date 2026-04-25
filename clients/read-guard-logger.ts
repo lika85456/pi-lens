@@ -12,8 +12,8 @@ try {
 } catch {}
 
 export interface ReadGuardLogEntry {
-	event: "lsp_range_expanded" | "edit_blocked" | "edit_allowed" | string;
-	sessionId: string;
+	event: string;
+	sessionId?: string;
 	filePath: string;
 	requestedOffset?: number;
 	requestedLimit?: number;

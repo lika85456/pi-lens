@@ -134,13 +134,25 @@ export interface LSPClientInfo {
 	/** Check if the connection is still alive */
 	isAlive: () => boolean;
 	notify: {
-		open(filePath: string, content: string, languageId: string, preserveDiagnostics?: boolean): Promise<void>;
+		open(
+			filePath: string,
+			content: string,
+			languageId: string,
+			preserveDiagnostics?: boolean,
+		): Promise<void>;
 		change(filePath: string, content: string): Promise<void>;
 	};
 	getDiagnostics(filePath: string): LSPDiagnostic[];
 	waitForDiagnostics(filePath: string, timeoutMs?: number): Promise<void>;
 	/** Get all tracked diagnostics with timestamps (for cascade checking) */
 	getAllDiagnostics(): Map<string, { diags: LSPDiagnostic[]; ts: number }>;
+	pruneDiagnostics(
+		predicate: (
+			filePath: string,
+			ts: number,
+			diags: LSPDiagnostic[],
+		) => boolean,
+	): number;
 	/** Capability snapshot for workspace diagnostics support */
 	getWorkspaceDiagnosticsSupport(): LSPWorkspaceDiagnosticsSupport;
 	/** Capability snapshot for navigation/edit operations */
@@ -799,7 +811,13 @@ export async function createLSPClient(options: {
 
 		notify: {
 			async open(filePath, content, languageId, preserveDiagnostics) {
-				return handleNotifyOpen(state, filePath, content, languageId, preserveDiagnostics);
+				return handleNotifyOpen(
+					state,
+					filePath,
+					content,
+					languageId,
+					preserveDiagnostics,
+				);
 			},
 			async change(filePath, content) {
 				return handleNotifyChange(state, filePath, content);
@@ -819,6 +837,18 @@ export async function createLSPClient(options: {
 				});
 			}
 			return result;
+		},
+
+		pruneDiagnostics(predicate) {
+			let removed = 0;
+			for (const [key, diags] of state.diagnostics) {
+				const ts = state.diagnosticTimestamps.get(key) ?? 0;
+				if (!predicate(key, ts, diags)) continue;
+				state.diagnostics.delete(key);
+				state.diagnosticTimestamps.delete(key);
+				removed++;
+			}
+			return removed;
 		},
 
 		getWorkspaceDiagnosticsSupport() {

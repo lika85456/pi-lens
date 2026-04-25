@@ -37,7 +37,6 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["jsts"] },
 			{ mode: "all", runnerIds: ["ast-grep-napi"], filterKinds: ["jsts"] },
 			{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
-			{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
 			{
 				mode: "fallback",
 				runnerIds: ["eslint", "oxlint", "biome-check-json"],
@@ -257,7 +256,6 @@ function toFullPlan(kind: FileKind, entry: CapabilityMatrixEntry): ToolPlan {
 				{ mode: "all", runnerIds: ["ast-grep-napi"], filterKinds: ["jsts"] },
 				...(entry.fullOnlyGroups ?? []),
 				{ mode: "fallback", runnerIds: ["type-safety"], filterKinds: ["jsts"] },
-				{ mode: "fallback", runnerIds: ["similarity"], filterKinds: ["jsts"] },
 				{
 					mode: "fallback",
 					runnerIds: ["eslint", "oxlint", "biome-check-json"],
