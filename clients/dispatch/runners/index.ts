@@ -9,6 +9,7 @@ import biomeCheckJsonRunner from "./biome-check.js";
 import cppCheckRunner from "./cpp-check.js";
 import credoRunner from "./credo.js";
 import dartAnalyzeRunner from "./dart-analyze.js";
+import detektRunner from "./detekt.js";
 import dotnetBuildRunner from "./dotnet-build.js";
 import elixirCheckRunner from "./elixir-check.js";
 import eslintRunner from "./eslint.js";
@@ -87,6 +88,7 @@ export function registerDefaultRunners(registry: RunnerRegistry): void {
 	registry.register(psScriptAnalyzerRunner); // PowerShell linting via PSScriptAnalyzer module (priority 20)
 	registry.register(prismaValidateRunner); // Prisma schema validation via CLI (priority 20)
 	registry.register(ktlintRunner); // Kotlin linting via ktlint (priority 10)
+	registry.register(detektRunner); // Kotlin static analysis via detekt (priority 20, config-gated)
 	registry.register(tflintRunner); // Terraform linting via tflint (priority 20)
 	registry.register(taploRunner); // TOML linting/validation via taplo (priority 10)
 	registry.register(dartAnalyzeRunner); // Dart analysis via dart analyze (priority 20)

@@ -57,6 +57,7 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<
 		writeGroups: [
 			primary("python"),
 			{ mode: "fallback", runnerIds: ["ruff-lint"], filterKinds: ["python"] },
+			{ mode: "fallback", runnerIds: ["mypy"], filterKinds: ["python"] },
 			{ mode: "all", runnerIds: ["tree-sitter"], filterKinds: ["python"] },
 		],
 		fullOnlyGroups: [
@@ -173,8 +174,11 @@ export const LANGUAGE_CAPABILITY_MATRIX: Record<
 	},
 	kotlin: {
 		name: "Kotlin Linting",
-		capabilities: ["types", "lint", "format"],
-		writeGroups: [primary("kotlin")],
+		capabilities: ["types", "lint", "format", "smells"],
+		writeGroups: [
+			primary("kotlin"),
+			{ mode: "fallback", runnerIds: ["detekt"], filterKinds: ["kotlin"] },
+		],
 	},
 	swift: {
 		name: "Swift Linting",

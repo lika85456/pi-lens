@@ -660,7 +660,9 @@ export type LintRunnerName =
 	| "dart-analyze"
 	| "gleam-check"
 	| "psscriptanalyzer"
-	| "prisma-validate";
+	| "prisma-validate"
+	| "mypy"
+	| "detekt";
 
 export interface LinterPolicy {
 	runnerNames: LintRunnerName[];
@@ -993,6 +995,8 @@ export interface LinterPolicyContext {
 	hasMarkdownlintConfig?: boolean;
 	hasGolangciConfig?: boolean;
 	hasPhpstanConfig?: boolean;
+	hasMypyConfig?: boolean;
+	hasDetektConfig?: boolean;
 }
 
 export interface AutofixPolicyContext {
@@ -1025,12 +1029,14 @@ export function getLinterPolicyForFile(
 	}
 
 	if ([".py", ".pyi"].includes(ext)) {
+		const preferredRunners: LintRunnerName[] = ["ruff-lint"];
+		if (context.hasMypyConfig) preferredRunners.push("mypy");
 		return {
-			runnerNames: ["ruff-lint"],
-			preferredRunners: ["ruff-lint"],
+			runnerNames: ["ruff-lint", "mypy"],
+			preferredRunners,
 			defaultRunner: "ruff-lint",
 			defaultWhenUnconfigured: true,
-			gate: "smart-default",
+			gate: context.hasMypyConfig ? "mixed" : "smart-default",
 		};
 	}
 
@@ -1105,12 +1111,14 @@ export function getLinterPolicyForFile(
 	}
 
 	if ([".kt", ".kts"].includes(ext)) {
+		const preferredRunners: LintRunnerName[] = ["ktlint"];
+		if (context.hasDetektConfig) preferredRunners.push("detekt");
 		return {
-			runnerNames: ["ktlint"],
-			preferredRunners: ["ktlint"],
+			runnerNames: ["ktlint", "detekt"],
+			preferredRunners,
 			defaultRunner: "ktlint",
 			defaultWhenUnconfigured: true,
-			gate: "smart-default",
+			gate: context.hasDetektConfig ? "mixed" : "smart-default",
 		};
 	}
 
@@ -1252,6 +1260,8 @@ export function getLinterPolicyForCwd(
 		hasMarkdownlintConfig: hasMarkdownlintConfig(cwd),
 		hasGolangciConfig: hasGolangciConfig(cwd),
 		hasPhpstanConfig: hasPhpstanConfig(cwd),
+		hasMypyConfig: hasMypyConfig(cwd),
+		hasDetektConfig: hasDetektConfig(cwd),
 	});
 }
 
@@ -1662,6 +1672,17 @@ export function hasOcamlformatConfig(cwd: string): boolean {
 
 export function hasPhpstanConfig(cwd: string): boolean {
 	return PHPSTAN_CONFIGS.some((cfg) => fs.existsSync(path.join(cwd, cfg)));
+}
+
+const DETEKT_CONFIGS = [
+	"detekt.yml",
+	".detekt.yml",
+	path.join("config", "detekt", "detekt.yml"),
+	path.join("detekt", "detekt.yml"),
+];
+
+export function hasDetektConfig(cwd: string): boolean {
+	return DETEKT_CONFIGS.some((cfg) => fs.existsSync(path.join(cwd, cfg)));
 }
 
 export function hasStandardrbConfig(cwd: string): boolean {

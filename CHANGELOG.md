@@ -18,6 +18,13 @@ All notable changes to pi-lens will be documented in this file.
 
 - **`ktlint` autofix case missing `continue`** — the `ktlint` branch in `runAutofix` lacked a `continue` guard, causing fall-through into the next tool match on every ktlint run.
 
+## [Unreleased — mypy + detekt]
+
+### Added
+
+- **`mypy` wired into Python dispatch** — runner already existed but was never included in the dispatch plan or linter policy. Added to Python `writeGroups` in `plan.ts` and to `getLinterPolicyForFile` for `.py`/`.pyi`. When `mypy.ini` or `[tool.mypy]` is present, mypy is appended to `preferredRunners` alongside ruff-lint (gate: `mixed`); unconfigured projects are unaffected.
+- **`detekt` runner for Kotlin** — new runner (`detekt.ts`) that runs `detekt --input <file> --config <config>` for static analysis of `.kt`/`.kts` files. Config-first: activates only when `detekt.yml`, `.detekt.yml`, `config/detekt/detekt.yml`, or `detekt/detekt.yml` is found. Added `hasDetektConfig` helper, `"detekt"` to `LintRunnerName`, `hasDetektConfig` to `LinterPolicyContext`, and detekt to Kotlin's linter policy (appended to `preferredRunners` alongside ktlint when configured). Kotlin `plan.ts` `writeGroups` updated to include detekt.
+
 ## [3.8.32] - 2026-04-26
 
 ### Fixed
