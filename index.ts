@@ -32,7 +32,7 @@ import {
 import { RuntimeCoordinator } from "./clients/runtime-coordinator.js";
 import { handleSessionStart } from "./clients/runtime-session.js";
 import { handleToolResult } from "./clients/runtime-tool-result.js";
-import { handleTurnEnd } from "./clients/runtime-turn.js";
+import { cancelLSPIdleReset, handleTurnEnd } from "./clients/runtime-turn.js";
 import { handleBooboo } from "./commands/booboo.js";
 import { createAstGrepReplaceTool } from "./tools/ast-grep-replace.js";
 import { createAstGrepSearchTool } from "./tools/ast-grep-search.js";
@@ -1155,6 +1155,14 @@ export default function (pi: ExtensionAPI) {
 			dbg(`turn_end crashed: ${turnEndErr}`);
 			dbg(`turn_end crash stack: ${(turnEndErr as Error).stack}`);
 		}
+	});
+
+	// --- Session shutdown: release all handles so subagent processes exit cleanly ---
+	// The LSP idle-reset timer (240s) is unref'd but we cancel it explicitly here
+	// so it does not fire after shutdown. resetLSPService shuts down any live clients.
+	(pi as any).on("session_shutdown", () => {
+		cancelLSPIdleReset();
+		resetLSPService();
 	});
 
 	// --- Inject turn-end findings into next agent turn ---
