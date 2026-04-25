@@ -364,125 +364,191 @@ async function runAutofix(
 ): Promise<{
 	fixedCount: number;
 	autofixTools: string[];
+	attemptedTools: string[];
 	needsContentRefresh: boolean;
+	skipReason?: string;
 }> {
 	const { biomeClient, ruffClient, fixedThisTurn } = deps;
 	const noAutofix = getFlag("no-autofix");
 	let fixedCount = 0;
 	const autofixTools: string[] = [];
+	const attemptedTools: string[] = [];
 	let needsContentRefresh = false;
 
-	if (!fixedThisTurn.has(filePath) && !noAutofix) {
-		const autofixContext = {
-			hasEslintConfig: hasEslintConfig(cwd),
-			hasStylelintConfig: hasStylelintConfig(cwd),
-			hasSqlfluffConfig: hasSqlfluffConfig(cwd),
-			hasRubocopConfig: hasRubocopConfig(cwd),
+	if (fixedThisTurn.has(filePath)) {
+		dbg(`autofix: skipped for ${filePath} (already fixed this turn)`);
+		return {
+			fixedCount,
+			autofixTools,
+			attemptedTools,
+			needsContentRefresh,
+			skipReason: "already_fixed_this_turn",
 		};
-		const autofixPolicy = getAutofixPolicyForFile(filePath, autofixContext);
-		const preferredAutofixTools = autofixPolicy?.safe
-			? getPreferredAutofixTools(filePath, autofixContext)
-			: [];
+	}
 
-		for (const toolName of preferredAutofixTools) {
-			if (toolName === "ruff") {
-				const ruffReady = ruffClient.isPythonFile(filePath)
-					? await ruffClient.ensureAvailable()
-					: false;
-				if (!ruffReady) continue;
-				const result = await ruffClient.fixFileAsync(filePath);
-				if (result.success && result.fixed > 0) {
-					fixedCount += result.fixed;
-					autofixTools.push(`ruff:${result.fixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(`autofix: ruff fixed ${result.fixed} issue(s) in ${filePath}`);
-					needsContentRefresh = true;
-				}
+	if (noAutofix) {
+		dbg(`autofix: skipped for ${filePath} (--no-autofix)`);
+		return {
+			fixedCount,
+			autofixTools,
+			attemptedTools,
+			needsContentRefresh,
+			skipReason: "disabled_by_flag",
+		};
+	}
+
+	const autofixContext = {
+		hasEslintConfig: hasEslintConfig(cwd),
+		hasStylelintConfig: hasStylelintConfig(cwd),
+		hasSqlfluffConfig: hasSqlfluffConfig(cwd),
+		hasRubocopConfig: hasRubocopConfig(cwd),
+	};
+	const autofixPolicy = getAutofixPolicyForFile(filePath, autofixContext);
+	const preferredAutofixTools = autofixPolicy?.safe
+		? getPreferredAutofixTools(filePath, autofixContext)
+		: [];
+
+	dbg(
+		`autofix: policy for ${filePath} -> ${autofixPolicy?.defaultTool ?? "none"} ` +
+			`(preferred: ${preferredAutofixTools.join(",") || "none"}, gate: ${autofixPolicy?.gate ?? "none"}, safe: ${autofixPolicy?.safe ? "yes" : "no"})`,
+	);
+
+	if (!autofixPolicy) {
+		dbg(`autofix: no policy for ${filePath}`);
+		return {
+			fixedCount,
+			autofixTools,
+			attemptedTools,
+			needsContentRefresh,
+			skipReason: "no_policy",
+		};
+	}
+
+	if (!autofixPolicy.safe || preferredAutofixTools.length === 0) {
+		dbg(`autofix: no safe preferred tools for ${filePath}`);
+		return {
+			fixedCount,
+			autofixTools,
+			attemptedTools,
+			needsContentRefresh,
+			skipReason: "no_safe_tools",
+		};
+	}
+
+	for (const toolName of preferredAutofixTools) {
+		attemptedTools.push(toolName);
+		if (toolName === "ruff") {
+			const ruffReady = ruffClient.isPythonFile(filePath)
+				? await ruffClient.ensureAvailable()
+				: false;
+			if (!ruffReady) {
+				dbg(`autofix: ruff unavailable for ${filePath}`);
 				continue;
 			}
+			const result = await ruffClient.fixFileAsync(filePath);
+			if (result.success && result.fixed > 0) {
+				fixedCount += result.fixed;
+				autofixTools.push(`ruff:${result.fixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(`autofix: ruff fixed ${result.fixed} issue(s) in ${filePath}`);
+				needsContentRefresh = true;
+			}
+			continue;
+		}
 
-			if (toolName === "biome") {
-				const biomeReady = biomeClient.isSupportedFile(filePath)
-					? await biomeClient.ensureAvailable()
-					: false;
-				if (!biomeReady) continue;
-				const result = await biomeClient.fixFileAsync(filePath);
-				if (result.success && result.fixed > 0) {
-					fixedCount += result.fixed;
-					autofixTools.push(`biome:${result.fixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(`autofix: biome fixed ${result.fixed} issue(s) in ${filePath}`);
-					needsContentRefresh = true;
-				}
+		if (toolName === "biome") {
+			const biomeReady = biomeClient.isSupportedFile(filePath)
+				? await biomeClient.ensureAvailable()
+				: false;
+			if (!biomeReady) {
+				dbg(`autofix: biome unavailable or unsupported for ${filePath}`);
 				continue;
 			}
-
-			if (toolName === "eslint") {
-				const eslintFixed = await tryEslintFix(filePath, cwd);
-				if (eslintFixed > 0) {
-					fixedCount += eslintFixed;
-					autofixTools.push(`eslint:${eslintFixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(`autofix: eslint fixed ${eslintFixed} issue(s) in ${filePath}`);
-					needsContentRefresh = true;
-				}
-				continue;
+			const result = await biomeClient.fixFileAsync(filePath);
+			if (result.success && result.fixed > 0) {
+				fixedCount += result.fixed;
+				autofixTools.push(`biome:${result.fixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(`autofix: biome fixed ${result.fixed} issue(s) in ${filePath}`);
+				needsContentRefresh = true;
 			}
+			continue;
+		}
 
-			if (toolName === "stylelint") {
-				const stylelintFixed = await tryStylelintFix(filePath, cwd);
-				if (stylelintFixed > 0) {
-					fixedCount += stylelintFixed;
-					autofixTools.push(`stylelint:${stylelintFixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(
-						`autofix: stylelint fixed ${stylelintFixed} issue(s) in ${filePath}`,
-					);
-					needsContentRefresh = true;
-				}
-				continue;
+		if (toolName === "eslint") {
+			const eslintFixed = await tryEslintFix(filePath, cwd);
+			if (eslintFixed > 0) {
+				fixedCount += eslintFixed;
+				autofixTools.push(`eslint:${eslintFixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(`autofix: eslint fixed ${eslintFixed} issue(s) in ${filePath}`);
+				needsContentRefresh = true;
 			}
+			continue;
+		}
 
-			if (toolName === "sqlfluff") {
-				const sqlfluffFixed = await trySqlfluffFix(filePath, cwd);
-				if (sqlfluffFixed > 0) {
-					fixedCount += sqlfluffFixed;
-					autofixTools.push(`sqlfluff:${sqlfluffFixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(
-						`autofix: sqlfluff fixed ${sqlfluffFixed} issue(s) in ${filePath}`,
-					);
-					needsContentRefresh = true;
-				}
-				continue;
+		if (toolName === "stylelint") {
+			const stylelintFixed = await tryStylelintFix(filePath, cwd);
+			if (stylelintFixed > 0) {
+				fixedCount += stylelintFixed;
+				autofixTools.push(`stylelint:${stylelintFixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(
+					`autofix: stylelint fixed ${stylelintFixed} issue(s) in ${filePath}`,
+				);
+				needsContentRefresh = true;
 			}
+			continue;
+		}
 
-			if (toolName === "rubocop") {
-				const rubocopFixed = await tryRubocopFix(filePath, cwd);
-				if (rubocopFixed > 0) {
-					fixedCount += rubocopFixed;
-					autofixTools.push(`rubocop:${rubocopFixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(`autofix: rubocop fixed ${rubocopFixed} issue(s) in ${filePath}`);
-					needsContentRefresh = true;
-				}
-				continue;
+		if (toolName === "sqlfluff") {
+			const sqlfluffFixed = await trySqlfluffFix(filePath, cwd);
+			if (sqlfluffFixed > 0) {
+				fixedCount += sqlfluffFixed;
+				autofixTools.push(`sqlfluff:${sqlfluffFixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(`autofix: sqlfluff fixed ${sqlfluffFixed} issue(s) in ${filePath}`);
+				needsContentRefresh = true;
 			}
+			continue;
+		}
 
-			if (toolName === "ktlint") {
-				const ktlintFixed = await tryKtlintFix(filePath, cwd);
-				if (ktlintFixed > 0) {
-					fixedCount += ktlintFixed;
-					autofixTools.push(`ktlint:${ktlintFixed}`);
-					fixedThisTurn.add(filePath);
-					dbg(`autofix: ktlint fixed ${ktlintFixed} issue(s) in ${filePath}`);
-					needsContentRefresh = true;
-				}
+		if (toolName === "rubocop") {
+			const rubocopFixed = await tryRubocopFix(filePath, cwd);
+			if (rubocopFixed > 0) {
+				fixedCount += rubocopFixed;
+				autofixTools.push(`rubocop:${rubocopFixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(`autofix: rubocop fixed ${rubocopFixed} issue(s) in ${filePath}`);
+				needsContentRefresh = true;
+			}
+			continue;
+		}
+
+		if (toolName === "ktlint") {
+			const ktlintFixed = await tryKtlintFix(filePath, cwd);
+			if (ktlintFixed > 0) {
+				fixedCount += ktlintFixed;
+				autofixTools.push(`ktlint:${ktlintFixed}`);
+				fixedThisTurn.add(filePath);
+				dbg(`autofix: ktlint fixed ${ktlintFixed} issue(s) in ${filePath}`);
+				needsContentRefresh = true;
 			}
 		}
 	}
 
-	return { fixedCount, autofixTools, needsContentRefresh };
+	if (attemptedTools.length > 0 && autofixTools.length === 0) {
+		dbg(
+			`autofix: attempted ${attemptedTools.join(",")} for ${filePath}, but no fixes were applied`,
+		);
+	}
+
+	return {
+		fixedCount,
+		autofixTools,
+		attemptedTools,
+		needsContentRefresh,
+	};
 }
 
 async function resyncLspFile(
@@ -739,10 +805,17 @@ export async function runPipeline(
 	const {
 		fixedCount,
 		autofixTools,
+		attemptedTools,
 		needsContentRefresh: fixRefresh,
+		skipReason: autofixSkipReason,
 	} = await runAutofix(filePath, cwd, getFlag, dbg, deps);
 	if (fixRefresh) needsContentRefresh = true;
-	phase.end("autofix", { fixedCount, tools: autofixTools });
+	phase.end("autofix", {
+		fixedCount,
+		tools: autofixTools,
+		attemptedTools,
+		skipReason: autofixSkipReason,
+	});
 
 	if (needsContentRefresh) {
 		try {

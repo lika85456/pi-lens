@@ -31,6 +31,7 @@ All notable changes to pi-lens will be documented in this file.
 
 ### Added
 
+- **Autofix decision/attempt logging** — the post-write pipeline now logs autofix policy selection, preferred tools, attempted tools, explicit skip reasons, and the important distinction between “autofix skipped” vs “autofix ran but applied 0 fixes.” This makes it much easier to understand whether TypeScript files chose Biome or ESLint autofix and why.
 - **Dedicated read-guard trace log** — added `~/.pi-lens/read-guard.log` with structured events for read recording, LSP range expansion, touched-line derivation, edit checks, verdicts, and exemptions. This separates guard-policy debugging from the noisier general `latency.log` stream.
 - **Centralized formatter policy layer** — added normalized per-extension formatter policy with explicit config detection, smart-default selection, and managed-vs-toolchain default handling
 - **Centralized command spec / execution policy layer** — added shared tool command specs, execution policy, and resolver helpers used by dispatch runners and autofix paths
