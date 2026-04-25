@@ -185,8 +185,12 @@ export class FormatService {
 		return names
 			.filter((name) => allNames.includes(name))
 			.map((name) => {
-				// Access formatter by name from the exports
-				const key = `${name}Formatter` as keyof typeof formatters;
+				// Convert hyphenated name to camelCase then append Formatter
+				// e.g. "php-cs-fixer" → "phpCsFixerFormatter", "clang-format" → "clangFormatFormatter"
+				const camel = name.replace(/-([a-z])/g, (_, c: string) =>
+					c.toUpperCase(),
+				);
+				const key = `${camel}Formatter` as keyof typeof formatters;
 				return formatters[key] as FormatterInfo;
 			})
 			.filter(Boolean);

@@ -687,6 +687,12 @@ export async function runPipeline(
 					`autoformat: ${result.formatters.map((f) => `${f.name}(${f.changed ? "changed" : "unchanged"})`).join(", ")}`,
 				);
 			}
+			if (!result.allSucceeded) {
+				const failures = result.formatters.filter((f) => !f.success);
+				dbg(
+					`autoformat: ${failures.map((f) => `${f.name} failed: ${f.error ?? "unknown error"}`).join("; ")}`,
+				);
+			}
 		} catch (err) {
 			dbg(`autoformat error: ${err}`);
 		}

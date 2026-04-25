@@ -1465,9 +1465,7 @@ async function installNpmTool(
 		}
 		// Use --ignore-scripts unless the package explicitly needs postinstall
 		// (e.g. biome downloads a platform-specific native binary via postinstall).
-		const needsScripts = NEEDS_POSTINSTALL.has(
-			packageName.split("@")[0] ?? packageName,
-		);
+		const needsScripts = NEEDS_POSTINSTALL.has(packageName);
 		const baseInstallArgs = needsScripts
 			? ["install", packageName]
 			: ["install", "--ignore-scripts", packageName];

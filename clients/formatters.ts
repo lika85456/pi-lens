@@ -46,14 +46,26 @@ async function tryLazyInstallFormatterTool(
 			timeout: 180000,
 			cwd,
 		});
-		return !res.error && res.status === 0;
+		const ok = !res.error && res.status === 0;
+		if (!ok) {
+			console.error(
+				`[format] lazy-install rubocop failed: ${res.error?.message ?? res.stderr ?? `exit ${res.status}`}`,
+			);
+		}
+		return ok;
 	}
 
 	const res = safeSpawn("rustup", ["component", "add", "rustfmt"], {
 		timeout: 180000,
 		cwd,
 	});
-	return !res.error && res.status === 0;
+	const ok = !res.error && res.status === 0;
+	if (!ok) {
+		console.error(
+			`[format] lazy-install rustfmt failed: ${res.error?.message ?? res.stderr ?? `exit ${res.status}`}`,
+		);
+	}
+	return ok;
 }
 
 // --- Types ---
