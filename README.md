@@ -200,10 +200,8 @@ pi --lens-guard           # Block git commit/push when unresolved blockers exist
 
 ## Key Commands
 
-- `/lens-booboo` — full quality report for current project state
 - `/lens-health` — runtime health, latency, and diagnostic telemetry
 - `/lens-tools` — tool installation status: globally installed, auto-installed, or npx fallback
-- `/lens-tdi` — Technical Debt Index (TDI) and project health trend
 
 ## Language Coverage
 

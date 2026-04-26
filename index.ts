@@ -39,7 +39,6 @@ import { RuntimeCoordinator } from "./clients/runtime-coordinator.js";
 import { handleSessionStart } from "./clients/runtime-session.js";
 import { handleToolResult } from "./clients/runtime-tool-result.js";
 import { cancelLSPIdleReset, handleTurnEnd } from "./clients/runtime-turn.js";
-import { handleBooboo } from "./commands/booboo.js";
 import { createAstGrepReplaceTool } from "./tools/ast-grep-replace.js";
 import { createAstGrepSearchTool } from "./tools/ast-grep-search.js";
 import { createLspNavigationTool } from "./tools/lsp-navigation.js";
@@ -372,75 +371,6 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// --- Commands ---
-
-	pi.registerCommand("lens-booboo", {
-		description:
-			"Full codebase review: design smells, complexity, AI slop detection, TODOs, dead code, duplicates, type coverage. Results saved to .pi-lens/reviews/. Usage: /lens-booboo [path]",
-		handler: async (args, ctx) => {
-			const {
-				complexityClient,
-				todoScanner,
-				knipClient,
-				jscpdClient,
-				typeCoverageClient,
-				depChecker,
-			} = await loadBootstrapClients();
-			return handleBooboo(
-				args,
-				ctx,
-				{
-					astGrep: astGrepClient,
-					complexity: complexityClient,
-					todo: todoScanner,
-					knip: knipClient,
-					jscpd: jscpdClient,
-					typeCoverage: typeCoverageClient,
-					depChecker,
-				},
-				pi,
-			);
-		},
-	});
-
-	// DISABLED: lens-booboo-fix command - disabled per user request
-
-	pi.registerCommand("lens-tdi", {
-		description:
-			"Show Technical Debt Index (TDI) and project health trend. Usage: /lens-tdi",
-		handler: async (_args, ctx) => {
-			const { loadHistory, computeTDI } = await import(
-				"./clients/metrics-history.js"
-			);
-			const history = loadHistory();
-			const tdi = computeTDI(history);
-
-			let summary = "🔴 High debt - run /lens-booboo-refactor";
-			if (tdi.score <= 30) {
-				summary = "✅ Codebase is healthy!";
-			} else if (tdi.score <= 60) {
-				summary = "⚠️ Moderate debt - consider refactoring";
-			}
-			const lines = [
-				`📊 TECHNICAL DEBT INDEX: ${tdi.score}/100 (${tdi.grade})`,
-				``,
-				`Files analyzed: ${tdi.filesAnalyzed}`,
-				`Files with debt: ${tdi.filesWithDebt}`,
-				`Avg MI: ${tdi.avgMI}`,
-				`Total cognitive complexity: ${tdi.totalCognitive}`,
-				``,
-				`Debt breakdown:`,
-				`  Maintainability: ${tdi.byCategory.maintainability}% (MI-based)`,
-				`  Cognitive: ${tdi.byCategory.cognitive}%`,
-				`  Nesting: ${tdi.byCategory.nesting}%`,
-				`  Max Cyclomatic: ${tdi.byCategory.maxCyclomatic}% (worst function)`,
-				`  Entropy: ${tdi.byCategory.entropy}% (code unpredictability)`,
-				``,
-				summary,
-			];
-
-			ctx.ui.notify(lines.join("\n"), "info");
-		},
-	});
 
 	pi.registerCommand("lens-health", {
 		description:

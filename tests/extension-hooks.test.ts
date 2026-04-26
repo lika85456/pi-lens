@@ -3,7 +3,6 @@
  *
  * Tests pi extension lifecycle:
  * - Tool registration (ast_grep_search, lsp_navigation)
- * - Command registration (/lens-booboo, /lens-tdi)
  * - Flag registration (--lens-verbose, --no-autoformat, etc.)
  * - Event handlers (session_start, tool_call, tool_result, turn_end)
  */
@@ -80,30 +79,6 @@ describe("Extension Registration", () => {
 			});
 
 			expect(registeredTools).toContain("lsp_navigation");
-		});
-	});
-
-	describe("Command Registration", () => {
-		it("should register lens-booboo command", () => {
-			const pi = createMockPi();
-
-			pi.registerCommand("lens-booboo", {
-				description: "Full codebase review",
-				handler: async () => {},
-			});
-
-			expect(registeredCommands).toContain("lens-booboo");
-		});
-
-		it("should register lens-tdi command", () => {
-			const pi = createMockPi();
-
-			pi.registerCommand("lens-tdi", {
-				description: "Technical Debt Index",
-				handler: async () => {},
-			});
-
-			expect(registeredCommands).toContain("lens-tdi");
 		});
 	});
 
