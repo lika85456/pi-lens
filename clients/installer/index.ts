@@ -12,6 +12,7 @@
  * - vscode-langservers-extracted (JSON LSP)
  * - ruff (Python linting)
  * - @biomejs/biome (JS/TS/JSON linting/formatting)
+ * - oxfmt (JS/TS ecosystem formatting)
  * - oxlint (JS/TS linting)
  * - madge (circular dependency detection)
  * - jscpd (duplicate code detection)
@@ -153,6 +154,15 @@ const TOOLS: ToolDefinition[] = [
 		installStrategy: "npm",
 		packageName: "prettier",
 		binaryName: "prettier",
+	},
+	{
+		id: "oxfmt",
+		name: "Oxfmt",
+		checkCommand: "oxfmt",
+		checkArgs: ["--version"],
+		installStrategy: "npm",
+		packageName: "oxfmt",
+		binaryName: "oxfmt",
 	},
 	{
 		id: "ruff",

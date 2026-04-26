@@ -5,7 +5,7 @@
  * package.json detection logic introduced in bfc0885 and 83865c1.
  *
  * Covered:
- *  1. resolveCommand — biome/prettier prefer node_modules/.bin over npx
+ *  1. resolveCommand — biome/prettier/oxfmt prefer node_modules/.bin over npx
  *  2. resolveCommand — ruff/black prefer .venv over global
  *  3. resolveCommand — rubocop/standardrb use `bundle exec` when Gemfile.lock found
  *  4. resolveCommand — php-cs-fixer prefers vendor/bin over global
@@ -21,6 +21,7 @@ import {
 	blackFormatter,
 	clearFormatterRuntimeState,
 	getFormattersForFile,
+	oxfmtFormatter,
 	phpCsFixerFormatter,
 	prettierFormatter,
 	rubocopFormatter,
@@ -104,7 +105,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// 1: node_modules/.bin resolution (biome, prettier)
+// 1: node_modules/.bin resolution (biome, prettier, oxfmt)
 // ---------------------------------------------------------------------------
 
 describe("resolveCommand — node_modules/.bin", () => {
@@ -133,6 +134,19 @@ describe("resolveCommand — node_modules/.bin", () => {
 		expect(cmd).toContain("--write");
 		expect(cmd).toContain(filePath);
 	});
+
+	it("oxfmt: prefers local node_modules/.bin/oxfmt over npx", async () => {
+		const binPath = nodeModulesBin(tmpDir, "oxfmt");
+		makeFakeExe(binPath);
+		const filePath = fileIn(tmpDir, "page.html");
+
+		const cmd = await oxfmtFormatter.resolveCommand!(filePath, tmpDir);
+
+		expect(cmd).not.toBeNull();
+		expect(cmd![0]).toBe(binPath);
+		expect(cmd).toContain("--write");
+		expect(cmd).toContain(filePath);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -153,18 +167,26 @@ describe("resolveCommand — .venv", () => {
 		expect(cmd).toContain(filePath);
 	});
 
-	it.skipIf(process.env.CI === "true")(
-		"ruff: falls back to discovered global install when no venv binary",
-		async () => {
+	it("ruff: falls back to managed install when no venv binary", async () => {
+		const managedPath = isWin
+			? path.join(tmpDir, "managed", "ruff.exe")
+			: path.join(tmpDir, "managed", "ruff");
+		makeFakeExe(managedPath);
+		const installer = await import("../../clients/installer/index.js");
+		const spy = vi
+			.spyOn(installer, "ensureTool")
+			.mockResolvedValue(managedPath);
+		try {
 			const cmd = await ruffFormatter.resolveCommand!(
 				fileIn(tmpDir, "main.py"),
 				tmpDir,
 			);
-			expect(cmd).not.toBeNull();
-			expect(String(cmd![0]).toLowerCase()).toContain("ruff");
-			expect(cmd).toContain("format");
-		},
-	);
+			expect(spy).toHaveBeenCalledWith("ruff");
+			expect(cmd).toEqual([managedPath, "format", fileIn(tmpDir, "main.py")]);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 
 	it("black: returns venv binary when present", async () => {
 		const binPath = venvBin(tmpDir, "black");
@@ -371,6 +393,20 @@ describe("getFormattersForFile — policy selection", () => {
 		expect(formatters.map((f) => f.name)).toEqual(["prettier"]);
 	});
 
+	it("selects oxfmt when explicit oxfmt config is present for TypeScript", async () => {
+		createTempFile(tmpDir, ".oxfmtrc.json", '{"printWidth": 100}\n');
+		const filePath = fileIn(tmpDir, "index.ts");
+		const formatters = await getFormattersForFile(filePath, tmpDir);
+		expect(formatters.map((f) => f.name)).toEqual(["oxfmt"]);
+	});
+
+	it("selects oxfmt when explicit oxfmt config is present for HTML", async () => {
+		createTempFile(tmpDir, ".oxfmtrc.json", '{"printWidth": 100}\n');
+		const filePath = fileIn(tmpDir, "page.html");
+		const formatters = await getFormattersForFile(filePath, tmpDir);
+		expect(formatters.map((f) => f.name)).toEqual(["oxfmt"]);
+	});
+
 	it("does not force a formatter for unconfigured SQL files", async () => {
 		const filePath = fileIn(tmpDir, "query.sql");
 		const formatters = await getFormattersForFile(filePath, tmpDir);
@@ -550,6 +586,32 @@ describe("getFormattersForFile — policy selection", () => {
 			spy.mockRestore();
 		}
 	});
+
+	it("oxfmt resolveCommand falls back to managed install when not on PATH", async () => {
+		const managedPath = isWin
+			? path.join(tmpDir, "managed", "oxfmt.cmd")
+			: path.join(tmpDir, "managed", "oxfmt");
+		makeFakeExe(managedPath);
+		const installer = await import("../../clients/installer/index.js");
+		const spy = vi
+			.spyOn(installer, "ensureTool")
+			.mockResolvedValue(managedPath);
+		try {
+			const formatters = await import("../../clients/formatters.ts");
+			const cmd = await formatters.oxfmtFormatter.resolveCommand!(
+				fileIn(tmpDir, "page.html"),
+				tmpDir,
+			);
+			expect(spy).toHaveBeenCalledWith("oxfmt");
+			expect(cmd).toEqual([
+				managedPath,
+				"--write",
+				fileIn(tmpDir, "page.html"),
+			]);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 });
 
 describe("detect — nearest-wins package.json", () => {
@@ -610,5 +672,30 @@ describe("detect — nearest-wins package.json", () => {
 			JSON.stringify({ prettier: { singleQuote: true } }),
 		);
 		expect(await prettierFormatter.detect(tmpDir)).toBe(true);
+	});
+
+	it("oxfmt: detected when nearest package.json has oxfmt dependency", async () => {
+		createTempFile(
+			tmpDir,
+			"package.json",
+			JSON.stringify({ devDependencies: { oxfmt: "^0.0.0" } }),
+		);
+		expect(await oxfmtFormatter.detect(tmpDir)).toBe(true);
+	});
+
+	it("oxfmt: subpackage without oxfmt is NOT detected even if root has it", async () => {
+		createTempFile(
+			tmpDir,
+			"package.json",
+			JSON.stringify({ devDependencies: { oxfmt: "^0.0.0" } }),
+		);
+		const subPkgDir = path.join(tmpDir, "packages", "docs");
+		createTempFile(
+			subPkgDir,
+			"package.json",
+			JSON.stringify({ name: "docs", devDependencies: {} }),
+		);
+
+		expect(await oxfmtFormatter.detect(subPkgDir)).toBe(false);
 	});
 });

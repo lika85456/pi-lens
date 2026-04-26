@@ -14,7 +14,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".js",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -23,7 +23,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".jsx",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -32,7 +32,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".mjs",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -41,7 +41,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".cjs",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -50,7 +50,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".ts",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -59,7 +59,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".tsx",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -68,7 +68,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".mts",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -77,7 +77,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".cts",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -104,7 +104,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".json",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: false,
 			gate: "mixed",
@@ -113,7 +113,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".jsonc",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: false,
 			gate: "mixed",
@@ -122,7 +122,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".css",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -131,7 +131,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".scss",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -140,7 +140,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".sass",
 		{
-			formatterNames: ["biome", "prettier"],
+			formatterNames: ["biome", "prettier", "oxfmt"],
 			defaultFormatter: "biome",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -149,7 +149,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".less",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -158,7 +158,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".html",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -167,7 +167,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".htm",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -176,7 +176,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".yaml",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -185,7 +185,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".yml",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -194,7 +194,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".md",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -203,7 +203,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".mdx",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -212,7 +212,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".graphql",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -221,7 +221,7 @@ const FORMATTER_POLICY_BY_EXTENSION = new Map<string, FormatterPolicy>([
 	[
 		".gql",
 		{
-			formatterNames: ["prettier"],
+			formatterNames: ["prettier", "oxfmt"],
 			defaultFormatter: "prettier",
 			defaultWhenUnconfigured: true,
 			gate: "smart-default",
@@ -566,6 +566,7 @@ const AUTO_INSTALLABLE_DEFAULT_FORMATTERS = new Map<string, string>([
 	["biome", "biome"],
 	["ruff", "ruff"],
 	["prettier", "prettier"],
+	["oxfmt", "oxfmt"],
 	["shfmt", "shfmt"],
 	["taplo", "taplo"],
 	["ktlint", "ktlint"],
@@ -756,6 +757,7 @@ const TOOL_EXECUTION_POLICY = new Map<string, ToolExecutionPolicy>([
 	["phpstan", { gate: "config-first", autoInstall: false }],
 	["eslint", { gate: "config-first", autoInstall: false }],
 	["prettier", { gate: "smart-default", autoInstall: true }],
+	["oxfmt", { gate: "smart-default", autoInstall: true }],
 ]);
 
 const TOOL_COMMAND_SPECS = new Map<string, ToolCommandSpec>([
@@ -900,6 +902,15 @@ const TOOL_COMMAND_SPECS = new Map<string, ToolCommandSpec>([
 			managedToolId: "prettier",
 		},
 	],
+	[
+		"oxfmt",
+		{
+			command: "oxfmt",
+			windowsExt: ".cmd",
+			versionArgs: ["--version"],
+			managedToolId: "oxfmt",
+		},
+	],
 ]);
 
 const STYLELINT_CONFIGS = [
@@ -954,6 +965,12 @@ const PRETTIER_CONFIGS = [
 	"prettier.config.js",
 	"prettier.config.cjs",
 	"prettier.config.mjs",
+];
+
+const OXFMT_CONFIGS = [
+	".oxfmtrc.json",
+	".oxfmtrc.jsonc",
+	"oxfmt.config.ts",
 ];
 
 const RUFF_PROJECT_CONFIGS = ["ruff.toml", ".ruff.toml"];
@@ -1607,6 +1624,10 @@ export function hasPrettierConfig(cwd: string): boolean {
 		if (pkg.prettier) return true;
 	} catch {}
 	return false;
+}
+
+export function hasOxfmtConfig(cwd: string): boolean {
+	return OXFMT_CONFIGS.some((cfg) => fs.existsSync(path.join(cwd, cfg)));
 }
 
 export function hasBlackConfig(cwd: string): boolean {

@@ -22,6 +22,7 @@ import {
 	hasNearestPackageJsonDependency,
 	hasNearestPackageJsonField,
 	hasOcamlformatConfig,
+	hasOxfmtConfig,
 	hasPhpCsFixerConfig,
 	hasPrettierConfig,
 	hasRubocopConfig,
@@ -271,6 +272,8 @@ function hasExplicitFormatterConfig(
 			return (
 				hasPrettierConfig(cwd) || hasNearestPackageJsonField(cwd, "prettier")
 			);
+		case "oxfmt":
+			return hasOxfmtConfig(cwd);
 		case "ruff":
 			return hasRuffConfig(cwd);
 		case "black":
@@ -376,6 +379,45 @@ export const prettierFormatter: FormatterInfo = {
 			hasNearestPackageJsonDependency(cwd, "prettier") ||
 			hasNearestPackageJsonField(cwd, "prettier")
 		);
+	},
+};
+
+export const oxfmtFormatter: FormatterInfo = {
+	name: "oxfmt",
+	command: ["npx", "oxfmt", "--write", "$FILE"],
+	async resolveCommand(filePath, cwd) {
+		const local = await findInNodeModules("oxfmt", cwd);
+		if (local) return [local, "--write", filePath];
+		return resolveManagedSmartDefaultCommand("oxfmt", filePath, ["--write"]);
+	},
+	extensions: [
+		".js",
+		".jsx",
+		".mjs",
+		".cjs",
+		".ts",
+		".tsx",
+		".mts",
+		".cts",
+		".json",
+		".jsonc",
+		".css",
+		".scss",
+		".sass",
+		".less",
+		".vue",
+		".svelte",
+		".html",
+		".htm",
+		".md",
+		".mdx",
+		".yaml",
+		".yml",
+		".graphql",
+		".gql",
+	],
+	async detect(cwd: string) {
+		return hasOxfmtConfig(cwd) || hasNearestPackageJsonDependency(cwd, "oxfmt");
 	},
 };
 
@@ -702,6 +744,7 @@ export const taploFormatter: FormatterInfo = {
 const ALL_FORMATTERS: FormatterInfo[] = [
 	biomeFormatter,
 	prettierFormatter,
+	oxfmtFormatter,
 	ruffFormatter,
 	blackFormatter,
 	sqlfluffFormatter,
